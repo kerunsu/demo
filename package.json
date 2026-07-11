@@ -1,0 +1,83 @@
+{
+  "name": "child-education-training-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./shared/domain-events": {
+      "types": "./shared/src/domainEvents.ts",
+      "default": "./shared/dist/domainEvents.js"
+    },
+    "./shared/state-machine": {
+      "types": "./shared/src/stateMachine.ts",
+      "default": "./shared/dist/stateMachine.js"
+    },
+    "./shared/providers": {
+      "types": "./shared/src/providers.ts",
+      "default": "./shared/dist/providers.js"
+    },
+    "./shared/animations": {
+      "types": "./shared/src/animations.ts",
+      "default": "./shared/dist/animations.js"
+    },
+    "./shared/media": {
+      "types": "./shared/src/media.ts",
+      "default": "./shared/dist/media.js"
+    },
+    "./shared/raw-media": {
+      "types": "./shared/src/rawMedia.ts",
+      "default": "./shared/dist/rawMedia.js"
+    },
+    "./shared/behavior-observations": {
+      "types": "./shared/src/behaviorObservations.ts",
+      "default": "./shared/dist/behaviorObservations.js"
+    },
+    "./shared/behavior-frames": {
+      "types": "./shared/src/behaviorFrames.ts",
+      "default": "./shared/dist/behaviorFrames.js"
+    },
+    "./shared/attention-scoring": {
+      "types": "./shared/src/attentionScoring.ts",
+      "default": "./shared/dist/attentionScoring.js"
+    },
+    "./shared/emotion-scoring": {
+      "types": "./shared/src/emotionScoring.ts",
+      "default": "./shared/dist/emotionScoring.js"
+    },
+    "./shared/monitor-preview": {
+      "types": "./shared/src/monitorPreview.ts",
+      "default": "./shared/dist/monitorPreview.js"
+    },
+    "./shared/assessments": {
+      "types": "./shared/src/assessments.ts",
+      "default": "./shared/dist/assessments.js"
+    },
+    "./shared/browser-audio-features": {
+      "types": "./shared/src/browserAudioFeatures.ts",
+      "default": "./shared/dist/browserAudioFeatures.js"
+    },
+    "./shared/voice-partner-contract": {
+      "types": "./shared/src/voicePartnerContract.ts",
+      "default": "./shared/dist/voicePartnerContract.js"
+    }
+  },
+  "scripts": {
+    "dev": "node scripts/free-dev-port.mjs 3001 5173 8765 && concurrently -k \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\" \"node scripts/start-voice-service.mjs --local-funasr\"",
+    "dev:mock-voice": "node scripts/free-dev-port.mjs 3001 5173 8765 && concurrently -k \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\" \"node scripts/start-voice-service.mjs\"",
+    "dev:funasr": "node scripts/free-dev-port.mjs 3001 5173 8765 && concurrently -k \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\" \"node scripts/start-voice-service.mjs --local-funasr\"",
+    "dev:vosk": "node scripts/free-dev-port.mjs 3001 5173 8765 && concurrently -k \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\" \"node scripts/start-voice-service.mjs --local-vosk\"",
+    "dev:voice": "node scripts/start-voice-service.mjs",
+    "dev:voice:vosk": "node scripts/start-voice-service.mjs --local-vosk",
+    "dev:stop": "node scripts/free-dev-port.mjs 3001 5173 8765",
+    "test": "npm run test:contracts && npm run test:backend && npm run test:frontend && npm run test:e2e",
+    "test:backend": "npm --prefix backend test",
+    "test:frontend": "npm --prefix frontend test",
+    "test:e2e": "npm run build && node --test e2e/training-loop.test.mjs",
+    "test:contracts": "npm --prefix backend exec tsc -- -p shared/tsconfig.contract.json --noEmit && npm run build:shared && node --test shared/test/stateMachine.runtime.test.mjs shared/test/providers.runtime.test.mjs shared/test/animations.runtime.test.mjs shared/test/behaviorObservations.runtime.test.mjs shared/test/attentionScoring.runtime.test.mjs shared/test/browserAudioFeatures.runtime.test.mjs shared/test/emotionScoring.runtime.test.mjs shared/test/voicePartnerContract.runtime.test.mjs shared/test/buildPageContextText.runtime.test.mjs",
+    "build:shared": "npm --prefix backend exec tsc -- -p shared/tsconfig.json",
+    "build": "npm run build:shared && npm --prefix backend run build && npm --prefix frontend run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

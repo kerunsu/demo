@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>开始训练 - 奇趣校园</title>
+    <style>
+        /* ================= 基础重置 ================= */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            /* 禁用选中，防止小朋友误触高亮 */
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: linear-gradient(180deg, #2ebbf4 0%, #a2e8f9 100%);
+            font-family: 'PingFang SC', 'Microsoft YaHei', 'Comic Sans MS', sans-serif;
+            touch-action: manipulation; /* 优化触摸体验 */
+        }
+
+        /* ================= 背景元素：天空与云朵 ================= */
+        .sky-elements {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none; /* 穿透点击 */
+        }
+
+        /* 可爱的云朵 */
+        .cloud {
+            position: absolute;
+            background: #ffffff;
+            border-radius: 50px;
+            opacity: 0.9;
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.05);
+        }
+        .cloud::before, .cloud::after {
+            content: '';
+            position: absolute;
+            background: #ffffff;
+            border-radius: 50%;
+        }
+        /* 云朵1 */
+        .cloud-1 {
+            width: 120px; height: 40px;
+            top: 15%; left: -150px;
+            animation: floatClouds 35s linear infinite;
+        }
+        .cloud-1::before { width: 50px; height: 50px; top: -20px; left: 15px; }
+        .cloud-1::after { width: 70px; height: 70px; top: -35px; right: 15px; }
+        
+        /* 云朵2 */
+        .cloud-2 {
+            width: 180px; height: 60px;
+            top: 30%; left: -200px;
+            animation: floatClouds 45s linear infinite;
+            animation-delay: -15s;
+            transform: scale(0.8);
+            opacity: 0.7;
+        }
+        .cloud-2::before { width: 70px; height: 70px; top: -30px; left: 25px; }
+        .cloud-2::after { width: 100px; height: 100px; top: -50px; right: 25px; }
+
+        @keyframes floatClouds {
+            0% { transform: translateX(-200px); }
+            100% { transform: translateX(calc(100vw + 200px)); }
+        }
+
+        /* 纸飞机 */
+        .paper-plane {
+            position: absolute;
+            top: 20%;
+            right: 15%;
+            width: 60px;
+            animation: planeHover 4s ease-in-out infinite;
+        }
+        @keyframes planeHover {
+            0%, 100% { transform: translateY(0) rotate(-5deg); }
+            50% { transform: translateY(-15px) rotate(5deg); }
+        }
+
+        /* ================= 校园场景：城堡建筑与地面 ================= */
+        .campus-scene {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 40%;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* 圆润的校园建筑剪影（深蓝色系） */
+        .building {
+            position: absolute;
+            bottom: 10vh; /* 建筑放在地面上 */
+            width: 100%;
+            height: 250px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 250' preserveAspectRatio='xMidYMax slice'%3E%3Cpath d='M100,250 L100,100 Q100,70 130,70 L200,70 Q230,70 230,100 L230,250 Z' fill='%23199be2' opacity='0.8'/%3E%3Cpath d='M300,250 L300,50 Q300,20 340,20 L400,20 Q440,20 440,50 L440,250 Z' fill='%231fa8f0'/%3E%3Ccircle cx='370' cy='80' r='25' fill='%238be0ff'/%3E%3Cpath d='M550,250 L550,120 Q550,90 590,90 L650,90 Q690,90 690,120 L690,250 Z' fill='%23199be2' opacity='0.7'/%3E%3Cpath d='M800,250 L800,40 Q800,10 850,10 L920,10 Q970,10 970,40 L970,250 Z' fill='%231fa8f0'/%3E%3Ccircle cx='885' cy='90' r='30' fill='%238be0ff'/%3E%3Cpath d='M1050,250 L1050,140 Q1050,110 1080,110 L1150,110 Q1180,110 1180,140 L1180,250 Z' fill='%23199be2' opacity='0.9'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: center bottom;
+            background-size: cover;
+        }
+
+        /* 弧形地面（青蓝色跑道质感） */
+        .ground {
+            position: absolute;
+            bottom: -20vh;
+            left: -10vw;
+            width: 120vw;
+            height: 35vh;
+            background: linear-gradient(180deg, #18d2d9 0%, #0fa6ab 100%);
+            border-radius: 50% 50% 0 0;
+            box-shadow: inset 0 10px 20px rgba(255,255,255,0.3);
+        }
+
+        /* 装饰物：左下角胖胖铅笔 */
+        .prop-pencil {
+            position: absolute;
+            bottom: 5vh;
+            left: 5vw;
+            width: 100px;
+            transform: rotate(20deg);
+            filter: drop-shadow(0 10px 10px rgba(0,0,0,0.1));
+            animation: propFloat 5s ease-in-out infinite alternate;
+        }
+
+        /* 装饰物：右下角蹦蹦球 */
+        .prop-ball {
+            position: absolute;
+            bottom: 8vh;
+            right: 8vw;
+            width: 80px;
+            filter: drop-shadow(0 10px 10px rgba(0,0,0,0.1));
+            animation: propFloat 6s ease-in-out infinite alternate-reverse;
+        }
+
+        @keyframes propFloat {
+            0% { transform: translateY(0) rotate(15deg); }
+            100% { transform: translateY(-15px) rotate(25deg); }
+        }
+
+
+        /* ================= 核心交互：中心按钮 ================= */
+        .main-action {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+        }
+
+        .btn-start {
+            /* 阳光明黄色，在蓝背景下极度醒目 */
+            background: linear-gradient(180deg, #FFEA4C 0%, #FF9F00 100%);
+            border: 8px solid #FFFFFF;
+            border-radius: 100px;
+            padding: 25px 70px;
+            
+            font-size: 4rem; /* 超大字体 */
+            font-weight: 900;
+            color: #FFFFFF;
+            letter-spacing: 4px;
+            
+            /* 可爱的文字描边与立体阴影 */
+            -webkit-text-stroke: 2px #E67E00;
+            text-shadow: 0 5px 0 #E67E00, 0 10px 15px rgba(0,0,0,0.2);
+            
+            /* 按钮的3D果冻立体感 */
+            box-shadow: 
+                0 15px 0 #D97300, /* 底部厚度 */
+                0 25px 25px rgba(0, 0, 0, 0.2), /* 环境投影 */
+                inset 0 8px 0 rgba(255, 255, 255, 0.6), /* 顶部高光 */
+                inset 0 -8px 0 rgba(0, 0, 0, 0.1); /* 底部暗部 */
+            
+            cursor: pointer;
+            outline: none;
+            transition: all 0.1s ease;
+            
+            /* 呼吸动画吸引点击 */
+            animation: heartbeat 2s infinite;
+        }
+
+        /* 悬浮效果（针对鼠标） */
+        .btn-start:hover {
+            filter: brightness(1.05);
+        }
+
+        /* 按下时的物理反馈效果 */
+        .btn-start:active {
+            transform: translateY(10px);
+            box-shadow: 
+                0 5px 0 #D97300, 
+                0 10px 10px rgba(0, 0, 0, 0.2), 
+                inset 0 8px 0 rgba(255, 255, 255, 0.6), 
+                inset 0 -8px 0 rgba(0, 0, 0, 0.1);
+            animation: none; /* 按下时停止呼吸动画 */
+        }
+
+        @keyframes heartbeat {
+            0% { transform: scale(1); }
+            15% { transform: scale(1.05); }
+            30% { transform: scale(1); }
+            45% { transform: scale(1.05); }
+            60%, 100% { transform: scale(1); }
+        }
+
+        /* 适配小屏幕平板和手机 */
+        @media (max-width: 768px) {
+            .btn-start {
+                font-size: 2.8rem;
+                padding: 20px 50px;
+                border-width: 6px;
+            }
+        }
+
+        /* ================= 粒子特效层 ================= */
+        .particles-container {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 20;
+        }
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+        }
+        .particle-star {
+            clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+            border-radius: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 1. 背景与装饰层 -->
+    <div class="sky-elements">
+        <div class="cloud cloud-1"></div>
+        <div class="cloud cloud-2"></div>
+        
+        <!-- 纸飞机 SVG -->
+        <svg class="paper-plane" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M10 90 L90 10 L50 90 L40 60 L80 20 L30 50 Z" fill="#ffffff" stroke="#e0e0e0" stroke-width="2"/>
+        </svg>
+    </div>
+
+    <div class="campus-scene">
+        <div class="building"></div>
+        <div class="ground"></div>
+        
+        <!-- 胖铅笔 SVG -->
+        <svg class="prop-pencil" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <path d="M20 80 L10 90 L20 100 Z" fill="#FFE0B2"/>
+            <path d="M10 90 L15 95 L18 85 Z" fill="#333"/>
+            <rect x="20" y="70" width="60" height="30" transform="rotate(-45 20 80)" fill="#FFD54F" rx="5"/>
+            <rect x="62" y="28" width="15" height="30" transform="rotate(-45 62 28)" fill="#E0E0E0"/>
+            <path d="M73 17 Q80 10 88 18 Q95 25 88 32 L73 17 Z" fill="#FF5252"/>
+        </svg>
+
+        <!-- 蹦蹦球 SVG -->
+        <svg class="prop-ball" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="50" cy="50" r="45" fill="#40C4FF"/>
+            <path d="M10 35 Q50 60 90 35" stroke="#FFFFFF" stroke-width="8" fill="none" stroke-linecap="round"/>
+            <path d="M15 65 Q50 85 85 65" stroke="#FFFFFF" stroke-width="8" fill="none" stroke-linecap="round"/>
+            <circle cx="35" cy="30" r="8" fill="#FFFFFF" opacity="0.6"/> <!-- 高光 -->
+        </svg>
+    </div>
+
+    <!-- 2. 核心操作层 -->
+    <div class="main-action">
+        <button class="btn-start" id="startBtn">开始训练</button>
+    </div>
+
+    <!-- 粒子特效容器 -->
+    <div class="particles-container" id="particles"></div>
+
+    <!-- 3. 交互逻辑 -->
+    <script>
+        const btn = document.getElementById('startBtn');
+        const container = document.getElementById('particles');
+        
+        // 预设鲜艳的糖果色系，用于点击时的礼花特效
+        const colors = ['#FF4081', '#00E5FF', '#76FF03', '#FFD600', '#FF9100', '#D500F9'];
+
+        btn.addEventListener('click', function(e) {
+            // 获取按钮正中心坐标
+            const rect = btn.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+
+            // 生成彩带/星星粒子
+            createConfetti(centerX, centerY);
+
+            // TODO: 在这里添加跳转游戏界面的逻辑
+            // setTimeout(() => {
+            //     window.location.href = 'your_game_url.html';
+            // }, 800);
+        });
+
+        // 礼花爆炸动效逻辑
+        function createConfetti(x, y) {
+            // 每次点击生成 25 个粒子
+            for (let i = 0; i < 25; i++) {
+                const particle = document.createElement('div');
+                // 一半是圆形，一半是五角星
+                const isStar = Math.random() > 0.5;
+                particle.classList.add('particle');
+                if(isStar) particle.classList.add('particle-star');
+                
+                // 随机大小和颜色
+                const size = Math.random() * 15 + 10;
+                particle.style.width = size + 'px';
+                particle.style.height = size + 'px';
+                particle.style.background = colors[Math.floor(Math.random() * colors.length)];
+                
+                // 初始位置
+                particle.style.left = x + 'px';
+                particle.style.top = y + 'px';
+                container.appendChild(particle);
+
+                // 计算爆炸射出的角度和力度
+                const angle = Math.random() * Math.PI * 2;
+                const velocity = 150 + Math.random() * 200; // 扩散距离
+                
+                // 终止坐标 (稍微往下落一点模拟重力)
+                const tx = Math.cos(angle) * velocity;
+                const ty = Math.sin(angle) * velocity + 100; 
+
+                // 使用 Web Animations API 实现顺滑动画
+                const animation = particle.animate([
+                    { transform: 'translate(-50%, -50%) scale(1) rotate(0deg)', opacity: 1 },
+                    { transform: `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px)) scale(0) rotate(${Math.random() * 360}deg)`, opacity: 0 }
+                ], {
+                    duration: 600 + Math.random() * 400, // 持续时间 0.6秒 - 1秒
+                    easing: 'cubic-bezier(.25, .8, .25, 1)', // 物理缓动：快出慢落
+                    fill: 'forwards'
+                });
+
+                // 动画结束后清理DOM
+                animation.onfinish = () => particle.remove();
+            }
+        }
+    </script>
+</body>
+</html>
+```
+
+### 设计细节说明（方便您核对验收）：
+1. **纯粹的“零文字”场景**：除了正中间硕大无比的“开始训练”，画面没有出现任何额外文字。
+2. **纯粹的前端实现**：所有的装饰物（纸飞机、校园大楼、胖铅笔、蹦蹦球）全都是我用 **SVG 矢量代码和 CSS** 直接画出来的，不需要您去额外找图片资源，且在任何分辨率设备上都**绝对清晰，加载速度极快**。
+3. **按钮交互极其爽快**：
+   * 待机时会像心脏跳动一样有规律地缩放，引导小朋友点击。
+   * 点击按下去的那一刻，会有明显的**高度塌陷（物理阻尼感）**。
+   * 松开手的一瞬间，屏幕会以按钮为中心炸开几十颗**圆点和五角星形状的彩色礼花**（糖果色系）。
+
+您可以直接运行查看效果。如果需要修改蓝色背景的深浅、或者按钮的颜色，随时告诉我！

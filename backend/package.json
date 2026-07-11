@@ -1,0 +1,28 @@
+{
+  "name": "child-training-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ../scripts/free-dev-port.mjs 3001 && tsx watch src/index.ts",
+    "dev:once": "tsx src/index.ts",
+    "dev:stop": "node ../scripts/free-dev-port.mjs 3001",
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test --test-concurrency=1 test/*.test.mjs",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "child-education-training-demo": "file:..",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

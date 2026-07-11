@@ -1,0 +1,12 @@
+node_modules
+dist
+.DS_Store
+*.log
+*.tsbuildinfo
+.runtime/
+.codex/
+backend/.env
+.env
+tools/voice-benchmark/.venv/
+__pycache__/
+*.pyc

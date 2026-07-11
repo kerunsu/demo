@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "m4-013-fixture-v1",
+  "dataPolicy": {
+    "realChildVoiceAllowed": false,
+    "cloudCallsAllowedByDefault": false,
+    "committedAudioFilesAllowed": false,
+    "allowedSources": ["synthetic", "developer_authorized", "authorized_non_child"]
+  },
+  "fixtures": [
+    {
+      "id": "synthetic-short-zh",
+      "kind": "synthetic_audio_descriptor",
+      "language": "zh-CN",
+      "durationMs": 1200,
+      "textClass": "short_sentence",
+      "expectedPath": "stt_success"
+    },
+    {
+      "id": "synthetic-long-zh",
+      "kind": "synthetic_audio_descriptor",
+      "language": "zh-CN",
+      "durationMs": 6500,
+      "textClass": "long_sentence",
+      "expectedPath": "stt_success"
+    },
+    {
+      "id": "synthetic-silence",
+      "kind": "synthetic_audio_descriptor",
+      "language": "none",
+      "durationMs": 2500,
+      "textClass": "silence",
+      "expectedPath": "stt_empty"
+    },
+    {
+      "id": "synthetic-noise",
+      "kind": "synthetic_audio_descriptor",
+      "language": "none",
+      "durationMs": 2500,
+      "textClass": "noise",
+      "expectedPath": "stt_low_confidence"
+    },
+    {
+      "id": "synthetic-no-speech-timeout",
+      "kind": "synthetic_audio_descriptor",
+      "language": "none",
+      "durationMs": 8000,
+      "textClass": "silence_timeout",
+      "expectedPath": "vad_timeout"
+    },
+    {
+      "id": "mock-duplicate-transcript",
+      "kind": "text_fixture",
+      "language": "zh-CN",
+      "textClass": "duplicate_transcript",
+      "expectedPath": "duplicate_guard"
+    },
+    {
+      "id": "mock-safety-reject",
+      "kind": "text_fixture",
+      "language": "zh-CN",
+      "textClass": "unsafe_candidate_reply",
+      "expectedPath": "safety_reject"
+    },
+    {
+      "id": "mock-tts-playback-failure",
+      "kind": "playback_fixture",
+      "language": "zh-CN",
+      "textClass": "approved_reply",
+      "expectedPath": "robot_playback_failed"
+    },
+    {
+      "id": "mock-websocket-disconnect",
+      "kind": "network_fixture",
+      "language": "none",
+      "textClass": "disconnect_resume",
+      "expectedPath": "websocket_recovery"
+    }
+  ]
+}

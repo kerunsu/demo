@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>奇趣校园 - 快乐训练</title>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        /* ================= 1. 基础重置与全局变量 ================= */
+        :root {
+            --sky-top: #60a5fa;
+            --sky-bottom: #bae6fd;
+            --btn-orange: #f59e0b;
+            --btn-orange-shadow: #b45309;
+            --btn-blue: #3b82f6;
+            --btn-blue-shadow: #2563eb;
+            --card-border: #e0f2fe;
+            --text-dark: #334155;
+            --success-green: #34d399;
+            --error-red: #fb7185;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: 'Nunito', 'ZCOOL KuaiLe', 'Comic Sans MS', sans-serif;
+            background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-bottom) 100%);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* ================= 2. 动态背景 (漂浮的云朵) ================= */
+        .bg-clouds {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .cloud {
+            position: absolute;
+            background: white;
+            border-radius: 50px;
+            opacity: 0.8;
+            animation: floatCloud linear infinite;
+        }
+        .cloud::before, .cloud::after {
+            content: '';
+            position: absolute;
+            background: white;
+            border-radius: 50%;
+        }
+        .cloud-1 { width: 120px; height: 40px; top: 15%; left: -150px; animation-duration: 25s; }
+        .cloud-1::before { width: 60px; height: 60px; top: -30px; left: 15px; }
+        .cloud-1::after { width: 50px; height: 50px; top: -20px; right: 15px; }
+        .cloud-2 { width: 80px; height: 30px; top: 40%; left: -100px; animation-duration: 35s; animation-delay: 5s; opacity: 0.6; transform: scale(0.8); }
+        .cloud-2::before { width: 40px; height: 40px; top: -20px; left: 10px; }
+        .cloud-2::after { width: 35px; height: 35px; top: -15px; right: 10px; }
+        
+        @keyframes floatCloud {
+            0% { transform: translateX(-150px); }
+            100% { transform: translateX(120vw); }
+        }
+
+        /* ================= 3. 页面容器与切换动画 ================= */
+        .app-container {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 1000px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .view-section {
+            width: 100%;
+            height: 100%; /* 占满高度以适应绝对定位元素 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: absolute;
+            top: 0; left: 0;
+        }
+        .view-hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.9) translateY(20px);
+        }
+        .view-active {
+            opacity: 1;
+            pointer-events: auto;
+            transform: scale(1) translateY(0);
+        }
+
+        /* 通用按钮样式 */
+        .btn-3d {
+            border: 4px solid white;
+            border-radius: 50px;
+            color: white;
+            font-family: inherit;
+            font-size: 24px;
+            font-weight: 900;
+            padding: 12px 40px;
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.1s;
+            outline: none;
+            letter-spacing: 1px;
+            width: 100%;
+        }
+        .btn-3d:active { transform: translateY(8px); }
+        
+        .btn-orange {
+            background: linear-gradient(180deg, #fcd34d 0%, var(--btn-orange) 100%);
+            box-shadow: 0 8px 0 var(--btn-orange-shadow), 0 15px 20px rgba(0,0,0,0.2);
+            text-shadow: 0 3px 0 #d97706;
+        }
+        .btn-orange:active { box-shadow: 0 0 0 var(--btn-orange-shadow), 0 5px 10px rgba(0,0,0,0.2); }
+        
+        .btn-blue {
+            background: linear-gradient(180deg, #93c5fd 0%, var(--btn-blue) 100%);
+            box-shadow: 0 8px 0 var(--btn-blue-shadow), 0 15px 20px rgba(0,0,0,0.2);
+            text-shadow: 0 3px 0 #1d4ed8;
+        }
+        .btn-blue:active { box-shadow: 0 0 0 var(--btn-blue-shadow), 0 5px 10px rgba(0,0,0,0.2); }
+
+        .btn-gray {
+            background: #f1f5f9;
+            border-color: #e2e8f0;
+            color: #64748b;
+            box-shadow: 0 6px 0 #cbd5e1;
+            font-size: 18px;
+            padding: 10px 30px;
+        }
+        .btn-gray:active { box-shadow: 0 0 0 #cbd5e1; transform: translateY(6px); }
+
+
+        /* ================= 4. 新增：首页欢迎界面样式 ================= */
+        .home-scene {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0; left: 0;
+            pointer-events: none; /* 让点击穿透背景到按钮上 */
+            overflow: hidden;
+            z-index: 1;
+        }
+        /* 弧形草地 */
+        .home-ground {
+            position: absolute;
+            bottom: -150px;
+            left: -10%;
+            width: 120%;
+            height: 300px;
+            background: linear-gradient(180deg, #4ade80 0%, #14b8a6 100%); /* 清新的青绿色 */
+            border-radius: 50% 50% 0 0;
+        }
+        /* 教学楼群 */
+        .home-buildings {
+            position: absolute;
+            bottom: 120px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            gap: 20px;
+            padding: 0 50px;
+        }
+        .building {
+            background: #60a5fa;
+            border-radius: 20px 20px 0 0;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            padding-top: 25px;
+        }
+        .b-window {
+            width: 45px; height: 45px;
+            background: #bae6fd;
+            border-radius: 50%;
+        }
+        .b1 { width: 90px; height: 160px; opacity: 0.9; }
+        .b2 { width: 130px; height: 260px; }
+        .b3 { width: 100px; height: 140px; }
+        .b4 { width: 120px; height: 220px; opacity: 0.95; }
+        .b5 { width: 100px; height: 150px; }
+        
+        /* 漂浮道具 */
+        .prop-plane { position: absolute; top: 25%; right: 18%; color: white; font-size: 35px; transform: rotate(-15deg); animation: floatPlane 4s ease-in-out infinite; }
+        .prop-pencil { position: absolute; bottom: 120px; left: 15%; font-size: 50px; transform: rotate(-20deg); animation: floatProp 3s ease-in-out infinite; }
+        .prop-ball { position: absolute; bottom: 130px; right: 15%; font-size: 55px; animation: floatProp 3.5s ease-in-out infinite reverse; filter: drop-shadow(0 5px 5px rgba(0,0,0,0.1));}
+        
+        @keyframes floatPlane { 0%, 100% { transform: translateY(0) rotate(-15deg); } 50% { transform: translateY(-15px) rotate(-10deg); } }
+        @keyframes floatProp { 0%, 100% { transform: translateY(0) rotate(-20deg); } 50% { transform: translateY(-10px) rotate(-15deg); } }
+
+        /* 呼吸大按钮 */
+        .btn-home {
+            z-index: 10;
+            position: relative;
+            font-size: 42px;
+            padding: 20px 80px;
+            width: auto;
+            border-width: 6px;
+            animation: pulseBtn 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        @keyframes pulseBtn {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .btn-home:active { animation: none; transform: translateY(10px) scale(0.95); }
+
+
+        /* ================= 5. 选课界面 & 游戏界面 ================= */
+        .title-fun { font-size: 42px; color: white; text-shadow: 0 4px 0 #3b82f6, 0 8px 15px rgba(0,0,0,0.2); margin-bottom: 40px; font-weight: 900; letter-spacing: 2px; text-align: center; }
+        .courses-grid { display: flex; gap: 30px; justify-content: center; flex-wrap: wrap; padding: 0 20px; }
+        .course-card { background: white; border-radius: 30px; padding: 30px; width: 280px; text-align: center; border: 6px solid var(--card-border); box-shadow: 0 15px 25px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.3s; position: relative; }
+        .course-card.selected { border-color: #fbbf24; transform: scale(1.05); }
+        .badge-star { position: absolute; top: -20px; right: -20px; font-size: 50px; opacity: 0; transform: scale(0) rotate(-45deg); transition: all 0.4s; }
+        .course-card.selected .badge-star { opacity: 1; transform: scale(1) rotate(15deg); }
+        .course-icon { font-size: 80px; margin-bottom: 20px; }
+        .course-title { font-size: 24px; color: var(--text-dark); font-weight: 900; margin-bottom: 10px; }
+        .course-desc { font-size: 15px; color: #64748b; font-weight: 700; line-height: 1.4; }
+
+        .progress-track { display: flex; gap: 12px; margin-bottom: 30px; background: rgba(255,255,255,0.3); padding: 10px 20px; border-radius: 40px; }
+        .star-step { font-size: 28px; color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.3s; }
+        .star-step.active { color: #fbbf24; text-shadow: 0 2px 0 #d97706; animation: starPop 0.5s; }
+        .target-stage { display: flex; flex-direction: column; align-items: center; margin-bottom: 40px; }
+        .speech-bubble { background: white; border-radius: 20px; padding: 12px 25px; font-size: 22px; font-weight: 900; color: #0284c7; position: relative; margin-bottom: 25px; animation: floatUpDown 3s infinite; }
+        .speech-bubble::after { content: ''; position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%); border-width: 10px 10px 0; border-style: solid; border-color: white transparent transparent transparent; }
+        .target-item-wrapper { background: rgba(255,255,255,0.5); width: 180px; height: 180px; border-radius: 40px; display: flex; justify-content: center; align-items: center; border: 6px solid white; box-shadow: 0 15px 30px rgba(0,100,200,0.15); }
+        .target-emoji { font-size: 100px; }
+        .options-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; width: 100%; max-width: 800px; padding: 0 20px; }
+        .option-card { background: white; border-radius: 30px; aspect-ratio: 1 / 1.1; display: flex; justify-content: center; align-items: center; border: 5px solid #f0f9ff; box-shadow: 0 10px 20px rgba(0,0,0,0.08), inset 0 -8px 0 #f0f9ff; cursor: pointer; font-size: 80px; transition: all 0.2s; }
+        .squish { animation: squishClick 0.3s forwards; }
+        .wobble { animation: wobbleError 0.5s ease-in-out; border-color: var(--error-red); }
+        .success-glow { animation: successGlow 1s forwards; border-color: var(--success-green); pointer-events: none; }
+
+        @keyframes starPop { 0% { transform: scale(0.5); } 50% { transform: scale(1.4); } 100% { transform: scale(1); } }
+        @keyframes floatUpDown { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        @keyframes squishClick { 0% { transform: scale(1, 1) translateY(0); } 50% { transform: scale(1.1, 0.9) translateY(10px); } 100% { transform: scale(1, 1) translateY(0); } }
+        @keyframes wobbleError { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-15px) rotate(-5deg); } 40% { transform: translateX(12px) rotate(4deg); } 60% { transform: translateX(-8px) rotate(-3deg); } 80% { transform: translateX(5px) rotate(2deg); } }
+        @keyframes successGlow { 0% { transform: scale(1); box-shadow: 0 0 0 rgba(52, 211, 153, 0); } 50% { transform: scale(1.1); box-shadow: 0 0 30px rgba(52, 211, 153, 0.8); } 100% { transform: scale(1); box-shadow: 0 0 15px rgba(52, 211, 153, 0.4); } }
+
+
+        /* ================= 6. 结果页面样式 ================= */
+        .result-panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 40px;
+            padding: 40px 50px;
+            display: flex;
+            gap: 50px;
+            width: 90%;
+            max-width: 900px;
+            box-shadow: 0 20px 50px rgba(0, 100, 200, 0.2), inset 0 0 0 8px white;
+            border: 6px solid var(--card-border);
+            align-items: stretch;
+            position: relative;
+        }
+
+        .result-left { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 4px dashed #e2e8f0; padding-right: 50px; }
+        .result-title { font-size: 40px; color: #ef4444; text-shadow: 2px 2px 0 #fee2e2; margin: 0 0 20px 0; white-space: nowrap; }
+        .huge-stars { display: flex; gap: 15px; margin-bottom: 25px; }
+        .huge-star { font-size: 70px; color: #fbbf24; text-shadow: 0 6px 0 #d97706, 0 0 30px rgba(251, 191, 36, 0.5); animation: bounceStar 1s infinite alternate ease-in-out; }
+        .huge-star:nth-child(2) { transform: scale(1.2) translateY(-15px); animation-delay: 0.2s; }
+        .huge-star:nth-child(3) { color: #e2e8f0; text-shadow: 0 6px 0 #cbd5e1; animation: none; }
+        @keyframes bounceStar { 0% { transform: translateY(0); } 100% { transform: translateY(-10px); } }
+        .congrats-text { font-size: 24px; color: var(--text-dark); font-weight: 900; text-align: center; }
+        .congrats-text span { color: #0284c7; font-size: 32px; padding: 0 5px; }
+
+        .result-right { flex: 1.2; display: flex; flex-direction: column; justify-content: space-between; }
+        .stats-grid-2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; }
+        .stat-card { background: #f8fafc; border: 3px solid #f1f5f9; border-radius: 20px; padding: 15px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .stat-icon { font-size: 32px; margin-bottom: 5px; }
+        .stat-label { font-size: 14px; color: #64748b; font-weight: 700; margin-bottom: 5px; }
+        .stat-value { font-size: 24px; color: #0369a1; font-weight: 900; }
+        .stat-value.red { color: #e11d48; }
+
+        .action-buttons { display: flex; flex-direction: column; gap: 15px; }
+        .action-buttons-row { display: flex; gap: 15px; justify-content: space-between; }
+
+        #confetti-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 99; }
+
+        /* 响应式适配手机端 */
+        @media (max-width: 768px) {
+            .home-buildings { padding: 0 10px; bottom: 80px; gap: 10px; }
+            .building { transform: scale(0.7); transform-origin: bottom; }
+            .result-panel { flex-direction: column; padding: 30px; gap: 30px; }
+            .result-left { border-right: none; border-bottom: 4px dashed #e2e8f0; padding-right: 0; padding-bottom: 30px; }
+            .options-grid { grid-template-columns: repeat(2, 1fr); }
+            .btn-home { font-size: 32px; padding: 15px 50px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 共有背景图层 -->
+    <div class="bg-clouds">
+        <div class="cloud cloud-1"></div>
+        <div class="cloud cloud-2"></div>
+    </div>
+
+    <!-- 撒花画布 (结果页触发) -->
+    <canvas id="confetti-canvas"></canvas>
+
+    <div class="app-container">
+
+        <!-- ================= 视图 1：首页欢迎界面 ================= -->
+        <section id="view-home" class="view-section view-active">
+            <!-- 场景装饰层 -->
+            <div class="home-scene">
+                <i class="fa-solid fa-paper-plane prop-plane"></i>
+                <div class="prop-pencil">✏️</div>
+                <div class="prop-ball">⚽</div>
+                
+                <div class="home-buildings">
+                    <div class="building b1"></div>
+                    <div class="building b2"><div class="b-window"></div></div>
+                    <div class="building b3"></div>
+                    <div class="building b4"><div class="b-window"></div></div>
+                    <div class="building b5"></div>
+                </div>
+                <div class="home-ground"></div>
+            </div>
+
+            <!-- 操作按钮层 -->
+            <button class="btn-3d btn-orange btn-home" onclick="enterSelection()">
+                开始训练
+            </button>
+        </section>
+        
+        <!-- ================= 视图 2：游乐园选课 ================= -->
+        <section id="view-selection" class="view-section view-hidden">
+            <h1 class="title-fun">🎯 今天想玩什么呢？</h1>
+            <div class="courses-grid">
+                <div class="course-card" onclick="selectCourse(this)">
+                    <div class="badge-star">⭐</div>
+                    <div class="course-icon">🚲</div>
+                    <div class="course-title">找朋友</div>
+                    <div class="course-desc">看看谁和目标长得一模一样！锻炼观察力。</div>
+                </div>
+                <div class="course-card" onclick="selectCourse(this)">
+                    <div class="badge-star">⭐</div>
+                    <div class="course-icon">🍎</div>
+                    <div class="course-title">数一数</div>
+                    <div class="course-desc">比一比哪个苹果更大、更多？锻炼数学思维。</div>
+                </div>
+            </div>
+            <button id="btn-start" class="btn-3d btn-orange" style="opacity: 0; pointer-events: none; transition: opacity 0.3s; margin-top:40px; width:auto; padding: 15px 60px; font-size:32px;" onclick="startGame()">
+                准备出发！🚀
+            </button>
+        </section>
+
+        <!-- ================= 视图 3：配对大挑战游戏 ================= -->
+        <section id="view-game" class="view-section view-hidden">
+            <div class="progress-track">
+                <span class="star-step active">★</span>
+                <span class="star-step">★</span>
+                <span class="star-step">★</span>
+                <span class="star-step">★</span>
+                <span class="star-step">★</span>
+                <span class="star-step">★</span>
+                <span class="star-step">★</span>
+                <span class="star-step">★</span>
+            </div>
+            <div class="target-stage">
+                <div class="speech-bubble">🔍 谁和我长得一模一样呀？</div>
+                <div class="target-item-wrapper"><div class="target-emoji">🍑</div></div>
+            </div>
+            <div class="options-grid">
+                <div class="option-card" onclick="checkAnswer(this, false)">🏀</div>
+                <div class="option-card" onclick="checkAnswer(this, true)">🍑</div>
+                <div class="option-card" onclick="checkAnswer(this, false)">🍇</div>
+                <div class="option-card" onclick="checkAnswer(this, false)">🍍</div>
+            </div>
+        </section>
+
+        <!-- ================= 视图 4：横版训练报告 ================= -->
+        <section id="view-result" class="view-section view-hidden">
+            <div class="result-panel">
+                <div class="result-left">
+                    <h1 class="result-title">🎉 训练完成啦！ 🎉</h1>
+                    <div class="huge-stars">
+                        <div class="huge-star">★</div>
+                        <div class="huge-star">★</div>
+                        <div class="huge-star">★</div>
+                    </div>
+                    <div class="congrats-text">
+                        太棒了！<br>你第一次就答对了 <span>6</span> 道题！
+                    </div>
+                </div>
+
+                <div class="result-right">
+                    <div class="stats-grid-2x2">
+                        <div class="stat-card">
+                            <div class="stat-icon">⚡</div>
+                            <div class="stat-label">平均速度</div>
+                            <div class="stat-value">1.0 秒</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📉</div>
+                            <div class="stat-label">错误尝试</div>
+                            <div class="stat-value red">2 次</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🎯</div>
+                            <div class="stat-label">正确率</div>
+                            <div class="stat-value">75%</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🧩</div>
+                            <div class="stat-label">训练题数</div>
+                            <div class="stat-value">8 题</div>
+                        </div>
+                    </div>
+                    
+                    <div style="font-size: 13px; color: #94a3b8; text-align: center; margin-bottom: 15px;">
+                        本次训练未触发对话交流。
+                    </div>
+
+                    <div class="action-buttons">
+                        <button class="btn-3d btn-blue">查看评估报告</button>
+                        <div class="action-buttons-row">
+                            <button class="btn-3d btn-orange" style="flex: 2;" onclick="location.reload()">再玩一次！</button>
+                            <button class="btn-3d btn-gray" style="flex: 1;" onclick="location.reload()">回首页</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- 交互逻辑脚本 -->
+    <script>
+        // === 场景切换逻辑 ===
+        function switchView(fromId, toId) {
+            document.getElementById(fromId).classList.replace('view-active', 'view-hidden');
+            setTimeout(() => {
+                document.getElementById(toId).classList.replace('view-hidden', 'view-active');
+            }, 300);
+        }
+
+        // 从首页进入选课页
+        function enterSelection() {
+            switchView('view-home', 'view-selection');
+        }
+
+        // 选课交互
+        function selectCourse(cardElement) {
+            document.querySelectorAll('.course-card').forEach(card => card.classList.remove('selected'));
+            cardElement.classList.add('selected');
+            const startBtn = document.getElementById('btn-start');
+            startBtn.style.opacity = '1';
+            startBtn.style.pointerEvents = 'auto';
+        }
+
+        // 开始游戏
+        function startGame() {
+            switchView('view-selection', 'view-game');
+        }
+
+        // 游戏交互逻辑
+        function checkAnswer(optionCard, isCorrect) {
+            if (optionCard.classList.contains('success-glow') || optionCard.classList.contains('wobble')) return; 
+
+            optionCard.classList.add('squish');
+            setTimeout(() => optionCard.classList.remove('squish'), 300);
+
+            if (isCorrect) {
+                optionCard.classList.add('success-glow');
+                
+                // 模拟过关，切换到结算页
+                setTimeout(() => {
+                    switchView('view-game', 'view-result');
+                    setTimeout(() => fireConfetti(), 300); // 延迟一点点触发撒花
+                }, 800); 
+
+            } else {
+                setTimeout(() => {
+                    optionCard.classList.add('wobble');
+                    setTimeout(() => optionCard.classList.remove('wobble'), 500);
+                }, 150);
+            }
+        }
+
+        // === 撒花特效引擎 ===
+        function fireConfetti() {
+            const canvas = document.getElementById('confetti-canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            const pieces = [];
+            const colors = ['#f59e0b', '#3b82f6', '#34d399', '#fb7185', '#a78bfa'];
+
+            for (let i = 0; i < 150; i++) {
+                pieces.push({
+                    x: canvas.width / 2,
+                    y: canvas.height / 2 + 100,
+                    vx: (Math.random() - 0.5) * 20,
+                    vy: (Math.random() - 1) * 20 - 5,
+                    size: Math.random() * 10 + 10,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    rotation: Math.random() * 360,
+                    rotationSpeed: (Math.random() - 0.5) * 10
+                });
+            }
+
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                let active = false;
+                
+                pieces.forEach(p => {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vy += 0.5; // 重力
+                    p.rotation += p.rotationSpeed;
+                    
+                    if (p.y < canvas.height) active = true;
+
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(p.rotation * Math.PI / 180);
+                    ctx.fillStyle = p.color;
+                    ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+                    ctx.restore();
+                });
+
+                if (active) requestAnimationFrame(animate);
+            }
+            animate();
+        }
+    </script>
+</body>
+</html>

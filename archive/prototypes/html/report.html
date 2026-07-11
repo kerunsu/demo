@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>训练报告 - 奇趣校园</title>
+    <style>
+        /* 基础重置与背景 */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: 'Comic Sans MS', 'Nunito', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%); /* 蓝天渐变背景 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        /* 漂浮的背景装饰 (云朵/泡泡) */
+        .bg-bubbles {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .bubble {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            animation: floatUp 10s infinite ease-in-out;
+        }
+        @keyframes floatUp {
+            0% { transform: translateY(100vh) scale(0.8); opacity: 0; }
+            20% { opacity: 1; }
+            100% { transform: translateY(-20vh) scale(1.2); opacity: 0; }
+        }
+
+        /* 核心奖励卡片 */
+        .reward-card {
+            position: relative;
+            z-index: 10;
+            background: #ffffff;
+            width: 90%;
+            max-width: 500px;
+            border-radius: 30px;
+            padding: 40px 30px;
+            text-align: center;
+            box-shadow: 0 20px 50px rgba(0, 100, 200, 0.2), 
+                        inset 0 5px 0 rgba(255, 255, 255, 0.8),
+                        inset 0 -5px 0 rgba(0, 0, 0, 0.05);
+            border: 6px solid #e0f2fe;
+            /* 入场果冻动画 */
+            animation: bounceIn 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0.3) translateY(200px); opacity: 0; }
+            50% { transform: scale(1.05) translateY(-10px); opacity: 1; }
+            70% { transform: scale(0.95) translateY(5px); }
+            100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+
+        /* 标题部分 */
+        .title {
+            font-size: 32px;
+            color: #ff6b6b;
+            margin: 0 0 20px 0;
+            text-shadow: 2px 2px 0 #ffe3e3;
+            font-weight: 900;
+            letter-spacing: 2px;
+        }
+
+        /* 星星评级区 */
+        .stars-container {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .star {
+            font-size: 60px;
+            color: #e2e8f0; /* 默认灰色 */
+            text-shadow: 0 4px 0 #cbd5e1;
+            transform: scale(0);
+        }
+        .star.active {
+            color: #fbbf24; /* 金黄色 */
+            text-shadow: 0 4px 0 #d97706, 0 0 20px rgba(251, 191, 36, 0.6);
+        }
+        /* 星星依次弹出的动画类 */
+        .star-pop {
+            animation: starPop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes starPop {
+            0% { transform: scale(0) rotate(-45deg); }
+            80% { transform: scale(1.2) rotate(10deg); }
+            100% { transform: scale(1) rotate(0deg); }
+        }
+
+        /* 主要成绩文案 */
+        .score-text {
+            font-size: 22px;
+            color: #334155;
+            margin-bottom: 30px;
+            font-weight: bold;
+        }
+        .score-text span {
+            color: #0ea5e9;
+            font-size: 28px;
+            padding: 0 5px;
+        }
+
+        /* 趣味数据面板 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 35px;
+        }
+        .stat-box {
+            background: #f0f9ff;
+            border-radius: 20px;
+            padding: 15px;
+            border: 3px solid #bae6fd;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+        .stat-box:hover {
+            transform: translateY(-5px);
+        }
+        .stat-icon {
+            font-size: 36px;
+            margin-bottom: 8px;
+        }
+        .stat-desc {
+            font-size: 15px;
+            color: #475569;
+            line-height: 1.4;
+        }
+        .stat-desc strong {
+            display: block;
+            font-size: 18px;
+            color: #0284c7;
+            margin-top: 4px;
+        }
+
+        /* 操作按钮 */
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+        }
+        .btn {
+            border: none;
+            border-radius: 50px;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 80%;
+            padding: 15px 0;
+            transition: all 0.1s;
+            font-family: inherit;
+            position: relative;
+            outline: none;
+        }
+        
+        /* 主按钮：再玩一次 */
+        .btn-primary {
+            background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%);
+            color: white;
+            box-shadow: 0 8px 0 #b45309, 0 15px 20px rgba(0,0,0,0.15);
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+        }
+        .btn-primary:active {
+            transform: translateY(8px);
+            box-shadow: 0 0 0 #b45309, 0 5px 10px rgba(0,0,0,0.1);
+        }
+
+        /* 副按钮：回学校 */
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #64748b;
+            box-shadow: 0 6px 0 #cbd5e1;
+            padding: 12px 0;
+            font-size: 18px;
+            width: 60%;
+        }
+        .btn-secondary:active {
+            transform: translateY(6px);
+            box-shadow: 0 0 0 #cbd5e1;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="bg-bubbles" id="bubbles"></div>
+
+    <div class="reward-card">
+        <h1 class="title">🎉 训练完成啦！ 🎉</h1>
+        
+        <div class="stars-container">
+            <div class="star" id="star1">★</div>
+            <div class="star" id="star2">★</div>
+            <div class="star" id="star3">★</div>
+        </div>
+
+        <p class="score-text">太棒了！你答对了 <span>9</span> 道题！</p>
+
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-icon">🚀</div>
+                <div class="stat-desc">平均速度<strong>1.1 秒</strong></div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-icon">🔍</div>
+                <div class="stat-desc">有<strong>3个</strong>小调皮排错队啦</div>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="alert('重新开始游戏逻辑！')">再玩一次！</button>
+            <button class="btn btn-secondary" onclick="alert('返回首页逻辑！')">回首页</button>
+        </div>
+    </div>
+
+    <script>
+        // 1. 背景气泡生成逻辑
+        const bubbleContainer = document.getElementById('bubbles');
+        for (let i = 0; i < 8; i++) {
+            let bubble = document.createElement('div');
+            bubble.classList.add('bubble');
+            let size = Math.random() * 60 + 20; // 20px - 80px
+            bubble.style.width = size + 'px';
+            bubble.style.height = size + 'px';
+            bubble.style.left = Math.random() * 100 + 'vw';
+            bubble.style.animationDuration = (Math.random() * 5 + 5) + 's'; // 5s - 10s
+            bubble.style.animationDelay = Math.random() * 2 + 's';
+            bubbleContainer.appendChild(bubble);
+        }
+
+        // 2. 星星依次点亮动画逻辑 (模拟得 2.5 颗星，这里用点亮 2 颗，第 3 颗保持灰色示例)
+        window.onload = () => {
+            // 设置一点延迟，等卡片弹出来之后再点亮星星
+            setTimeout(() => {
+                const star1 = document.getElementById('star1');
+                star1.classList.add('active', 'star-pop');
+            }, 600);
+
+            setTimeout(() => {
+                const star2 = document.getElementById('star2');
+                star2.classList.add('active', 'star-pop');
+            }, 1000);
+
+            setTimeout(() => {
+                const star3 = document.getElementById('star3');
+                // 第三个星星如果是错的比较多，就不加 active 类，只加弹出动画
+                star3.classList.add('star-pop'); 
+            }, 1400);
+        };
+    </script>
+
+</body>
+</html>
