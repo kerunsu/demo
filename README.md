@@ -1,5 +1,7 @@
 # E.I.Art server_demo
 
+协作前请先阅读 [`AGENTS.md`](AGENTS.md)，其中记录当前工作区边界、共享契约和跨模块影响说明要求。
+
 Flask + Flask-SocketIO + SQLAlchemy/SQLite 训练系统，包含教师端、儿童端、
 监控/配置台与机器人运行端（Robot Runtime）四类客户端。系统保留旧版
 HTTP/Socket 契约与会话文件命名；V2 控制接口为增量扩展，可回退到旧路径。
@@ -85,7 +87,7 @@ HTTP/Socket 契约与会话文件命名；V2 控制接口为增量扩展，可�
 - [运维](docs/OPERATIONS.md) —— 健康检查、备份、升级与回滚
 - [扩展](docs/EXTENDING.md) —— 设备、模型、对话与交互配置
 - [测试](docs/TESTING.md) —— 假设备、契约测试与发布门禁
-- [阶段 5 验收](docs/refactor/FINAL_ACCEPTANCE.md) —— 证据与阻塞项
+- [当前架构](docs/ARCHITECTURE.md) —— 当前模块边界与依赖方向
 - [教师端 Windows 控制锁修复 2026-08-10](docs/教师端Windows控制锁修复与验收记录-20260810.md)
   —— Windows `Errno 22` 根因、恢复行为与浏览器证据
 - [三端协同稳定性整改方案](docs/current/三端协同稳定性根因与分阶段整改方案.md)

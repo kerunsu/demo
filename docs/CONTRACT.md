@@ -1,9 +1,6 @@
 # Contract — HTTP, Socket and Runtime
 
-The machine-readable route/event inventory is
-`docs/refactor/contracts.snapshot.json`; the complete ownership matrix is
-`docs/refactor/traceability.matrix.json`. A snapshot change requires a fixture,
-an explanation and a compatibility decision.
+机器可读的 route/event 快照和所有权矩阵仍保留在 `docs/refactor/`，供测试和审计追溯；它们不是新的开发计划。快照发生变化时，必须同时补 fixture、变更说明和兼容性决定。
 
 ## Compatibility
 
