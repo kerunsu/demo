@@ -1,0 +1,449 @@
+version: '1.0'
+base_path: resources/audios
+entries:
+  greeting_hello:
+    category: system.greeting
+    intent: hello
+    description: 问候 - 你好
+    files:
+    - path: 016/001.mp3
+    - path: 016/002.mp3
+    - path: 016/003.mp3
+    - path: 016/004.mp3
+    - path: 016/005.mp3
+    - path: 017/001.mp3
+    - path: 017/002.mp3
+    - path: 017/003.mp3
+    - path: 017/004.mp3
+    - path: 017/005.mp3
+    selection: random
+  greeting_bye:
+    category: system.greeting
+    intent: bye
+    description: 告别 - 再见
+    files:
+    - path: 019/001.mp3
+    - path: 019/002.mp3
+    - path: 019/003.mp3
+    - path: 019/004.mp3
+    - path: 019/005.mp3
+    - path: 020/001.mp3
+    - path: 020/002.mp3
+    - path: 020/003.mp3
+    - path: 020/004.mp3
+    - path: 020/005.mp3
+    - path: 021/001.mp3
+    - path: 021/002.mp3
+    selection: random
+  social_greeting_intro:
+    category: course.social
+    intent: greeting_intro
+    description: 社交 - 初见打招呼（你好啊，我叫迈迈，你叫什么名字）
+    files:
+    - path: 016/
+    selection: random
+  social_greeting_play:
+    category: course.social
+    intent: greeting_play
+    description: 社交 - 一起玩耍吧（好的，那我们一起来玩游戏吧）
+    files:
+    - path: 018/
+    selection: random
+  social_farewell_bye:
+    category: course.social
+    intent: farewell_bye
+    description: 社交 - 再见
+    files:
+    - path: 020/
+    selection: random
+  social_farewell_reply:
+    category: course.social
+    intent: farewell_reply
+    description: 社交 - 回应
+    files:
+    - path: 019/
+    selection: random
+  attention_look_at_me:
+    category: system.attention
+    intent: look_at_me
+    description: 注意力引导 - 看我
+    files:
+    - path: 010/001.mp3
+    - path: 010/002.mp3
+    - path: 010/003.mp3
+    selection: random
+  attention_whats_this:
+    category: system.attention
+    intent: whats_this
+    description: 提问 - 这是什么
+    files:
+    - path: 011/001.mp3
+    - path: 011/002.mp3
+    - path: 011/003.mp3
+    - path: 011/004.mp3
+    selection: random
+  attention_demonstration:
+    category: system.attention
+    intent: demonstration
+    description: 演示 - 像我这样做
+    files:
+    - path: 012/001.mp3
+    - path: 012/002.mp3
+    - path: 012/003.mp3
+    - path: 012/004.mp3
+    - path: 012/005.mp3
+    selection: random
+  response_ok:
+    category: system.response
+    intent: ok
+    description: 通用回应 - 可以
+    files:
+    - path: 022/001.mp3
+    - path: 022/002.mp3
+    selection: random
+  response_dont_know:
+    category: system.response
+    intent: dont_know
+    description: 通用回应 - 不知道
+    files:
+    - path: 023/001.mp3
+    - path: 023/002.mp3
+    - path: 023/003.mp3
+    selection: random
+  praise_correct:
+    category: feedback.praise
+    intent: correct
+    description: 表扬 - 做对了
+    files:
+    - path: 301/001/001.mp3
+    - path: 301/001/002.mp3
+    - path: 301/001/003.mp3
+    - path: 301/001/004.mp3
+    - path: 301/001/005.mp3
+    - path: 301/001/006.mp3
+    - path: 301/001/007.mp3
+    selection: random
+    cooldown: 3
+  praise_attention:
+    category: feedback.praise
+    intent: good_attention
+    description: 表扬 - 注意力好
+    files:
+    - path: 306/001.mp3
+    - path: 306/002.mp3
+    - path: 306/003.mp3
+    - path: 306/004.mp3
+    - path: 306/005.mp3
+    selection: random
+  praise_like:
+    category: feedback.praise
+    intent: like
+    description: 表扬 - 点赞
+    files:
+    - path: 307/001.mp3
+    - path: 307/002.mp3
+    - path: 307/003.mp3
+    - path: 307/004.mp3
+    - path: 307/005.mp3
+    - path: 308/001.mp3
+    - path: 308/002.mp3
+    - path: 308/003.mp3
+    - path: 308/004.mp3
+    - path: 308/005.mp3
+    selection: random
+  praise_excellent:
+    category: feedback.praise
+    intent: excellent
+    description: 表扬 - 你真厉害
+    files:
+    - path: 309/001.mp3
+    - path: 309/002.mp3
+    - path: 309/003.mp3
+    - path: 309/004.mp3
+    - path: 309/005.mp3
+    selection: random
+  encourage_progress:
+    category: feedback.encourage
+    intent: progress
+    description: 鼓励 - 有进步
+    files:
+    - path: 310/001.mp3
+    - path: 310/002.mp3
+    - path: 310/003.mp3
+    - path: 310/004.mp3
+    - path: 310/005.mp3
+    selection: random
+  interaction_show_cat:
+    category: interaction.show
+    intent: show_cat
+    description: 展示 - 我来给你看看猫猫
+    files:
+    - path: 208/001.mp3
+    - path: 208/002.mp3
+    - path: 208/003.mp3
+    - path: 208/004.mp3
+    - path: 208/005.mp3
+    - path: 208/006.mp3
+    - path: 208/007.mp3
+    selection: random
+  interaction_observe_cat:
+    category: interaction.observe
+    intent: observe_cat
+    description: 观察确认 - 你在看猫猫哦
+    files:
+    - path: 211/001.mp3
+    - path: 211/002.mp3
+    - path: 211/003.mp3
+    - path: 211/004.mp3
+    - path: 211/005.mp3
+    - path: 211/006.mp3
+    selection: random
+  interaction_handshake:
+    category: interaction.action
+    intent: handshake
+    description: 动作引导 - 握手
+    files:
+    - path: 231/001.mp3
+    - path: 231/002.mp3
+    - path: 231/003.mp3
+    - path: 231/004.mp3
+    - path: 231/005.mp3
+    selection: random
+  interaction_touch_head:
+    category: interaction.action
+    intent: touch_head
+    description: 动作引导 - 摸头
+    files:
+    - path: 232/001.mp3
+    - path: 232/002.mp3
+    - path: 232/003.mp3
+    - path: 232/004.mp3
+    - path: 232/005.mp3
+    selection: random
+  interaction_hug:
+    category: interaction.action
+    intent: hug
+    description: 动作引导 - 抱抱
+    files:
+    - path: 233/001.mp3
+    - path: 233/002.mp3
+    - path: 233/003.mp3
+    - path: 233/004.mp3
+    - path: 233/005.mp3
+    selection: random
+  interaction_handshake_response:
+    category: interaction.response
+    intent: handshake_done
+    description: 动作回应 - 握手完成
+    files:
+    - path: 234/001.mp3
+    - path: 234/002.mp3
+    - path: 234/003.mp3
+    selection: random
+  interaction_touch_response:
+    category: interaction.response
+    intent: touch_done
+    description: 动作回应 - 摸头完成
+    files:
+    - path: 235/001.mp3
+    - path: 235/002.mp3
+    - path: 235/003.mp3
+    selection: random
+  interaction_hug_response:
+    category: interaction.response
+    intent: hug_done
+    description: 动作回应 - 抱抱完成
+    files:
+    - path: 236/001.mp3
+    - path: 236/002.mp3
+    - path: 236/003.mp3
+    selection: random
+  course_matching_prompt:
+    category: course.matching
+    intent: match_same
+    description: 配对 - 点一样的
+    files:
+    - path: 501/001.mp3
+    selection: sequential
+  course_matching_wrong:
+    category: course.matching
+    intent: wrong
+    description: 配对 - 点错了
+    files:
+    - path: 502/001.mp3
+    - path: 502/002.mp3
+    selection: random
+  course_comparison_big:
+    category: course.comparison
+    intent: select_big
+    description: 比较 - 选大的
+    files:
+    - path: 601/001.mp3
+    - path: 601/002.mp3
+    - path: 601/003.mp3
+    selection: random
+  course_comparison_small:
+    category: course.comparison
+    intent: select_small
+    description: 比较 - 选小的
+    files:
+    - path: 602/001.mp3
+    - path: 602/002.mp3
+    - path: 602/003.mp3
+    selection: random
+  course_comparison_more:
+    category: course.comparison
+    intent: select_more
+    description: 比较 - 选多的
+    files:
+    - path: 603/001.mp3
+    - path: 603/002.mp3
+    selection: random
+  course_comparison_less:
+    category: course.comparison
+    intent: select_less
+    description: 比较 - 选少的
+    files:
+    - path: 604/001.mp3
+    - path: 604/002.mp3
+    selection: random
+  vocalization_cat:
+    category: course.vocalization
+    intent: cat_sound
+    description: 拟声 - 猫叫
+    tags:
+    - animal
+    - cat
+    question_files:
+    - path: 701/001.mp3
+    answer_files:
+    - path: 708/001.mp3
+    - path: 708/002.mp3
+    - path: 708/003.mp3
+  vocalization_cow:
+    category: course.vocalization
+    intent: cow_sound
+    description: 拟声 - 牛叫
+    tags:
+    - animal
+    - cow
+    question_files:
+    - path: 702/001.mp3
+    answer_files:
+    - path: 709/001.mp3
+    - path: 709/002.mp3
+    - path: 709/003.mp3
+  vocalization_dog:
+    category: course.vocalization
+    intent: dog_sound
+    description: 拟声 - 狗叫
+    tags:
+    - animal
+    - dog
+    question_files:
+    - path: 703/001.mp3
+    answer_files:
+    - path: 710/001.mp3
+    - path: 710/002.mp3
+    - path: 710/003.mp3
+  vocalization_duck:
+    category: course.vocalization
+    intent: duck_sound
+    description: 拟声 - 鸭叫
+    tags:
+    - animal
+    - duck
+    question_files:
+    - path: 704/001.mp3
+    answer_files:
+    - path: 711/001.mp3
+    - path: 711/002.mp3
+    - path: 711/003.mp3
+  vocalization_sheep:
+    category: course.vocalization
+    intent: sheep_sound
+    description: 拟声 - 羊叫
+    tags:
+    - animal
+    - sheep
+    question_files:
+    - path: 705/001.mp3
+    answer_files:
+    - path: 712/001.mp3
+    - path: 712/002.mp3
+    - path: 712/003.mp3
+  vocalization_chicken:
+    category: course.vocalization
+    intent: chicken_sound
+    description: 拟声 - 鸡叫
+    tags:
+    - animal
+    - chicken
+    question_files:
+    - path: 706/001.mp3
+    answer_files:
+    - path: 713/001.mp3
+    - path: 713/002.mp3
+    - path: 713/003.mp3
+  vocalization_tiger:
+    category: course.vocalization
+    intent: tiger_sound
+    description: 拟声 - 虎叫
+    tags:
+    - animal
+    - tiger
+    question_files:
+    - path: 707/001.mp3
+    answer_files:
+    - path: 714/001.mp3
+    - path: 714/002.mp3
+    - path: 714/003.mp3
+  naming_question:
+    category: course.naming
+    intent: question
+    description: naming question
+    files:
+    - path: 011/001.mp3
+    selection: sequential
+aliases:
+  praise: praise_correct
+  question: attention_whats_this
+  hint: attention_look_at_me
+  hello: greeting_hello
+  bye: greeting_bye
+  look: attention_look_at_me
+  correct: praise_correct
+  good: praise_attention
+  excellent: praise_excellent
+course_defaults:
+  naming:
+    question: naming_question
+    praise: praise_correct
+    hint: attention_look_at_me
+  onomatopoeia:
+    question: attention_whats_this
+    praise: praise_correct
+  mimic:
+    question: attention_demonstration
+    praise: praise_attention
+    hint: attention_look_at_me
+  pairing:
+    question: course_matching_prompt
+    praise: praise_correct
+  ordering:
+    question: attention_whats_this
+    praise: praise_correct
+    # 八种题型提问（未单独配置时运行时回退到 question）
+    question_size_bigger: attention_whats_this
+    question_size_smaller: attention_whats_this
+    question_length_longer: attention_whats_this
+    question_length_shorter: attention_whats_this
+    question_height_taller: attention_whats_this
+    question_height_shorter: attention_whats_this
+    question_count_more: attention_whats_this
+    question_count_less: attention_whats_this
+  social:
+    social_greeting_intro: social_greeting_intro
+    social_greeting_play: social_greeting_play
+    social_farewell_bye: social_farewell_bye
+    social_farewell_reply: social_farewell_reply

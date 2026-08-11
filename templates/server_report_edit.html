@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>报告审核编辑 · Robot Training Console</title>
+  <link rel="stylesheet" href="/static/css/config_center.css" />
+  <link rel="stylesheet" href="/static/css/server.css">
+  <link rel="stylesheet" href="/static/css/server_report_edit.css">
+</head>
+<body class="cc-body mon-shell">
+  <header class="cc-topbar">
+    <div class="cc-brand">
+      <div class="cc-brand-mark">R</div>
+      <div class="cc-brand-text">
+        <strong>Robot Training Console</strong>
+        <span>报告审核</span>
+      </div>
+    </div>
+    <nav class="cc-top-nav" aria-label="主导航">
+      <a href="/server?view=monitor">实时监控</a>
+      <a href="/server/config/overview">配置中心</a>
+    </nav>
+    <div class="cc-top-actions">
+      <a class="cc-pill" href="/server?view=monitor">返回监控</a>
+    </div>
+  </header>
+
+  <div class="sre-workspace">
+    <main class="sre-page">
+      <div class="sre-toolbar">
+        <div class="sre-toolbar-text">
+          <div class="cc-breadcrumb">运营台 / 报告审核</div>
+          <h1 class="cc-page-title">查看并修改报告</h1>
+          <p class="cc-page-subtitle" id="sre-meta">会话：{{ training_session_id }}</p>
+        </div>
+        <div class="sre-actions">
+          <button type="button" class="cc-btn soft" id="sre-revert">撤回（算法初版）</button>
+          <button type="button" class="cc-btn soft" id="sre-save">保存</button>
+          <button type="button" class="cc-btn primary" id="sre-publish">推送教师端</button>
+        </div>
+      </div>
+      <p class="sre-status" id="sre-status">加载中…</p>
+
+      <div class="sre-grid">
+        <section class="sre-card">
+          <h2>综合与维度</h2>
+          <label class="sre-field">综合分 <input type="number" id="sre-overall" min="0" max="100" step="0.1" /></label>
+          <label class="sre-field">等级 <input type="text" id="sre-grade" /></label>
+          <div id="sre-dimensions" class="sre-dim-list"></div>
+          <h3>课型分</h3>
+          <div id="sre-courses" class="sre-dim-list"></div>
+        </section>
+        <section class="sre-card">
+          <h2>叙事与干预建议</h2>
+          <label class="sre-field block">综合分析
+            <textarea id="sre-analysis" rows="6"></textarea>
+          </label>
+          <div class="sre-rec-head">
+            <h3>干预建议</h3>
+            <button type="button" class="cc-btn soft" id="sre-add-rec">添加一条</button>
+          </div>
+          <div id="sre-recs"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    window.__REPORT_EDIT_ID__ = {{ training_session_id|tojson }};
+  </script>
+  <script src="/static/js/server_report_edit.js"></script>
+</body>
+</html>

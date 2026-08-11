@@ -1,0 +1,93 @@
+# 分析器配置文件示例
+# 复制此文件为 config/analyzers.yaml 并根据需要修改
+
+# 全局配置
+global:
+  # 全局模式: 'mock' 或 'real'（仓库默认 real；无模型时用 USE_REAL_ANALYZERS=false）
+  # 环境变量 USE_REAL_ANALYZERS=true/false 可以覆盖此设置
+  mode: real
+  
+  # 是否启用采样控制
+  enable_sampling: true
+  
+  # 是否启用性能指标收集
+  enable_metrics: false
+
+# 分析器配置
+analyzers:
+  # 姿态分析器
+  pose:
+    mode: null  # null 表示继承 global.mode
+    enabled: true
+    sample_rate: 1.0  # 1.0 = 每帧分析，0.5 = 每2帧分析1次
+    
+    # Real 模式参数
+    model_path: models/pose_landmarker_lite.task
+    min_detection_confidence: 0.5
+    num_poses: 1
+  
+  # 表情分析器
+  face:
+    mode: null
+    enabled: true
+    sample_rate: 1.0
+    
+    # Real 模式参数（待实现）
+    model_path: models/face_model.onnx
+    confidence_threshold: 0.6
+  
+  # 注意力分析器
+  attention:
+    mode: null
+    enabled: true
+    window_size: 10.0  # 滑动窗口大小（秒）
+    
+    # Real 模式参数 (MediaPipe Face Mesh)
+    pose_threshold: 20.0  # 头部偏转阈值（度）
+    min_detection_confidence: 0.5
+    min_tracking_confidence: 0.5
+  
+  # 语音识别分析器
+  speech:
+    mode: null
+    enabled: true
+    sample_rate: 1.0
+    
+    # Real 模式参数 (FunASR Paraformer)
+    model_name: paraformer-zh  # FunASR 模型名称
+    device: cuda               # 推理设备: cuda 或 cpu
+    sample_rate_audio: 16000   # 音频采样率
+
+# 比对器配置
+matchers:
+  # 姿态比对器
+  pose:
+    mode: null
+    enabled: true
+    threshold: 0.85  # 匹配阈值（0-1）
+  
+  # 语音比对器
+  speech:
+    mode: null
+    enabled: true
+    threshold: 60.0  # 及格分数线 (0-100)
+
+# 性能优化配置
+performance:
+  # 最大并发分析数
+  max_concurrent_analyzers: 4
+  
+  # 分析超时时间（秒）
+  analysis_timeout: 5.0
+  
+  # 队列大小
+  queue_size: 100
+
+# 日志配置
+logging:
+  # 日志级别: DEBUG, INFO, WARNING, ERROR
+  level: INFO
+  
+  # 是否记录性能指标
+  log_metrics: true
+

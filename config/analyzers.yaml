@@ -1,0 +1,52 @@
+analyzers:
+  attention:
+    enabled: true
+    min_detection_confidence: 0.5
+    min_tracking_confidence: 0.5
+    mode: null
+    pose_threshold: 20
+    window_size: 10
+  face:
+    confidence_threshold: 0.6
+    enabled: true
+    mode: null
+    model_path: models/face_model.onnx
+    sample_rate: 1
+  pose:
+    enabled: true
+    min_detection_confidence: 0.5
+    mode: real
+    model_path: models/pose_landmarker_lite.task
+    num_poses: 1
+    sample_rate: 1
+  speech:
+    accumulation_duration: 2
+    device: cuda
+    enabled: true
+    language: zh
+    mode: null
+    model_name: paraformer-zh
+    model_path: models/whisper_tiny.bin
+    sample_rate: 1
+    sample_rate_audio: 16000
+global:
+  enable_metrics: false
+  enable_sampling: true
+  # 生产默认 Real；无模型/创建失败时 Registry 回退 Mock
+  mode: real
+logging:
+  level: INFO
+  log_metrics: true
+matchers:
+  pose:
+    enabled: true
+    mode: real
+    threshold: 0.85
+  speech:
+    enabled: true
+    mode: real
+    threshold: 60
+performance:
+  analysis_timeout: 5
+  max_concurrent_analyzers: 4
+  queue_size: 100

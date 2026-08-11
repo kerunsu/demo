@@ -1,0 +1,534 @@
+[
+  {
+    "id": "preset-1784363746860-9b9878",
+    "name": "空动作",
+    "notes": "",
+    "durationMs": 2400,
+    "neutral": 200,
+    "armBaselineVersion": 2,
+    "centers": {
+      "pitch": 200,
+      "yaw": 160,
+      "arml": 320,
+      "armr": 50
+    },
+    "actions": [
+      {
+        "id": "action-1784289383180-e092b5",
+        "axis": "pitch",
+        "label": "Pitch 动作",
+        "startMs": 0,
+        "angle": 200,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 160,
+        "returnToCenter": true,
+        "returnMoveMs": 360
+      },
+      {
+        "id": "action-1784289396876-782c3b",
+        "axis": "yaw",
+        "label": "Yaw 动作",
+        "startMs": 0,
+        "angle": 160,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 160,
+        "returnToCenter": true,
+        "returnMoveMs": 360
+      },
+      {
+        "id": "action-1784289399747-fb6ed8",
+        "axis": "arml",
+        "label": "ArmL 动作",
+        "startMs": 0,
+        "angle": 320,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 160,
+        "returnToCenter": true,
+        "returnMoveMs": 360
+      },
+      {
+        "id": "action-1784289400800-a37a9a",
+        "axis": "armr",
+        "label": "ArmR 动作",
+        "startMs": 0,
+        "angle": 50,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 160,
+        "returnToCenter": true,
+        "returnMoveMs": 360
+      }
+    ],
+    "expression": {
+      "mediaId": "",
+      "offsetMs": 0,
+      "durationMs": 1000,
+      "loop": true
+    },
+    "updatedAt": "2026-07-18T08:35:46.867Z"
+  },
+  {
+    "id": "preset-1777523894863-ef1bcd",
+    "name": "01-打招呼",
+    "notes": "右臂挥两次，头部略微抬起。",
+    "durationMs": 2438,
+    "neutral": 200,
+    "armBaselineVersion": 2,
+    "centers": {
+      "pitch": 200,
+      "yaw": 160,
+      "arml": 320,
+      "armr": 50
+    },
+    "actions": [
+      {
+        "id": "action-1777523369571-c591b9",
+        "axis": "armr",
+        "label": "挥手 1",
+        "startMs": 120,
+        "angle": 95,
+        "moveMs": 620,
+        "requestedMoveMs": 620,
+        "holdMs": 0,
+        "returnToCenter": true,
+        "returnMoveMs": 360
+      },
+      {
+        "id": "action-1777523369571-615158",
+        "axis": "armr",
+        "label": "挥手 2",
+        "startMs": 1320,
+        "angle": 95,
+        "moveMs": 620,
+        "requestedMoveMs": 620,
+        "holdMs": 70,
+        "returnToCenter": true,
+        "returnMoveMs": 360
+      },
+      {
+        "id": "action-1777613910640-a0e797",
+        "axis": "pitch",
+        "label": "Pitch 动作",
+        "startMs": 360,
+        "angle": 185,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 660,
+        "returnToCenter": true,
+        "returnMoveMs": 360
+      }
+    ],
+    "expression": {
+      "mediaId": "v2开心.mp4",
+      "offsetMs": 0,
+      "durationMs": 2438,
+      "loop": true
+    },
+    "updatedAt": "2026-07-18T09:16:23.330Z"
+  },
+  {
+    "id": "preset-1777432436699-299c24",
+    "name": "04-摇头再来一次",
+    "notes": "",
+    "durationMs": 3000,
+    "neutral": 200,
+    "armBaselineVersion": 2,
+    "centers": {
+      "pitch": 200,
+      "yaw": 160,
+      "arml": 320,
+      "armr": 50
+    },
+    "actions": [
+      {
+        "id": "action-1784288802266-792e2e",
+        "axis": "yaw",
+        "label": "Yaw 动作",
+        "startMs": 380,
+        "angle": 178,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 160,
+        "returnToCenter": true,
+        "returnMoveMs": 360
+      },
+      {
+        "id": "action-1784288813704-49e516",
+        "axis": "yaw",
+        "label": "Yaw 动作 副本",
+        "startMs": 1180,
+        "angle": 142,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 160,
+        "returnToCenter": true,
+        "returnMoveMs": 360
+      },
+      {
+        "id": "action-1784288903018-4c95ce",
+        "axis": "arml",
+        "label": "ArmL 动作",
+        "startMs": 400,
+        "angle": 302,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 160,
+        "returnToCenter": true,
+        "returnMoveMs": 360
+      },
+      {
+        "id": "action-1784288904120-6b79c2",
+        "axis": "armr",
+        "label": "ArmR 动作",
+        "startMs": 400,
+        "angle": 68,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 160,
+        "returnToCenter": true,
+        "returnMoveMs": 360
+      }
+    ],
+    "expression": {
+      "mediaId": "",
+      "offsetMs": 0,
+      "durationMs": 3000,
+      "loop": true
+    },
+    "updatedAt": "2026-07-17T11:49:06.358Z"
+  },
+  {
+    "id": "preset-child-01",
+    "name": "03-表扬",
+    "notes": "双臂轻轻上扬并做一次小幅庆祝摆动，头部轻点确认，最后自然回中。 设计理由：表扬动作需要明显但不过度兴奋。双臂上扬传达积极情绪，点头表示认可；幅度保持中等，避免儿童感到突然或压迫。",
+    "durationMs": 2580,
+    "neutral": 200,
+    "armBaselineVersion": 2,
+    "centers": {
+      "pitch": 200,
+      "yaw": 160,
+      "arml": 320,
+      "armr": 50
+    },
+    "actions": [
+      {
+        "id": "child-01-01",
+        "axis": "arml",
+        "label": "左臂上扬",
+        "startMs": 420,
+        "angle": 275,
+        "moveMs": 320,
+        "requestedMoveMs": 320,
+        "holdMs": 120,
+        "returnToCenter": true,
+        "returnMoveMs": 420
+      },
+      {
+        "id": "child-01-02",
+        "axis": "armr",
+        "label": "右臂上扬",
+        "startMs": 420,
+        "angle": 95,
+        "moveMs": 320,
+        "requestedMoveMs": 320,
+        "holdMs": 120,
+        "returnToCenter": true,
+        "returnMoveMs": 420
+      },
+      {
+        "id": "child-01-03",
+        "axis": "pitch",
+        "label": "轻点头确认",
+        "startMs": 380,
+        "angle": 208,
+        "moveMs": 260,
+        "requestedMoveMs": 260,
+        "holdMs": 240,
+        "returnToCenter": true,
+        "returnMoveMs": 380
+      },
+      {
+        "id": "child-01-04",
+        "axis": "arml",
+        "label": "左臂小幅回弹",
+        "startMs": 1380,
+        "angle": 275,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 80,
+        "returnToCenter": true,
+        "returnMoveMs": 380
+      },
+      {
+        "id": "child-01-05",
+        "axis": "armr",
+        "label": "右臂小幅回弹",
+        "startMs": 1420,
+        "angle": 95,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 80,
+        "returnToCenter": true,
+        "returnMoveMs": 380
+      },
+      {
+        "id": "child-01-06",
+        "axis": "pitch",
+        "label": "回看孩子",
+        "startMs": 1320,
+        "angle": 208,
+        "moveMs": 260,
+        "requestedMoveMs": 260,
+        "holdMs": 120,
+        "returnToCenter": true,
+        "returnMoveMs": 380
+      }
+    ],
+    "expression": {
+      "mediaId": "兴奋 (1).mp4",
+      "offsetMs": 0,
+      "durationMs": 2580,
+      "loop": true
+    },
+    "updatedAt": "2026-07-17T03:35:33.101Z"
+  },
+  {
+    "id": "preset-child-02",
+    "name": "02-提问",
+    "notes": "头部轻微前倾，右手半抬作邀请姿态，停顿后回中。 设计理由：提问动作应降低控制感、增加邀请感。轻微前倾表示关注，单手半抬像把话语权交给孩子，停顿给孩子思考时间。",
+    "durationMs": 2120,
+    "neutral": 200,
+    "armBaselineVersion": 2,
+    "centers": {
+      "pitch": 200,
+      "yaw": 160,
+      "arml": 320,
+      "armr": 50
+    },
+    "actions": [
+      {
+        "id": "child-02-01",
+        "axis": "pitch",
+        "label": "轻微前倾关注",
+        "startMs": 120,
+        "angle": 218,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 700,
+        "returnToCenter": true,
+        "returnMoveMs": 420
+      },
+      {
+        "id": "child-02-02",
+        "axis": "armr",
+        "label": "右手邀请回答",
+        "startMs": 240,
+        "angle": 95,
+        "moveMs": 320,
+        "requestedMoveMs": 320,
+        "holdMs": 620,
+        "returnToCenter": true,
+        "returnMoveMs": 440
+      }
+    ],
+    "expression": {
+      "mediaId": "",
+      "offsetMs": 0,
+      "durationMs": 2120,
+      "loop": true
+    },
+    "updatedAt": "2026-07-18T12:21:36.269Z"
+  },
+  {
+    "id": "preset-child-11",
+    "name": "05-吸引注意01",
+    "notes": "右手慢速小幅挥动两次，头部保持面向儿童并轻微前倾。 设计理由：先叫名字再做小动作，符合儿童注意唤回顺序。小幅挥手比突然大动作更不容易惊吓儿童。",
+    "durationMs": 2700,
+    "neutral": 200,
+    "armBaselineVersion": 2,
+    "centers": {
+      "pitch": 200,
+      "yaw": 160,
+      "arml": 320,
+      "armr": 50
+    },
+    "actions": [
+      {
+        "id": "child-11-01",
+        "axis": "pitch",
+        "label": "轻微前倾看孩子",
+        "startMs": 420,
+        "angle": 218,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 900,
+        "returnToCenter": true,
+        "returnMoveMs": 420
+      },
+      {
+        "id": "child-11-02",
+        "axis": "armr",
+        "label": "右手轻挥 1",
+        "startMs": 300,
+        "angle": 95,
+        "moveMs": 400,
+        "requestedMoveMs": 400,
+        "holdMs": 80,
+        "returnToCenter": true,
+        "returnMoveMs": 420
+      },
+      {
+        "id": "child-11-03",
+        "axis": "armr",
+        "label": "右手轻挥 2",
+        "startMs": 1280,
+        "angle": 95,
+        "moveMs": 420,
+        "requestedMoveMs": 420,
+        "holdMs": 80,
+        "returnToCenter": true,
+        "returnMoveMs": 420
+      }
+    ],
+    "expression": {
+      "mediaId": "",
+      "offsetMs": 0,
+      "durationMs": 2700,
+      "loop": true
+    },
+    "updatedAt": "2026-07-18T12:21:51.475Z"
+  },
+  {
+    "id": "preset-child-12",
+    "name": "06-吸引注意02",
+    "notes": "头部轻轻低头回到屏幕，双手小幅收拢到屏幕边缘，形成安静的聚焦提示。 设计理由：这是安静版唤回动作，适合孩子已经有点分心但不需要挥手强提醒的情况。低头看屏比转头更符合抱屏结构。",
+    "durationMs": 2140,
+    "neutral": 200,
+    "armBaselineVersion": 2,
+    "centers": {
+      "pitch": 200,
+      "yaw": 160,
+      "arml": 320,
+      "armr": 50
+    },
+    "actions": [
+      {
+        "id": "child-12-01",
+        "axis": "pitch",
+        "label": "安静低头看屏",
+        "startMs": 100,
+        "angle": 212,
+        "moveMs": 320,
+        "requestedMoveMs": 320,
+        "holdMs": 760,
+        "returnToCenter": true,
+        "returnMoveMs": 460
+      },
+      {
+        "id": "child-12-02",
+        "axis": "arml",
+        "label": "左手轻收指向屏幕",
+        "startMs": 280,
+        "angle": 275,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 600,
+        "returnToCenter": true,
+        "returnMoveMs": 420
+      },
+      {
+        "id": "child-12-03",
+        "axis": "armr",
+        "label": "右手轻收指向屏幕",
+        "startMs": 280,
+        "angle": 95,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 600,
+        "returnToCenter": true,
+        "returnMoveMs": 420
+      }
+    ],
+    "expression": {
+      "mediaId": "",
+      "offsetMs": 0,
+      "durationMs": 2140,
+      "loop": true
+    },
+    "updatedAt": "2026-07-17T11:28:13.740Z"
+  },
+  {
+    "id": "preset-child-16",
+    "name": "07-再见",
+    "notes": "右手慢速挥手两次，头部轻微转向儿童并回中，结束姿态稳定。 设计理由：结束动作要清楚但舒缓，帮助儿童理解互动结束。慢速挥手比快速摆动更适合收尾，稳定回中避免留下紧张感。",
+    "durationMs": 2920,
+    "neutral": 200,
+    "armBaselineVersion": 2,
+    "centers": {
+      "pitch": 200,
+      "yaw": 160,
+      "arml": 320,
+      "armr": 50
+    },
+    "actions": [
+      {
+        "id": "child-16-01",
+        "axis": "yaw",
+        "label": "轻微转向孩子",
+        "startMs": 280,
+        "angle": 170,
+        "moveMs": 320,
+        "requestedMoveMs": 320,
+        "holdMs": 900,
+        "returnToCenter": true,
+        "returnMoveMs": 480
+      },
+      {
+        "id": "child-16-02",
+        "axis": "pitch",
+        "label": "温和告别注视",
+        "startMs": 280,
+        "angle": 192,
+        "moveMs": 300,
+        "requestedMoveMs": 300,
+        "holdMs": 920,
+        "returnToCenter": true,
+        "returnMoveMs": 460
+      },
+      {
+        "id": "child-16-03",
+        "axis": "armr",
+        "label": "拜拜挥手 1",
+        "startMs": 360,
+        "angle": 95,
+        "moveMs": 420,
+        "requestedMoveMs": 420,
+        "holdMs": 80,
+        "returnToCenter": true,
+        "returnMoveMs": 460
+      },
+      {
+        "id": "child-16-04",
+        "axis": "armr",
+        "label": "拜拜挥手 2",
+        "startMs": 1420,
+        "angle": 95,
+        "moveMs": 420,
+        "requestedMoveMs": 420,
+        "holdMs": 80,
+        "returnToCenter": true,
+        "returnMoveMs": 500
+      }
+    ],
+    "expression": {
+      "mediaId": "",
+      "offsetMs": 0,
+      "durationMs": 2920,
+      "loop": true
+    },
+    "updatedAt": "2026-07-18T09:27:23.261Z"
+  }
+]

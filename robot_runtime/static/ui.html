@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Robot Runtime</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e7ecf3;
+      --muted: #8b9bb4;
+      --ok: #3d9a5f;
+      --bad: #c44;
+      --accent: #4a8fd4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      line-height: 1.45;
+    }
+    h1 { font-size: 1.35rem; margin: 0 0 8px; font-weight: 600; }
+    .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+    .grid { display: grid; gap: 12px; max-width: 640px; }
+    .card {
+      background: var(--card);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+    .label { color: var(--muted); font-size: 0.85rem; }
+    .val { font-weight: 600; word-break: break-all; text-align: right; }
+    .dot {
+      display: inline-block;
+      width: 8px; height: 8px; border-radius: 50%;
+      margin-right: 6px; vertical-align: middle;
+    }
+    .dot.on { background: var(--ok); }
+    .dot.off { background: var(--bad); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    button, a.btn {
+      appearance: none; border: 0; border-radius: 8px;
+      padding: 8px 14px; font-size: 0.9rem; cursor: pointer;
+      background: var(--accent); color: #fff; text-decoration: none;
+      display: inline-block;
+    }
+    button.secondary { background: #2a3548; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .err { color: #f88; font-size: 0.85rem; margin-top: 8px; }
+    .okmsg { color: #7dcea0; font-size: 0.85rem; margin-top: 8px; }
+    .hint { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+    code { font-size: 0.85rem; color: #b8d4f0; }
+    label.field {
+      display: block; color: var(--muted); font-size: 0.85rem; margin: 10px 0 4px;
+    }
+    input[type="text"], input[type="password"] {
+      width: 100%; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid #2a3548; background: #0f1419; color: var(--text);
+      font-size: 0.95rem;
+    }
+    progress { width: 100%; height: 12px; margin: 10px 0 6px; accent-color: var(--ok); }
+  </style>
+</head>
+<body>
+  <h1>Robot Runtime</h1>
+  <p class="sub">机器人端统一进程：媒体采集 + DollSer OSC。本页仅供运维，业务请用后端 /child 与 /robot/emotion。<br /><span style="color:#7dcea0">热更新验收标记：hotupdate-test-3</span></p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">后端连接（可在此修改并应用）</div>
+      <label class="field" for="input-backend">后端地址</label>
+      <input id="input-backend" type="text" placeholder="http://192.168.1.10:8080" autocomplete="off" />
+      <label class="field" for="input-key">Runtime 密钥（可选，与后端 ROBOT_RUNTIME_KEY 一致）</label>
+      <input id="input-key" type="password" placeholder="未设置可留空" autocomplete="off" />
+      <div class="actions">
+        <button type="button" id="btn-apply">应用并注册</button>
+      </div>
+      <div class="okmsg" id="applyOk"></div>
+      <div class="err" id="applyErr"></div>
+      <div class="row" style="margin-top:12px"><span class="label">当前后端</span><span class="val" id="backend">—</span></div>
+      <div class="row"><span class="label">后端注册</span><span class="val" id="reg">—</span></div>
+      <div class="row"><span class="label">上报地址</span><span class="val" id="adv">—</span></div>
+      <div class="row"><span class="label">密钥已配置</span><span class="val" id="key">—</span></div>
+      <div class="row"><span class="label">配置文件</span><span class="val" id="cfg" style="font-size:12px">—</span></div>
+      <div class="err" id="regErr"></div>
+    </div>
+
+    <div class="card">
+      <div class="label">本地音视频目录</div>
+      <div class="row"><span class="label">当前路径</span><span class="val" id="dataDir">—</span></div>
+      <label class="field" for="input-media-dir">新路径</label>
+      <input id="input-media-dir" type="text" placeholder="例如 D:\EIArt\media" autocomplete="off" />
+      <div class="actions">
+        <button type="button" id="btn-media-dir">应用路径</button>
+      </div>
+      <div class="okmsg" id="mediaOk"></div>
+      <div class="err" id="mediaErr"></div>
+      <p class="hint" id="mediaHint">录制中不可修改。若设置了环境变量 CHILD_MEDIA_DATA_DIR，则以环境变量为准。</p>
+    </div>
+
+    <div class="card">
+      <div class="label">版本与更新</div>
+      <div class="row"><span class="label">本地版本</span><span class="val" id="localVer">—</span></div>
+      <div class="row"><span class="label">远端版本</span><span class="val" id="remoteVer">—</span></div>
+      <div class="row"><span class="label">运行形态</span><span class="val" id="frozen">—</span></div>
+      <div class="row"><span class="label">有更新</span><span class="val" id="updAvail">—</span></div>
+      <div class="actions">
+        <button type="button" id="btn-check-upd">检查更新</button>
+        <button type="button" id="btn-apply-upd" class="secondary">立即更新</button>
+      </div>
+      <div class="okmsg" id="updOk"></div>
+      <div class="err" id="updErr"></div>
+      <p class="hint">立即更新会下载服务器发布包并替换 RobotRuntime.exe，然后自动重启（仅 exe 包）。不覆盖 DollSer。</p>
+    </div>
+
+    <div class="card">
+      <div class="row"><span class="label">表情准备</span><span class="val" id="emotionWarmState">等待表情页</span></div>
+      <progress id="emotionWarmProgress" value="0" max="1"></progress>
+      <div class="row"><span class="label" id="emotionWarmCount">0 / 0</span><span class="val" id="emotionWarmCurrent">—</span></div>
+      <div class="hint" id="emotionWarmPackage">—</div>
+      <div class="err" id="emotionWarmError"></div>
+      <div class="actions">
+        <button type="button" class="secondary" id="btn-open-emotion">打开并准备表情</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row"><span class="label">服务</span><span class="val" id="service">—</span></div>
+      <div class="row"><span class="label">录制中</span><span class="val" id="rec">—</span></div>
+      <div class="row"><span class="label">设备占用</span><span class="val" id="dev">—</span></div>
+      <div class="row"><span class="label">会话</span><span class="val" id="sid">—</span></div>
+      <div class="row"><span class="label">上行队列</span><span class="val" id="upq">—</span></div>
+      <div class="row"><span class="label">补传状态</span><span class="val" id="upl">—</span></div>
+    </div>
+
+    <div class="card">
+      <div class="row"><span class="label">OSC 目标</span><span class="val" id="osc">—</span></div>
+      <div class="row"><span class="label">动作播放中</span><span class="val" id="playing">—</span></div>
+      <div class="row"><span class="label">最近 OSC 错误</span><span class="val" id="oscErr">—</span></div>
+    </div>
+
+    <div class="card">
+      <div class="label">操作</div>
+      <div class="actions">
+        <button type="button" id="btn-refresh">刷新状态</button>
+        <button type="button" id="btn-register" class="secondary">重新注册</button>
+        <button type="button" id="btn-stop-rec" class="secondary">停止录制</button>
+        <button type="button" class="secondary" id="btn-open-child" disabled title="用 LAN mic 脚本打开 /child（需已配置后端）">打开 /child</button>
+        <a class="btn secondary" id="link-emotion" href="#" target="_blank" rel="noopener">打开 /robot/emotion</a>
+        <a class="btn secondary" href="/preview.mjpeg" target="_blank" rel="noopener">预览流</a>
+      </div>
+      <div class="err" id="actionErr"></div>
+    </div>
+  </div>
+
+  <script>
+    let _backendInputTouched = false;
+    let _mediaInputTouched = false;
+    let _lastStatus = null;
+
+    function onOff(v) {
+      const cls = v ? "on" : "off";
+      const text = v ? "是" : "否";
+      return `<span class="dot ${cls}"></span>${text}`;
+    }
+
+    async function loadStatus() {
+      const s = await fetch("/ui/status.json").then((r) => r.json());
+      _lastStatus = s;
+      document.getElementById("service").textContent = s.service || "robot_runtime";
+      document.getElementById("reg").innerHTML = onOff(!!s.backendRegistered);
+      document.getElementById("adv").textContent = s.advertisedUrl || "—";
+      const backend = s.backendUrl || s.backendBaseUrl || "";
+      document.getElementById("backend").textContent = backend || "—";
+      if (!_backendInputTouched && backend) {
+        document.getElementById("input-backend").value = backend;
+      }
+      document.getElementById("key").textContent = s.keyConfigured ? "是" : "否";
+      document.getElementById("cfg").textContent = s.configPath || "—";
+      document.getElementById("regErr").textContent = s.lastRegisterError || "";
+
+      document.getElementById("rec").innerHTML = onOff(!!s.recording);
+      document.getElementById("dev").innerHTML = onOff(!!s.deviceOpen);
+      document.getElementById("sid").textContent = s.sessionId || "—";
+      document.getElementById("upq").textContent = String(s.uplinkQueue ?? "—");
+      document.getElementById("upl").textContent = s.uploadState || "—";
+
+      document.getElementById("osc").textContent = s.oscTarget || "—";
+      document.getElementById("playing").innerHTML = onOff(!!s.playing);
+      document.getElementById("oscErr").textContent = s.lastOscError || "—";
+
+      document.getElementById("dataDir").textContent = s.dataDir || "—";
+      if (!_mediaInputTouched && s.dataDir) {
+        document.getElementById("input-media-dir").value = s.dataDir;
+      }
+      const mediaBtn = document.getElementById("btn-media-dir");
+      mediaBtn.disabled = !!s.recording || s.dataDirEditable === false;
+
+      document.getElementById("localVer").textContent = s.runtimeVersion || "—";
+      document.getElementById("frozen").textContent = s.frozen ? "exe (frozen)" : "源码 (python)";
+
+      const warm = s.emotionPrewarm || {};
+      const warmTotal = Number(warm.total || 0);
+      const warmCompleted = Number(warm.completed || 0);
+      const warmProgress = document.getElementById("emotionWarmProgress");
+      warmProgress.max = Math.max(1, warmTotal);
+      warmProgress.value = Math.min(warmCompleted, warmProgress.max);
+      document.getElementById("emotionWarmCount").textContent = `${warmCompleted} / ${warmTotal}`;
+      document.getElementById("emotionWarmCurrent").textContent = warm.current || "—";
+      document.getElementById("emotionWarmPackage").textContent =
+        `包内 ${Number(warm.packagedCount || 0)} 个，共 ${Math.round(Number(warm.packagedBytes || 0) / 1048576)} MB`;
+      const warmFailed = Array.isArray(warm.failed) ? warm.failed : [];
+      document.getElementById("emotionWarmError").textContent =
+        warmFailed.length ? `失败：${warmFailed.join("、")}` : "";
+      document.getElementById("emotionWarmState").textContent = warm.ready
+        ? "已就绪"
+        : warm.stale
+          ? "表情页未运行"
+          : warm.phase === "failed"
+            ? "准备失败"
+            : warm.phase === "preparing"
+              ? "准备中"
+              : "等待表情页";
+
+      const base = (s.backendPublicUrl || s.backendUrl || "").replace(/\/$/, "");
+      const openChildBtn = document.getElementById("btn-open-child");
+      const emotion = document.getElementById("link-emotion");
+      if (base) {
+        openChildBtn.disabled = false;
+        emotion.href = base + "/robot/emotion";
+        emotion.style.opacity = "1";
+      } else {
+        openChildBtn.disabled = true;
+        emotion.removeAttribute("href");
+        emotion.style.opacity = "0.4";
+      }
+      return s;
+    }
+
+    document.getElementById("input-backend").addEventListener("input", () => {
+      _backendInputTouched = true;
+    });
+    document.getElementById("input-media-dir").addEventListener("input", () => {
+      _mediaInputTouched = true;
+    });
+
+    async function applyAndRegister() {
+      document.getElementById("applyOk").textContent = "";
+      document.getElementById("applyErr").textContent = "";
+      document.getElementById("actionErr").textContent = "";
+      const backendUrl = document.getElementById("input-backend").value.trim().replace(/\/$/, "");
+      const runtimeKey = document.getElementById("input-key").value;
+      if (!backendUrl) {
+        document.getElementById("applyErr").textContent = "请填写后端地址，例如 http://192.168.1.10:8080";
+        return;
+      }
+      if (!/^https?:\/\//i.test(backendUrl)) {
+        document.getElementById("applyErr").textContent = "地址需以 http:// 或 https:// 开头";
+        return;
+      }
+      const body = { backendUrl };
+      if (runtimeKey !== "") body.runtimeKey = runtimeKey;
+      try {
+        const resp = await fetch("/register/now", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        await loadStatus();
+        if (!data.ok) {
+          document.getElementById("applyErr").textContent =
+            data.lastRegisterError || data.error || "注册失败（已保存地址，请检查后端是否可达）";
+        } else {
+          document.getElementById("applyOk").textContent = "已保存并注册成功";
+          _backendInputTouched = false;
+        }
+      } catch (e) {
+        document.getElementById("applyErr").textContent = String(e);
+      }
+    }
+
+    document.getElementById("btn-apply").onclick = applyAndRegister;
+
+    document.getElementById("btn-media-dir").onclick = async () => {
+      document.getElementById("mediaOk").textContent = "";
+      document.getElementById("mediaErr").textContent = "";
+      const path = document.getElementById("input-media-dir").value.trim();
+      if (!path) {
+        document.getElementById("mediaErr").textContent = "请填写本地保存路径";
+        return;
+      }
+      try {
+        const resp = await fetch("/config/media-dir", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path }),
+        });
+        const data = await resp.json();
+        await loadStatus();
+        if (!data.ok) {
+          document.getElementById("mediaErr").textContent = data.error || "设置失败";
+        } else {
+          document.getElementById("mediaOk").textContent = "已保存：新会话将写入该目录";
+          _mediaInputTouched = false;
+        }
+      } catch (e) {
+        document.getElementById("mediaErr").textContent = String(e);
+      }
+    };
+
+    async function checkUpdate() {
+      document.getElementById("updOk").textContent = "";
+      document.getElementById("updErr").textContent = "";
+      try {
+        const resp = await fetch("/update/check");
+        const data = await resp.json();
+        document.getElementById("localVer").textContent = data.localVersion || "—";
+        document.getElementById("remoteVer").textContent = data.remoteVersion || "—";
+        document.getElementById("updAvail").innerHTML = onOff(!!data.updateAvailable);
+        document.getElementById("frozen").textContent = data.frozen ? "exe (frozen)" : "源码 (python)";
+        if (!data.ok) {
+          document.getElementById("updErr").textContent = data.error || "检查失败";
+        } else if (data.updateAvailable) {
+          document.getElementById("updOk").textContent =
+            "发现新版本 " + data.remoteVersion + (data.sizeBytes ? "（约 " + Math.round(data.sizeBytes / 1048576) + " MB）" : "");
+        } else if (!data.available) {
+          document.getElementById("updErr").textContent = "服务器上尚无发布包";
+        } else {
+          document.getElementById("updOk").textContent = "已是最新版本";
+        }
+        return data;
+      } catch (e) {
+        document.getElementById("updErr").textContent = String(e);
+        return null;
+      }
+    }
+
+    document.getElementById("btn-check-upd").onclick = checkUpdate;
+
+    document.getElementById("btn-apply-upd").onclick = async () => {
+      document.getElementById("updOk").textContent = "";
+      document.getElementById("updErr").textContent = "";
+      if (_lastStatus && _lastStatus.recording) {
+        document.getElementById("updErr").textContent = "录制中，请先停止录制";
+        return;
+      }
+      if (!confirm("将下载服务器发布包并替换 RobotRuntime.exe，进程会自动重启。继续？")) {
+        return;
+      }
+      document.getElementById("btn-apply-upd").disabled = true;
+      document.getElementById("updOk").textContent = "正在下载并准备更新，请稍候…";
+      try {
+        const resp = await fetch("/update/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+          document.getElementById("updOk").textContent = "";
+          document.getElementById("updErr").textContent =
+            data.error || data.hint || "更新失败";
+          if (data.preparedDir) {
+            document.getElementById("updErr").textContent += "（已下载到 " + data.preparedDir + "）";
+          }
+        } else {
+          document.getElementById("updOk").textContent =
+            "更新已准备，进程即将重启…（若版本未变，请查看 %LOCALAPPDATA%\\EIArt\\robot_runtime\\update_restart.log）";
+        }
+      } catch (e) {
+        // 进程退出时 fetch 可能失败，属正常
+        document.getElementById("updOk").textContent = "进程可能已重启，请稍后刷新本页";
+      } finally {
+        setTimeout(() => {
+          document.getElementById("btn-apply-upd").disabled = false;
+        }, 5000);
+      }
+    };
+
+    document.getElementById("btn-refresh").onclick = () => {
+      document.getElementById("actionErr").textContent = "";
+      loadStatus().catch((e) => {
+        document.getElementById("actionErr").textContent = String(e);
+      });
+    };
+
+    document.getElementById("btn-register").onclick = async () => {
+      document.getElementById("actionErr").textContent = "";
+      try {
+        const backendUrl = document.getElementById("input-backend").value.trim();
+        const body = backendUrl ? { backendUrl } : {};
+        const resp = await fetch("/register/now", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+          document.getElementById("actionErr").textContent = data.lastRegisterError || data.error || "注册失败";
+        }
+        await loadStatus();
+      } catch (e) {
+        document.getElementById("actionErr").textContent = String(e);
+      }
+    };
+
+    document.getElementById("btn-stop-rec").onclick = async () => {
+      document.getElementById("actionErr").textContent = "";
+      try {
+        await fetch("/record/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        await loadStatus();
+      } catch (e) {
+        document.getElementById("actionErr").textContent = String(e);
+      }
+    };
+
+    document.getElementById("btn-open-child").onclick = async () => {
+      document.getElementById("actionErr").textContent = "";
+      const backendUrl = (
+        document.getElementById("input-backend").value.trim() ||
+        (_lastStatus && (_lastStatus.backendPublicUrl || _lastStatus.backendUrl)) ||
+        ""
+      ).replace(/\/$/, "");
+      if (!backendUrl) {
+        document.getElementById("actionErr").textContent = "请先填写后端地址";
+        return;
+      }
+      try {
+        const resp = await fetch("/ui/open-child", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ backendUrl }),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+          document.getElementById("actionErr").textContent = data.error || "打开 /child 失败";
+        } else if (data.mode === "browser_fallback" && data.hint) {
+          document.getElementById("actionErr").textContent = data.hint;
+        } else if (data.mode === "lan_mic_script") {
+          document.getElementById("actionErr").textContent =
+            "已用 LAN mic 脚本打开 /child（独立 Edge/Chrome 配置）。请在该窗口点「开始自动聆听」。";
+        }
+      } catch (e) {
+        document.getElementById("actionErr").textContent = String(e);
+      }
+    };
+
+    document.getElementById("btn-open-emotion").onclick = async () => {
+      document.getElementById("emotionWarmError").textContent = "";
+      const backendUrl = (
+        document.getElementById("input-backend").value.trim() ||
+        (_lastStatus && (_lastStatus.backendPublicUrl || _lastStatus.backendUrl)) ||
+        ""
+      ).replace(/\/$/, "");
+      try {
+        const resp = await fetch("/ui/open-emotion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ backendUrl }),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+          document.getElementById("emotionWarmError").textContent = data.error || "打开表情页失败";
+        }
+      } catch (e) {
+        document.getElementById("emotionWarmError").textContent = String(e);
+      }
+    };
+
+    loadStatus()
+      .then(() => checkUpdate().catch(() => {}))
+      .catch((e) => {
+        document.getElementById("actionErr").textContent = String(e);
+      });
+    setInterval(() => loadStatus().catch(() => {}), 1000);
+  </script>
+</body>
+</html>

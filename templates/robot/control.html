@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E.I.Art Doll Ctrl V3.0</title>
+    <link rel="stylesheet" href="/static/robot/css/robot.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 顶部导航 -->
+        <nav class="top-nav">
+            <h1 class="app-title">E.I.ART DOLL CONTROL SYSTEM V3.0</h1>
+            <div class="nav-tabs">
+                <button class="nav-tab active" data-view="realtime">实时控制</button>
+                <button class="nav-tab" data-view="motions" title="已迁入配置中心">动作库 → 配置中心</button>
+                <button class="nav-tab" data-view="mapping" title="已迁入配置中心">课程映射 → 配置中心</button>
+            </div>
+        </nav>
+
+        <!-- 视图容器 -->
+        <div class="views-container">
+            <!-- 实时控制视图 -->
+            <div class="view active" id="view-realtime">
+                <div class="view-content">
+                    <div class="main-layout">
+                        <!-- 左侧: 视频区 -->
+                        <div class="glass-panel video-wrapper">
+                            <div id="loading-screen">INITIALIZING...</div>
+                            <video id="video" autoplay playsinline></video>
+                            <canvas id="output"></canvas>
+                            <div class="status-overlay">
+                                <div><span id="socket-status" class="status-dot"></span> CONNECTION</div>
+                                <div style="margin-top:5px; font-size:10px;">Press 'T' to Calibrate</div>
+                            </div>
+                        </div>
+
+                        <!-- 右侧: 控制面板 -->
+                        <div class="settings-container">
+                            <!-- 系统控制 -->
+                            <div class="glass-panel settings-panel">
+                                <div class="control-header">
+                                    <div style="display:flex; align-items:center; gap:10px;">
+                                        <span style="font-size:12px; color:var(--text-sub)">RATE</span>
+                                        <input type="range" id="osc-rate" min="1" max="60" value="10">
+                                        <span style="font-size:12px; width:30px; text-align:right;"><span id="hz-val">10</span>Hz</span>
+                                    </div>
+
+                                    <div style="display:flex; align-items:center; gap:10px;">
+                                        <span style="font-size:12px; color:var(--text-sub)">OSC SEND</span>
+                                        <label class="switch">
+                                            <input type="checkbox" id="osc-active">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <table class="config-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="text-align:left; padding-left:5px;">AXIS</th>
+                                            <th>RAW</th>
+                                            <th>CENTER</th>
+                                            <th>GAIN</th>
+                                            <th>OFFSET</th>
+                                            <th>SMOOTH</th>
+                                            <th>MIN</th>
+                                            <th>MAX</th>
+                                            <th>REV</th>
+                                            <th>OUT</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="config-body">
+                                        <tr>
+                                            <td class="row-label">PITCH</td>
+                                            <td><span id="raw-pitch" class="val-raw">--</span></td>
+                                            <td><input type="number" id="pitch-center" value="2" step="0.1"></td>
+                                            <td><input type="number" id="pitch-gain" value="5.0" step="0.1"></td>
+                                            <td><input type="number" id="pitch-offset" value="179"></td>
+                                            <td><input type="number" id="pitch-smooth" value="0.9" step="0.001" min="0" max="0.999" class="smooth-input"></td>
+                                            <td><input type="number" id="pitch-min" value="0"></td>
+                                            <td><input type="number" id="pitch-max" value="359"></td>
+                                            <td><input type="checkbox" id="pitch-rev" checked></td>
+                                            <td><span id="out-pitch" class="val-out">--</span></td>
+                                        </tr>
+                                        <tr>
+                                            <td class="row-label">YAW</td>
+                                            <td><span id="raw-yaw" class="val-raw">--</span></td>
+                                            <td><input type="number" id="yaw-center" value="-5" step="0.1"></td>
+                                            <td><input type="number" id="yaw-gain" value="4.0" step="0.1"></td>
+                                            <td><input type="number" id="yaw-offset" value="231"></td>
+                                            <td><input type="number" id="yaw-smooth" value="0.9" step="0.001" min="0" max="0.999" class="smooth-input"></td>
+                                            <td><input type="number" id="yaw-min" value="0"></td>
+                                            <td><input type="number" id="yaw-max" value="359"></td>
+                                            <td><input type="checkbox" id="yaw-rev" checked></td>
+                                            <td><span id="out-yaw" class="val-out">--</span></td>
+                                        </tr>
+                                        <tr>
+                                            <td class="row-label">ARM L</td>
+                                            <td><span id="raw-arml" class="val-raw">--</span></td>
+                                            <td><input type="number" id="arml-center" value="22" step="0.1"></td>
+                                            <td><input type="number" id="arml-gain" value="2.0" step="0.1"></td>
+                                            <td><input type="number" id="arml-offset" value="137"></td>
+                                            <td><input type="number" id="arml-smooth" value="0.9" step="0.001" min="0" max="0.999" class="smooth-input"></td>
+                                            <td><input type="number" id="arml-min" value="0"></td>
+                                            <td><input type="number" id="arml-max" value="359"></td>
+                                            <td><input type="checkbox" id="arml-rev" checked></td>
+                                            <td><span id="out-arml" class="val-out">--</span></td>
+                                        </tr>
+                                        <tr>
+                                            <td class="row-label">ARM R</td>
+                                            <td><span id="raw-armr" class="val-raw">--</span></td>
+                                            <td><input type="number" id="armr-center" value="19" step="0.1"></td>
+                                            <td><input type="number" id="armr-gain" value="2.0" step="0.1"></td>
+                                            <td><input type="number" id="armr-offset" value="180"></td>
+                                            <td><input type="number" id="armr-smooth" value="0.9" step="0.001" min="0" max="0.999" class="smooth-input"></td>
+                                            <td><input type="number" id="armr-min" value="0"></td>
+                                            <td><input type="number" id="armr-max" value="359"></td>
+                                            <td><input type="checkbox" id="armr-rev" checked></td>
+                                            <td><span id="out-armr" class="val-out">--</span></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <button id="btn-start" class="btn-main">START SYSTEM</button>
+
+                            <!-- 录制控制 -->
+                            <div class="glass-panel record-panel">
+                                <div class="record-status" id="record-status">
+                                    <div class="record-indicator">
+                                        <span class="record-dot" id="record-dot"></span>
+                                        <span id="record-text">READY TO RECORD</span>
+                                    </div>
+                                    <span id="record-frame-count" style="font-size: 11px; color: var(--text-sub);">0 frames</span>
+                                </div>
+                                <div style="display: flex; gap: 10px; justify-content: center;">
+                                    <button id="btn-record" class="btn-record">START RECORDING</button>
+                                    <button id="btn-stop-record" class="btn-record recording" style="display: none;">STOP & SAVE</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 动作库视图 -->
+            <div class="view" id="view-motions">
+                <div class="view-content">
+                    <div class="glass-panel full-width">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px;">
+                            <h2 class="section-title" style="margin:0;">MOTION LIBRARY</h2>
+                            <div style="display:flex; gap:10px; align-items:center;">
+                                <input
+                                    type="file"
+                                    id="motion-import-file"
+                                    accept=".json,application/json"
+                                    style="display:none;"
+                                />
+                                <button id="btn-import-motion" class="btn-main" style="padding:8px 14px; font-size:12px;">
+                                    导入 v2 JSON
+                                </button>
+                            </div>
+                        </div>
+                        <div id="motion-library" class="motion-grid"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 课程映射视图 -->
+            <div class="view" id="view-mapping">
+                <div class="view-content">
+                    <div class="mapping-workspace">
+                        <!-- 左侧：导航区域 -->
+                        <aside class="mapping-nav glass-panel">
+                            <div class="profile-selector">
+                                <label>学生/档案选择:</label>
+                                <select id="profile-select" onchange="switchProfile()">
+                                    <option value="default">通用档案</option>
+                                </select>
+                            </div>
+
+                            <div class="config-tree" id="config-tree">
+                                <!-- 动态生成树形结构 -->
+                            </div>
+                        </aside>
+
+                        <!-- 右侧：动作矩阵配置区 -->
+                        <main class="action-matrix glass-panel">
+                            <div class="matrix-header">
+                                <h2 id="current-scope-title">全局通用配置</h2>
+                                <button class="btn-save" onclick="saveCurrentMapping()">保存配置</button>
+                            </div>
+
+                            <div class="action-slots">
+                                <!-- 表扬动作 -->
+                                <div class="action-slot">
+                                    <div class="slot-header">
+                                        <span class="slot-icon"></span>
+                                        <h3>表扬 (Praise)</h3>
+                                        <button class="btn-test-small" onclick="testAction('praise')">▶ 测试</button>
+                                    </div>
+                                    <div class="slot-tags" id="slot-praise"></div>
+                                    <button class="btn-add-tag" onclick="addMotionToSlot('praise')">+ 添加动作</button>
+                                    <div class="emotion-select-wrapper">
+                                        <label>对应表情：</label>
+                                        <select id="emotion-praise" class="emotion-select" onchange="onEmotionChange('praise')"></select>
+                                    </div>
+                                </div>
+
+                                <!-- 提问动作 -->
+                                <div class="action-slot">
+                                    <div class="slot-header">
+                                        <span class="slot-icon"></span>
+                                        <h3>提问 (Question)</h3>
+                                        <button class="btn-test-small" onclick="testAction('question')">▶ 测试</button>
+                                    </div>
+                                    <div class="slot-tags" id="slot-question"></div>
+                                    <button class="btn-add-tag" onclick="addMotionToSlot('question')">+ 添加动作</button>
+                                    <div class="emotion-select-wrapper">
+                                        <label>对应表情：</label>
+                                        <select id="emotion-question" class="emotion-select" onchange="onEmotionChange('question')"></select>
+                                    </div>
+                                </div>
+
+                                <!-- 提示动作 -->
+                                <div class="action-slot">
+                                    <div class="slot-header">
+                                        <span class="slot-icon"></span>
+                                        <h3>提示/引导 (Hint)</h3>
+                                        <button class="btn-test-small" onclick="testAction('hint')">▶ 测试</button>
+                                    </div>
+                                    <div class="slot-tags" id="slot-hint"></div>
+                                    <button class="btn-add-tag" onclick="addMotionToSlot('hint')">+ 添加动作</button>
+                                    <div class="emotion-select-wrapper">
+                                        <label>对应表情：</label>
+                                        <select id="emotion-hint" class="emotion-select" onchange="onEmotionChange('hint')"></select>
+                                    </div>
+                                </div>
+
+                                <!-- 内容展示动作 -->
+                                <div class="action-slot">
+                                    <div class="slot-header">
+                                        <span class="slot-icon"></span>
+                                        <h3>内容展示 (Display Only)</h3>
+                                        <button class="btn-test-small" onclick="testAction('silent')">▶ 测试</button>
+                                    </div>
+                                    <div class="slot-tags" id="slot-silent"></div>
+                                    <button class="btn-add-tag" onclick="addMotionToSlot('silent')">+ 添加动作</button>
+                                    <div class="emotion-select-wrapper">
+                                        <label>对应表情：</label>
+                                        <select id="emotion-silent" class="emotion-select" onchange="onEmotionChange('silent')"></select>
+                                    </div>
+                                </div>
+
+                                <!-- 静态姿势 -->
+                                <div class="action-slot idle-slot">
+                                    <div class="slot-header">
+                                        <span class="slot-icon"></span>
+                                        <h3>静态/复位姿势 (Static Pose)</h3>
+                                        <button class="btn-test-small" onclick="testAction('idle')">▶ 测试</button>
+                                    </div>
+                                    <select id="slot-idle" class="idle-select"></select>
+                                </div>
+                            </div>
+                        </main>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 保存动作名称模态框 -->
+    <div id="save-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">保存动作</div>
+            <input type="text" id="motion-name-input" class="modal-input" placeholder="输入动作名称..." />
+            <div class="modal-buttons">
+                <button class="btn-modal secondary" id="btn-cancel-save">取消</button>
+                <button class="btn-modal primary" id="btn-confirm-save">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 动作选择模态框 -->
+    <div id="motion-select-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">选择动作</div>
+            <select id="motion-picker" class="modal-select"></select>
+            <div class="modal-buttons">
+                <button class="btn-modal secondary" onclick="closeMotionPicker()">取消</button>
+                <button class="btn-modal primary" onclick="confirmMotionPick()">确认</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Socket.io 使用 CDN 加载，更可靠 -->
+    <script src="/static/js/vendor/socket.io.min.js"></script>
+    <!-- TensorFlow.js 姿态检测 -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+    <!-- 应用脚本 -->
+    <script src="/static/robot/js/robot_control.js"></script>
+    <script src="/static/robot/js/robot_mapping.js"></script>
+    <script src="/static/robot/js/robot_emotion_mapping.js"></script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>带参数的互动界面示例</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        .config-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .param-item {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .param-key {
+            font-weight: bold;
+            color: #007bff;
+        }
+        .param-value {
+            color: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <h1>互动界面参数示例</h1>
+    
+    <div class="config-panel">
+        <h2>获取到的参数：</h2>
+        <div id="params-display"></div>
+    </div>
+
+    <div class="config-panel">
+        <h2>根据参数调整的游戏配置：</h2>
+        <div id="game-config"></div>
+    </div>
+
+    <script>
+        // 获取URL参数的工具函数
+        function getUrlParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const params = {};
+            for (let [key, value] of urlParams) {
+                params[key] = value;
+            }
+            return params;
+        }
+
+        // 解析配置参数
+        function parseConfigParams(params) {
+            const config = {};
+            
+            // 基础参数
+            config.courseId = params.courseId || 'unknown';
+            config.courseType = params.courseType || 'unknown';
+            config.itemId = params.itemId || 'none';
+            config.difficulty = params.difficulty || 'normal';
+            
+            // 游戏配置参数
+            config.cardCount = parseInt(params.cardCount) || 4;
+            config.itemCount = parseInt(params.itemCount) || 4;
+            config.timeLimit = parseInt(params.timeLimit) || 30;
+            config.category = params.category || 'general';
+            config.hints = params.hints === 'true';
+            
+            return config;
+        }
+
+        // 根据难度调整游戏设置
+        function adjustGameByDifficulty(config) {
+            const adjustments = {
+                easy: {
+                    timeMultiplier: 1.5,
+                    hintEnabled: true,
+                    penaltyReduction: 0.5
+                },
+                medium: {
+                    timeMultiplier: 1.0,
+                    hintEnabled: config.hints,
+                    penaltyReduction: 1.0
+                },
+                hard: {
+                    timeMultiplier: 0.7,
+                    hintEnabled: false,
+                    penaltyReduction: 1.5
+                }
+            };
+
+            const difficulty = config.difficulty.toLowerCase();
+            const adjustment = adjustments[difficulty] || adjustments.medium;
+            
+            config.adjustedTimeLimit = Math.floor(config.timeLimit * adjustment.timeMultiplier);
+            config.hintsEnabled = adjustment.hintEnabled;
+            config.penaltyMultiplier = adjustment.penaltyReduction;
+            
+            return config;
+        }
+
+        // 初始化页面
+        function initPage() {
+            // 获取URL参数
+            const urlParams = getUrlParams();
+            
+            // 解析配置
+            let gameConfig = parseConfigParams(urlParams);
+            gameConfig = adjustGameByDifficulty(gameConfig);
+            
+            // 显示参数
+            displayParams(urlParams);
+            
+            // 显示游戏配置
+            displayGameConfig(gameConfig);
+            
+            // 根据配置初始化游戏
+            initializeGame(gameConfig);
+        }
+
+        // 显示URL参数
+        function displayParams(params) {
+            const paramsDisplay = document.getElementById('params-display');
+            paramsDisplay.innerHTML = '';
+            
+            for (let [key, value] of Object.entries(params)) {
+                const paramDiv = document.createElement('div');
+                paramDiv.className = 'param-item';
+                paramDiv.innerHTML = `
+                    <span class="param-key">${key}:</span> 
+                    <span class="param-value">${value}</span>
+                `;
+                paramsDisplay.appendChild(paramDiv);
+            }
+        }
+
+        // 显示游戏配置
+        function displayGameConfig(config) {
+            const configDisplay = document.getElementById('game-config');
+            configDisplay.innerHTML = '';
+            
+            const configItems = [
+                { key: '课程ID', value: config.courseId },
+                { key: '课程类型', value: config.courseType },
+                { key: '项目ID', value: config.itemId },
+                { key: '难度', value: config.difficulty },
+                { key: '卡片数量', value: config.cardCount },
+                { key: '项目数量', value: config.itemCount },
+                { key: '调整后时间限制', value: config.adjustedTimeLimit + '秒' },
+                { key: '提示功能', value: config.hintsEnabled ? '开启' : '关闭' },
+                { key: '惩罚倍数', value: config.penaltyMultiplier }
+            ];
+            
+            configItems.forEach(item => {
+                const configDiv = document.createElement('div');
+                configDiv.className = 'param-item';
+                configDiv.innerHTML = `
+                    <span class="param-key">${item.key}:</span> 
+                    <span class="param-value">${item.value}</span>
+                `;
+                configDisplay.appendChild(configDiv);
+            });
+        }
+
+        // 根据配置初始化游戏
+        function initializeGame(config) {
+            console.log('初始化游戏，配置:', config);
+            
+            // 这里可以根据不同的参数初始化不同的游戏逻辑
+            switch(config.courseType) {
+                case 'pairing':
+                    initPairingGame(config);
+                    break;
+                case 'ordering':
+                    initOrderingGame(config);
+                    break;
+                default:
+                    initDefaultGame(config);
+            }
+        }
+
+        // 配对游戏初始化
+        function initPairingGame(config) {
+            console.log('初始化配对游戏:', config);
+            // 根据cardCount、difficulty等参数设置游戏
+        }
+
+        // 排序游戏初始化
+        function initOrderingGame(config) {
+            console.log('初始化排序游戏:', config);
+            // 根据itemCount、category、difficulty等参数设置游戏
+        }
+
+        // 默认游戏初始化
+        function initDefaultGame(config) {
+            console.log('初始化默认游戏:', config);
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', initPage);
+    </script>
+</body>
+</html>

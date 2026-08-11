@@ -1,0 +1,9 @@
+# Robot Runtime dependencies (overlap with root requirements.txt)
+flask>=2.3.0
+flask-cors>=4.0.0
+opencv-python>=4.8.0,<5
+numpy>=1.24.0,<2
+pyaudio>=0.2.14
+requests>=2.31.0
+chardet>=5.0,<6
+python-osc>=1.8.0

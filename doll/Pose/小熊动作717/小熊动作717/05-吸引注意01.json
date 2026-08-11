@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "format": "dollser-motion",
+  "armBaselineVersion": 2,
+  "updatedAt": "2026-07-17T11:50:07.630Z",
+  "name": "05-吸引注意01",
+  "durationMs": 2700,
+  "motionDurationMs": 2700,
+  "motionStartTime": 0,
+  "initialPose": {
+    "pitch": 200,
+    "yaw": 160,
+    "armL": 320,
+    "armR": 50
+  },
+  "commands": [
+    {
+      "actionId": "child-11-01",
+      "time": 80,
+      "axis": "pitch",
+      "angle": 218,
+      "moveMs": 300,
+      "label": "轻微前倾看孩子",
+      "phase": "move"
+    },
+    {
+      "actionId": "child-11-02",
+      "time": 300,
+      "axis": "armR",
+      "angle": 95,
+      "moveMs": 400,
+      "label": "右手轻挥 1",
+      "phase": "move"
+    },
+    {
+      "actionId": "child-11-02",
+      "time": 780,
+      "axis": "armR",
+      "angle": 50,
+      "moveMs": 420,
+      "label": "右手轻挥 1 回中位",
+      "phase": "return"
+    },
+    {
+      "actionId": "child-11-03",
+      "time": 1280,
+      "axis": "armR",
+      "angle": 95,
+      "moveMs": 420,
+      "label": "右手轻挥 2",
+      "phase": "move"
+    },
+    {
+      "actionId": "child-11-01",
+      "time": 1280,
+      "axis": "pitch",
+      "angle": 200,
+      "moveMs": 420,
+      "label": "轻微前倾看孩子 回中位",
+      "phase": "return"
+    },
+    {
+      "actionId": "child-11-03",
+      "time": 1780,
+      "axis": "armR",
+      "angle": 50,
+      "moveMs": 420,
+      "label": "右手轻挥 2 回中位",
+      "phase": "return"
+    }
+  ],
+  "expression": null
+}

@@ -1,0 +1,91 @@
+{
+  "version": 2,
+  "format": "dollser-motion",
+  "armBaselineVersion": 2,
+  "updatedAt": "2026-07-17T11:50:01.656Z",
+  "name": "04-摇头再来一次",
+  "durationMs": 3000,
+  "motionDurationMs": 3000,
+  "motionStartTime": 0,
+  "initialPose": {
+    "pitch": 200,
+    "yaw": 160,
+    "armL": 320,
+    "armR": 50
+  },
+  "commands": [
+    {
+      "actionId": "action-1784288802266-792e2e",
+      "time": 380,
+      "axis": "yaw",
+      "angle": 178,
+      "moveMs": 300,
+      "label": "Yaw 动作",
+      "phase": "move"
+    },
+    {
+      "actionId": "action-1784288903018-4c95ce",
+      "time": 400,
+      "axis": "armL",
+      "angle": 302,
+      "moveMs": 300,
+      "label": "ArmL 动作",
+      "phase": "move"
+    },
+    {
+      "actionId": "action-1784288904120-6b79c2",
+      "time": 400,
+      "axis": "armR",
+      "angle": 68,
+      "moveMs": 300,
+      "label": "ArmR 动作",
+      "phase": "move"
+    },
+    {
+      "actionId": "action-1784288802266-792e2e",
+      "time": 840,
+      "axis": "yaw",
+      "angle": 160,
+      "moveMs": 360,
+      "label": "Yaw 动作 回中位",
+      "phase": "return"
+    },
+    {
+      "actionId": "action-1784288903018-4c95ce",
+      "time": 860,
+      "axis": "armL",
+      "angle": 320,
+      "moveMs": 360,
+      "label": "ArmL 动作 回中位",
+      "phase": "return"
+    },
+    {
+      "actionId": "action-1784288904120-6b79c2",
+      "time": 860,
+      "axis": "armR",
+      "angle": 50,
+      "moveMs": 360,
+      "label": "ArmR 动作 回中位",
+      "phase": "return"
+    },
+    {
+      "actionId": "action-1784288813704-49e516",
+      "time": 1180,
+      "axis": "yaw",
+      "angle": 142,
+      "moveMs": 300,
+      "label": "Yaw 动作 副本",
+      "phase": "move"
+    },
+    {
+      "actionId": "action-1784288813704-49e516",
+      "time": 1640,
+      "axis": "yaw",
+      "angle": 160,
+      "moveMs": 360,
+      "label": "Yaw 动作 副本 回中位",
+      "phase": "return"
+    }
+  ],
+  "expression": null
+}

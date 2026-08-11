@@ -1,0 +1,443 @@
+import { useState, useEffect } from 'react';
+import { BookOpen, Puzzle, Palette, Music, Blocks, Brain, ArrowLeft, Users } from 'lucide-react';
+
+interface CourseSelectionPageProps {
+  onStart: (payload: {
+    courses: Array<{ categoryId: string; courseId: string }>;
+    items: Array<{
+      courseId: string | number;
+      itemId: string | number | null;
+      courseType: string;
+      file?: string;
+    }>;
+  }) => void;
+  onBack: () => void;
+  mode: 'assessment' | 'training';
+}
+
+// 课程类型映射（英文 -> 中文名称和图标）
+const courseTypeMap: Record<string, { name: string; icon: typeof Brain }> = {
+  'mimic': { name: '模仿', icon: Brain },
+  'naming': { name: '命名', icon: BookOpen },
+  'onomatopoeia': { name: '拟声', icon: Music },
+  'pairing': { name: '配对', icon: Puzzle },
+  'ordering': { name: '排序', icon: Blocks },
+  'social': { name: '社交', icon: Users },
+};
+
+// 默认图标
+const DefaultIcon = Brain;
+const DEFAULT_ITEM_IMAGE = 'https://images.unsplash.com/photo-1759159482847-78aadfcbeb85?w=300&h=200&fit=crop';
+
+interface CourseItem {
+  id: number;
+  name: string;
+  type: string;
+  file?: string;
+  icon?: string;
+  hint?: string;
+  difficulty?: string;
+  config?: any;
+  speechTarget?: string | null;
+}
+
+interface Course {
+  id: number;
+  title: string;
+  type: string;
+  question?: string;
+  praise?: string;
+  file?: string;
+  icon?: string;
+  items: CourseItem[];
+}
+
+interface CourseCategory {
+  id: string;
+  name: string;
+  icon: typeof Brain;
+  courses: Course[];
+}
+
+export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPageProps) {
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [categories, setCategories] = useState<CourseCategory[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedItems, setSelectedItems] = useState<Map<string, Set<number>>>(new Map()); // courseId -> Set<itemId>
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // 从后端获取课程数据
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch('/courses');
+        
+        // 检查响应类型
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await response.text();
+          console.error('收到非 JSON 响应:', text.substring(0, 200));
+          throw new Error(`服务器返回了非 JSON 响应。请检查后端服务是否正常运行。状态码: ${response.status}`);
+        }
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `获取课程数据失败 (${response.status})`);
+        }
+        
+        const data: Course[] = await response.json();
+        setCourses(data);
+
+        // 按类型分组
+        const grouped = new Map<string, Course[]>();
+        data.forEach(course => {
+          const type = course.type;
+          if (!grouped.has(type)) {
+            grouped.set(type, []);
+          }
+          grouped.get(type)!.push(course);
+        });
+
+        // 转换为分类数组
+        const categoryArray: CourseCategory[] = Array.from(grouped.entries()).map(([type, courses]) => {
+          const typeInfo = courseTypeMap[type] || { name: type, icon: DefaultIcon };
+          return {
+            id: type,
+            name: typeInfo.name,
+            icon: typeInfo.icon,
+            courses: courses
+          };
+        });
+
+        setCategories(categoryArray);
+        if (categoryArray.length > 0) {
+          setSelectedCategory(categoryArray[0].id);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '未知错误');
+        console.error('获取课程数据失败:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCourses();
+  }, []);
+
+  const currentCategory = categories.find(c => c.id === selectedCategory);
+
+  // 切换课程项的选择状态
+  const toggleItem = (courseId: number, itemId: number) => {
+    const newSelected = new Map(selectedItems);
+    if (!newSelected.has(courseId.toString())) {
+      newSelected.set(courseId.toString(), new Set());
+    }
+    const itemSet = newSelected.get(courseId.toString())!;
+    if (itemSet.has(itemId)) {
+      itemSet.delete(itemId);
+      if (itemSet.size === 0) {
+        newSelected.delete(courseId.toString());
+      }
+    } else {
+      itemSet.add(itemId);
+    }
+    setSelectedItems(newSelected);
+  };
+
+  // 切换整个课程的选择状态（全选/取消全选该课程的所有项）
+  const toggleCourse = (courseId: number) => {
+    const course = courses.find(c => c.id === courseId);
+    if (!course || course.items.length === 0) return;
+
+    const newSelected = new Map(selectedItems);
+    const courseKey = courseId.toString();
+    const itemSet = newSelected.get(courseKey);
+
+    // 如果已全选，则取消；否则全选
+    const allSelected = itemSet && itemSet.size === course.items.length;
+    if (allSelected) {
+      newSelected.delete(courseKey);
+    } else {
+      newSelected.set(courseKey, new Set(course.items.map(item => item.id)));
+    }
+    setSelectedItems(newSelected);
+  };
+
+  // 获取课程的选择状态
+  const isCourseSelected = (courseId: number) => {
+    const course = courses.find(c => c.id === courseId);
+    if (!course || course.items.length === 0) return false;
+    const itemSet = selectedItems.get(courseId.toString());
+    return itemSet && itemSet.size === course.items.length;
+  };
+
+  // 获取课程项的选择状态
+  const isItemSelected = (courseId: number, itemId: number) => {
+    const itemSet = selectedItems.get(courseId.toString());
+    return itemSet ? itemSet.has(itemId) : false;
+  };
+
+  // 获取选中项的总数
+  const getSelectedCount = () => {
+    let count = 0;
+    selectedItems.forEach(itemSet => {
+      count += itemSet.size;
+    });
+    return count;
+  };
+
+  const handleStart = () => {
+    if (selectedItems.size === 0) {
+      alert('请至少选择一个课程项！');
+      return;
+    }
+
+    // 保存选中的 itemIds 到 localStorage，供 ControlPage 使用
+    const selectedItemsData: Record<string, number[]> = {};
+    selectedItems.forEach((itemSet, courseId) => {
+      selectedItemsData[courseId] = Array.from(itemSet);
+    });
+    localStorage.setItem('selectedCourseItems', JSON.stringify(selectedItemsData));
+
+    const coursesArray: Array<{ categoryId: string; courseId: string }> = [];
+    const readinessItems: Array<{
+      courseId: string | number;
+      itemId: string | number | null;
+      courseType: string;
+      file?: string;
+    }> = [];
+
+    selectedItems.forEach((itemSet, courseId) => {
+      coursesArray.push({
+        categoryId: selectedCategory,
+        courseId: courseId,
+      });
+      const course = courses.find((c) => String(c.id) === String(courseId));
+      const courseType = course?.type || '';
+      const courseFile = course?.file;
+      itemSet.forEach((itemId) => {
+        const item = course?.items?.find((it) => Number(it.id) === Number(itemId));
+        readinessItems.push({
+          courseId,
+          itemId,
+          courseType,
+          file: item?.file || courseFile,
+        });
+      });
+    });
+
+    onStart({ courses: coursesArray, items: readinessItems });
+  };
+
+  // 获取图片路径
+  const getImageUrl = (path?: string) => {
+    if (!path) return DEFAULT_ITEM_IMAGE;
+    // 如果路径已经是完整URL，直接返回
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    // 否则添加 /static/ 前缀
+    return `/static/${path}`;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">加载课程数据中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+          >
+            重试
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (categories.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600">暂无课程数据</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-gray-50 flex h-screen overflow-hidden">
+      {/* 左侧课程类别列表 */}
+      <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onBack}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            <h2 className="text-gray-900">课程类别</h2>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 pt-4">
+          <div className="space-y-3">
+          {categories.map(category => {
+            const Icon = category.icon;
+            return (
+              <button
+                key={category.id}
+                onClick={() => setSelectedCategory(category.id)}
+                className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all ${
+                  selectedCategory === category.id
+                    ? 'bg-indigo-50 border-2 border-indigo-500'
+                    : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
+                }`}
+              >
+                <Icon className={`w-6 h-6 ${
+                  selectedCategory === category.id ? 'text-indigo-600' : 'text-gray-600'
+                }`} />
+                <span className="text-gray-900">{category.name}</span>
+                
+              </button>
+            );
+          })}
+          </div>
+        </div>
+      </div>
+
+      {/* 右侧课程内容 */}
+      <div className="flex-1 overflow-y-auto h-full">
+        <div className="p-8 pb-32">
+        <h1 className="text-gray-900 mb-2">
+          {currentCategory?.name || ''} - {mode === 'assessment' ? '评估' : '训练'}内容
+        </h1>
+        <p className="text-gray-600 mb-8">
+          已选择 {getSelectedCount()} 项内容
+        </p>
+
+        {currentCategory && currentCategory.courses.length > 0 ? (
+          <div className="space-y-6">
+            {currentCategory.courses.map(course => {
+              const courseSelected = isCourseSelected(course.id);
+              const courseItemSet = selectedItems.get(course.id.toString());
+              const selectedCount = courseItemSet ? courseItemSet.size : 0;
+              const totalCount = course.items.length;
+
+              return (
+                <div key={course.id} className="bg-white rounded-xl shadow-sm border-2 border-gray-200 overflow-hidden">
+                  {/* 课程标题栏 */}
+                  <div className="p-4 bg-gray-50 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => toggleCourse(course.id)}
+                          className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                            courseSelected
+                              ? 'bg-indigo-600 border-indigo-600'
+                              : 'border-gray-300 hover:border-indigo-400'
+                          }`}
+                        >
+                          {courseSelected && (
+                            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                        </button>
+                        <h3 className="text-lg font-semibold text-gray-900">{course.title}</h3>
+                      </div>
+                      <span className="text-sm text-gray-500">
+                        {selectedCount > 0 ? `已选 ${selectedCount}/${totalCount}` : `${totalCount} 项`}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 课程项列表 */}
+                  {course.items.length > 0 && (
+                    <div className="p-4">
+                      <div className="grid grid-cols-3 gap-4">
+                        {course.items.map(item => {
+                          const itemSelected = isItemSelected(course.id, item.id);
+                          // 优先使用icon字段（具体图片文件），file字段是文件夹路径
+                          const itemImage = item.icon || item.file || DEFAULT_ITEM_IMAGE;
+
+                          return (
+                            <button
+                              key={item.id}
+                              onClick={() => toggleItem(course.id, item.id)}
+                              className={`bg-gray-50 rounded-lg overflow-hidden border-2 transition-all hover:shadow-md ${
+                                itemSelected
+                                  ? 'border-indigo-500 ring-2 ring-indigo-200'
+                                  : 'border-gray-200'
+                              }`}
+                            >
+                              <div className="aspect-video overflow-hidden bg-gray-100">
+                                <img
+                                  src={getImageUrl(itemImage)}
+                                  alt={item.name}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    // 如果图片加载失败，使用默认图片
+                                    (e.target as HTMLImageElement).src = DEFAULT_ITEM_IMAGE;
+                                  }}
+                                />
+                              </div>
+                              <div className="p-3">
+                                <h4 className="text-sm font-medium text-gray-900 text-center">{item.name}</h4>
+                                {itemSelected && (
+                                  <div className="mt-2 text-center">
+                                    <span className="inline-block px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs">
+                                      已选中
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <p className="text-gray-500">该类别下暂无课程</p>
+          </div>
+        )}
+        </div>
+      </div>
+
+      {/* 右下角固定按钮 */}
+      <div className="fixed bottom-8 right-8">
+        <button
+          onClick={handleStart}
+          disabled={getSelectedCount() === 0}
+          className={`px-12 py-4 rounded-xl shadow-lg transition-all ${
+            getSelectedCount() > 0
+              ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          }`}
+        >
+          开始 ({getSelectedCount()})
+        </button>
+      </div>
+    </div>
+  );
+}

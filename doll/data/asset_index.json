@@ -1,0 +1,61 @@
+{
+  "assets": [
+    {
+      "assetId": "emotions:1d5c7daec308c02305f2bb7f",
+      "checksum": "1d5c7daec308c02305f2bb7fe2bf160e24a7ce18cc867c54767b74bb899e94bb",
+      "filename": "v3_speak_bye.mp4",
+      "kind": "emotion",
+      "physicalFilename": "resources/Emotions/v3_speak_bye.mp4",
+      "version": "1d5c7daec308"
+    },
+    {
+      "assetId": "emotions:8f676a1f16af5e34c88bab08",
+      "checksum": "8f676a1f16af5e34c88bab083fe98980562f3dbdb3f7faddfd2c20057ec7921e",
+      "filename": "v3_speak_byenext.mp4",
+      "kind": "emotion",
+      "physicalFilename": "resources/Emotions/v3_speak_byenext.mp4",
+      "version": "8f676a1f16af"
+    },
+    {
+      "assetId": "emotions:2dab8541a7f3fb360471e176",
+      "checksum": "2dab8541a7f3fb360471e1762587960b159142d4d7ffc8dd2e9e653ee1744d1d",
+      "filename": "v3_speak_excitedly_long.mp4",
+      "kind": "emotion",
+      "physicalFilename": "resources/Emotions/v3_speak_excitedly_long.mp4",
+      "version": "2dab8541a7f3"
+    },
+    {
+      "assetId": "emotions:9c6af22ea2f39c6a021c7dc9",
+      "checksum": "9c6af22ea2f39c6a021c7dc9d0e8635560dd8d104fe7996f619e0213a146aced",
+      "filename": "v3_speak_excitedly_short.mp4",
+      "kind": "emotion",
+      "physicalFilename": "resources/Emotions/v3_speak_excitedly_short.mp4",
+      "version": "9c6af22ea2f3"
+    },
+    {
+      "assetId": "emotions:5a1f37560563e68f16d3997b",
+      "checksum": "5a1f37560563e68f16d3997b6753de1edf859dbc4e63c91a10903376c61836b7",
+      "filename": "v3_speak_lookdown_match.mp4",
+      "kind": "emotion",
+      "physicalFilename": "resources/Emotions/v3_speak_lookdown_match.mp4",
+      "version": "5a1f37560563"
+    },
+    {
+      "assetId": "emotions:1e6856afdb1bd1b4e43cac01",
+      "checksum": "1e6856afdb1bd1b4e43cac017d2f2ffb3e6c721825f5669299d4e33f8b34012b",
+      "filename": "v3_speak_lookdown_namecall.mp4",
+      "kind": "emotion",
+      "physicalFilename": "resources/Emotions/v3_speak_lookdown_namecall.mp4",
+      "version": "1e6856afdb1b"
+    },
+    {
+      "assetId": "emotions:08d092ec1d4127ca686e9e4f",
+      "checksum": "08d092ec1d4127ca686e9e4fcb758f3a736a6e6146c983c92d8a924ee0215c4d",
+      "filename": "v3_speak_lookdown_sort.mp4",
+      "kind": "emotion",
+      "physicalFilename": "resources/Emotions/v3_speak_lookdown_sort.mp4",
+      "version": "08d092ec1d41"
+    }
+  ],
+  "schemaVersion": 1
+}

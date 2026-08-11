@@ -1,0 +1,12 @@
+{
+  "available": true,
+  "version": "20260811-0215-prewarm-sync",
+  "buildVersion": "20260811-0215-prewarm-sync",
+  "protocolVersion": "1",
+  "sourceCommit": "3c591d41",
+  "filename": "EIArt-Robot-20260811-0215-prewarm-sync.zip",
+  "latest": "EIArt-Robot-latest.zip",
+  "sha256": "3960d6dc460b77653abf65f9c7adf60b594cecf1ff6915d53625f1829bcaa21a",
+  "sizeBytes": 198529395,
+  "builtAt": "2026-08-10T18:37:17.842947+00:00"
+}

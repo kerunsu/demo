@@ -1,0 +1,10 @@
+# 可选：真实语音分析（FunASR Paraformer）等
+# 在启用 config/analyzers.yaml 中 speech 的 real 模式且 USE_REAL_ANALYZERS 等条件满足时使用。
+# 安装：pip install -r requirements-optional-analyzers.txt
+# 体积较大，默认不列入 requirements.txt
+
+torch>=2.0.0
+torchaudio>=2.0.0
+funasr>=1.0.0
+modelscope>=1.11.0
+librosa>=0.10.0

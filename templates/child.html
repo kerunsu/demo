@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>儿童端</title>
+  <meta name="theme-color" content="#FF6B6B"/>
+  <link rel="stylesheet" href="/static/css/common.css">
+  <link rel="stylesheet" href="/static/css/child.css?v=20260811-dialogue-collapse">
+  <script src="/static/js/vendor/socket.io.min.js"></script>
+  <!-- 姿态分析相关脚本已注释，待迁移到后端 -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script> -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script> -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script> -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest"></script> -->
+
+</head>
+<body>
+  <h1>儿童端页面</h1>
+  <p id="status">等待中...</p>
+  <!-- 姿态模仿的测试 - 已注释，待迁移到后端 -->
+  <!-- <div id="poseProgressContainer" style="display: none;">
+    <div id="poseProgressBar">0%</div>
+  </div> -->
+  <video id="childCam" autoplay playsinline muted></video>
+
+  <!-- 待机图片（3秒后显示） -->
+  <img id="standbyImage" src="/static/resources/images/UI/FG.png" 
+       style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 100;" />
+
+  <!-- 行为绑定动画（全屏播放） -->
+  <video id="behaviorAnimationVideo" playsinline muted preload="auto"></video>
+
+  <!-- 过渡遮罩（用于避免摄像头闪现） -->
+  <div id="transitionCover" style="display: none;"></div>
+  <div id="agent-status-badge" style="display:none;">Agent: --</div>
+
+  <!-- 浏览器 TTS / 对话面板（z-index 须高于 #image/#video/#standbyImage） -->
+  <div id="dialoguePanel" class="dialogue-panel" aria-label="麦麦对话面板">
+    <div class="dialogue-panel__header">
+      <div class="dialogue-panel__title">麦麦对话</div>
+      <button id="dialogueCollapseBtn" type="button" class="dialogue-panel__collapse"
+              aria-controls="dialoguePanelBody" aria-expanded="true" title="收起语音窗口">−</button>
+    </div>
+    <div id="dialoguePanelBody" class="dialogue-panel__body">
+      <button id="dialogueUnlockBtn" type="button" class="dialogue-panel__btn">启用声音</button>
+      <label class="dialogue-panel__label" for="dialogueVoiceSelect">朗读音色</label>
+      <select id="dialogueVoiceSelect" class="dialogue-panel__select"></select>
+      <button id="dialogueHoldBtn" type="button" class="dialogue-panel__hold">开始自动聆听</button>
+      <button id="dialogueSleepBtn" type="button" class="dialogue-panel__btn dialogue-panel__sleep" disabled>未唤醒</button>
+      <p class="dialogue-panel__hint">默认由教师端唤醒智能体；唤醒词可由 Server 控制台开启。首次对话请允许麦克风。</p>
+      <div class="dialogue-panel__row">
+        <input id="dialogueTextInput" type="text" class="dialogue-panel__input" placeholder="或直接打字：麦麦，麦麦" autocomplete="off" />
+        <button id="dialogueSendBtn" type="button" class="dialogue-panel__send">发送</button>
+      </div>
+      <div id="dialogueLog" class="dialogue-panel__log" aria-live="polite" aria-label="对话记录"></div>
+      <div id="dialogueStatus" class="dialogue-panel__status">等待教师端点击唤醒智能体</div>
+    </div>
+  </div>
+
+  <!-- 播放区域 -->
+  <img id="image" class="course-media-layer" />
+  <video id="video" class="course-media-layer" controls playsinline preload="auto"></video>
+  <audio id="audio" controls></audio>
+  <iframe id="interactive" class="course-media-layer" frameborder="0"></iframe>
+  <!-- Hidden A/B staging peers: only promoted after their resource is ready. -->
+  <img id="image-staging" class="course-media-layer course-media-layer--staging" aria-hidden="true" />
+  <video id="video-staging" class="course-media-layer course-media-layer--staging"
+         controls playsinline preload="auto" aria-hidden="true"></video>
+  <iframe id="interactive-staging" class="course-media-layer course-media-layer--staging"
+          frameborder="0" aria-hidden="true"></iframe>
+
+  <script src="/static/js/common.js"></script>
+  <script>
+    // 可按部署环境覆盖（例如设置为 https://127.0.0.1:19190）
+    // Robot Runtime（媒体 + DollSer OSC，统一 19091）
+    window.ROBOT_AGENT_BASE = "http://127.0.0.1:19091";
+    window.ROBOT_AGENT_KEY = "";
+    window.CHILD_MEDIA_AGENT_BASE = "http://127.0.0.1:19091";
+    window.CHILD_MEDIA_AGENT_KEY = "";
+  </script>
+  <script src="/static/js/browser_tts.js?v=20260810-speech-anchor-v2"></script>
+  <script src="/static/js/audio_player.js?v=20260730-behavior-lock"></script>
+  <script src="/static/js/child_dialogue.js?v=20260811-dialogue-collapse"></script>
+  <script type="module" src="/static/js/child.js?v=20260810-shared-anchor-v4"></script>
+
+</body>
+</html>

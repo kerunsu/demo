@@ -1,0 +1,44 @@
+# 互动课图片语义：对齐 DemoRobot MATCHING_IMAGE_SEMANTICS / paixu 前缀名
+# key 可为相对 matching/ 路径、文件夹号、文件名、或 paixu 组前缀
+
+matching:
+  # 根目录水果图
+  image_1.jpg: { label: 苹果, description: 一颗红色苹果，有黑色果柄和可爱的笑脸 }
+  image_2.jpg: { label: 桃子, description: 一个粉色桃子，下面有一片绿色叶子 }
+  image_3.jpg: { label: 香蕉, description: 一串黄色香蕉，有三根弯弯的香蕉 }
+  image_4.jpg: { label: 菠萝, description: 一个黄色菠萝，上面有绿色叶子，身上有格子纹 }
+  image_5.jpg: { label: 西瓜, description: 一个绿色西瓜，外面有深绿色条纹 }
+  image_6.jpg: { label: 草莓, description: 一颗红色草莓，上面有绿色叶子和黄色小点 }
+  image_7.jpg: { label: 葡萄, description: 一串紫色葡萄，上面有绿色叶子 }
+  # 编号文件夹（任意该夹下图片都映射到同一名称）
+  "057": { label: 小汽车, description: 一辆红色小汽车，有两个黑色轮子 }
+  "058": { label: 篮球, description: 一个橙色篮球，上面有白色线条 }
+  "059": { label: 绿色尖尖块, description: 一个绿色尖尖块 }
+  "060": { label: 水杯, description: 一个蓝色水杯，杯子中间有白色感叹号 }
+  "061": { label: 椅子, description: 一把橙色椅子，靠背中间有白色爱心图案 }
+  "062": { label: 自行车, description: 一辆红色和灰色的小自行车 }
+  "063": { label: 碗, description: 一个黄色的碗，里面是白色的 }
+  "064": { label: 彩色球, description: 一个彩色球，有蓝色边线和彩色块 }
+  "057/001.jpg": { label: 小汽车, description: 一辆红色小汽车，有两个黑色轮子 }
+  "058/001.jpg": { label: 篮球, description: 一个橙色篮球，上面有白色线条 }
+  "059/001.jpg": { label: 绿色尖尖块, description: 一个绿色尖尖块 }
+  "060/001.jpg": { label: 水杯, description: 一个蓝色水杯，杯子中间有白色感叹号 }
+  "061/001.jpg": { label: 椅子, description: 一把橙色椅子，靠背中间有白色爱心图案 }
+  "062/001.jpg": { label: 自行车, description: 一辆红色和灰色的小自行车 }
+  "063/001.jpg": { label: 碗, description: 一个黄色的碗，里面是白色的 }
+  "064/001.jpg": { label: 彩色球, description: 一个彩色球，有蓝色边线和彩色块 }
+
+# paixu 组前缀 → 物体名（程度由 level 数字表达）
+ordering_prefixes:
+  Circle: 圆
+  Square: 方块
+  Triangle: 三角
+  carrot: 胡萝卜
+  pencil: 铅笔
+  ruler: 尺子
+  train: 火车
+  house: 房子
+  house-red: 红房子
+  apple: 苹果
+  cookie: 饼干
+  cup: 杯子

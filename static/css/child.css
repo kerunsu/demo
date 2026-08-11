@@ -1,0 +1,352 @@
+/* 儿童端专用样式 */
+body {
+  text-align: center;
+  margin-top: 50px;
+}
+
+#image, #video, #audio, #interactive,
+#image-staging, #video-staging, #interactive-staging {
+  display: none;
+  margin-top: 20px;
+}
+
+#poseProgressContainer {
+  width: 80%;
+  height: 30px;
+  background-color: #eee;
+  border-radius: 15px;
+  overflow: hidden;
+  margin: 20px auto;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+#poseProgressBar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #4caf50, #8bc34a);
+  text-align: center;
+  line-height: 30px;
+  color: white;
+  font-weight: bold;
+  border-radius: 15px 0 0 15px;
+  transition: width 0.2s ease-out;
+}
+
+
+/* 全屏媒体样式 */
+.course-media-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: contain;
+  background-color: white;
+  z-index: 1000;
+  opacity: 1;
+  transition: opacity 320ms ease-in-out;
+  will-change: opacity;
+}
+
+/* 表扬视频需覆盖课程内容 */
+#behaviorAnimationVideo {
+  display: none;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  z-index: 3000 !important;
+  opacity: 0;
+  transition: opacity 320ms ease-in-out;
+  will-change: opacity;
+  background: transparent;
+}
+
+.course-media-layer--staging {
+  display: none;
+  z-index: 1001;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#transitionCover {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #ffffff;
+  z-index: 2500;
+}
+
+/* iframe 特殊样式 */
+#interactive, #interactive-staging {
+  border: none;
+  object-fit: initial; /* iframe 不需要 object-fit */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .course-media-layer,
+  #behaviorAnimationVideo {
+    transition-duration: 1ms;
+  }
+}
+
+audio {
+  max-width: 80%;
+}
+
+canvas {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 640px;
+  height: 480px;
+  pointer-events: none;
+}
+
+.video-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+#agent-status-badge {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+/* 对话面板：必须压过待机图(100)、课程媒体(1000)、过渡遮罩(2500) */
+#dialoguePanel.dialogue-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 5000;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto;
+  box-sizing: border-box;
+  min-width: 240px;
+  max-width: min(340px, calc(100vw - 24px));
+  padding: 14px 14px 12px;
+  border-radius: 14px;
+  background: rgba(18, 22, 28, 0.92);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: left;
+  border: 2px solid rgba(255, 196, 86, 0.95);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.dialogue-panel__title {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.dialogue-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  margin-bottom: 8px;
+}
+
+.dialogue-panel__collapse {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 28px;
+}
+
+.dialogue-panel__collapse:hover,
+.dialogue-panel__collapse:focus-visible {
+  background: rgba(255, 255, 255, 0.2);
+  outline: 2px solid rgba(255, 196, 86, 0.9);
+  outline-offset: 2px;
+}
+
+#dialoguePanel.dialogue-panel.is-collapsed {
+  min-width: 0;
+  width: 156px;
+  padding: 8px 10px;
+}
+
+#dialoguePanel.dialogue-panel.is-collapsed .dialogue-panel__header {
+  margin-bottom: 0;
+}
+
+#dialoguePanel.dialogue-panel.is-collapsed .dialogue-panel__body {
+  display: none;
+}
+
+.dialogue-panel__btn,
+.dialogue-panel__hold {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  background: #ffc456;
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.dialogue-panel__hold {
+  padding: 12px 10px;
+  background: #3dd68c;
+  color: #0b1f14;
+}
+
+.dialogue-panel__hold.is-listening {
+  background: #ff8f6b;
+  color: #2a1208;
+}
+
+.dialogue-panel__hold:active {
+  background: #2bb872;
+}
+
+.dialogue-panel__sleep:disabled {
+  opacity: 0.55;
+  cursor: default;
+  background: #5a6570;
+  color: #d7dde5;
+}
+
+.dialogue-panel__row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  align-items: stretch;
+}
+
+.dialogue-panel__input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 8px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  color: #111;
+  background: #fff;
+  font-size: 13px;
+}
+
+.dialogue-panel__send {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  background: #5b9cff;
+  color: #fff;
+}
+
+.dialogue-panel__label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.dialogue-panel__select {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  color: #111;
+  background: #fff;
+}
+
+.dialogue-panel__hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  opacity: 0.75;
+}
+
+.dialogue-panel__log {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 168px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin: 0 0 8px;
+  padding: 8px 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  -webkit-overflow-scrolling: touch;
+}
+
+.dialogue-panel__msg {
+  max-width: 100%;
+  padding: 5px 7px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.dialogue-panel__msg-role {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
+}
+
+.dialogue-panel__msg--child {
+  align-self: flex-end;
+  background: rgba(91, 156, 255, 0.28);
+  border: 1px solid rgba(91, 156, 255, 0.45);
+}
+
+.dialogue-panel__msg--maimai {
+  align-self: flex-start;
+  background: rgba(61, 214, 140, 0.22);
+  border: 1px solid rgba(61, 214, 140, 0.4);
+}
+
+.dialogue-panel__msg--system {
+  align-self: stretch;
+  background: rgba(255, 196, 86, 0.16);
+  border: 1px solid rgba(255, 196, 86, 0.35);
+  opacity: 0.95;
+}
+
+.dialogue-panel__status {
+  min-height: 1.3em;
+  max-height: 4.5em;
+  overflow-y: auto;
+  opacity: 0.9;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+  white-space: pre-wrap;
+}

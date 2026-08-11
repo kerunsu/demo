@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>实时监控 · Robot Training Console</title>
+  <link rel="stylesheet" href="/static/css/config_center.css" />
+  <link rel="stylesheet" href="/static/css/server.css">
+  <script src="/static/js/vendor/socket.io.min.js"></script>
+</head>
+<body class="cc-body mon-shell">
+  <header class="cc-topbar">
+    <div class="cc-brand">
+      <div class="cc-brand-mark">R</div>
+      <div class="cc-brand-text">
+        <strong>Robot Training Console</strong>
+        <span>实时监控</span>
+      </div>
+    </div>
+    <nav class="cc-top-nav" aria-label="主导航">
+      <a href="/server?view=monitor" class="active">实时监控</a>
+      <a href="/server/config/overview">配置中心</a>
+    </nav>
+    <div class="cc-top-actions">
+      <a class="cc-pill" href="/child" target="_blank" rel="noopener">打开 /child</a>
+      <a class="cc-pill" href="/robot" target="_blank" rel="noopener">打开 /robot</a>
+      <a class="cc-pill primary" href="/server/config/overview">配置中心</a>
+    </div>
+  </header>
+
+  <main class="mon-workspace" id="view-monitor" aria-hidden="false">
+    <section class="cc-page mon-page">
+      <div class="cc-page-head">
+        <div>
+          <div class="cc-breadcrumb">运营台 / 实时监控</div>
+          <h1 class="cc-page-title">实时监控</h1>
+          <p class="cc-page-subtitle">训练中 Snapshot · 改配置请用配置中心</p>
+        </div>
+        <div class="cc-head-actions mon-toolbar" id="monitor-header-actions">
+          <button type="button" class="cc-btn soft mon-pending-btn hidden" id="mon-pending-btn" title="点击处理待审核报告">
+            待处理报告 <span id="mon-pending-count">0</span>
+          </button>
+          <span id="mon-badge-socket" class="mon-badge">Socket · —</span>
+          <span id="mon-badge-refresh" class="mon-badge">刷新 · —</span>
+          <span id="mon-badge-mode" class="mon-badge">media · —</span>
+          <span id="mon-badge-analyzer" class="mon-badge">分析器 · —</span>
+          <span id="mon-badge-agent" class="mon-badge">Agent · —</span>
+          <span id="mon-badge-preview" class="mon-badge">预览 · —</span>
+          <button type="button" class="cc-btn soft" id="mon-btn-pause" title="立即停止当前机器人动作与行为">停止机器人输出</button>
+          <button type="button" class="cc-btn soft" id="mon-btn-mute" title="立即停止当前会话声音">停止当前声音</button>
+          <span id="mon-control-feedback" class="mon-badge">控制 · 就绪</span>
+        </div>
+      </div>
+
+      <div id="mon-empty" class="mon-empty card hidden">
+        <strong>当前无活跃训练</strong>
+        <p>请先在教师端选课 / prepare_training。断 Socket 时仍可依赖 1s 轮询。</p>
+      </div>
+
+      <div id="mon-grid" class="mon-grid">
+        <section class="mon-panel mon-live-video">
+          <div class="mon-panel-head">
+            <span class="mon-panel-title"><i class="accent"></i>实时画面</span>
+            <span id="mon-attn-quality" class="mon-tag">MISSING</span>
+          </div>
+
+          <div class="mon-live-block mon-remote-block">
+            <div class="mon-live-subhead">
+              <strong>远端注意力</strong>
+              <span class="mon-muted">机器人端 agent 上行</span>
+            </div>
+            <div class="mon-preview" id="mon-preview">
+              <div class="mon-preview-placeholder" id="mon-preview-placeholder">
+                <strong>预览未启用</strong>
+                <span>agent 生产路径无本地摄像头预览；勿将占位当作真实画面</span>
+              </div>
+              <img id="mon-preview-img" class="mon-preview-img hidden" alt="远端注意力预览" />
+              <span id="mon-preview-stale" class="mon-tag mon-preview-stale hidden">STALE</span>
+            </div>
+            <div class="mon-camera-bottom">
+              <div class="mon-gauge">
+                <strong id="mon-attn-score">—</strong>
+                <span>注意力 0–100</span>
+              </div>
+              <div class="mon-metrics-mini">
+                <div class="mon-metric"><label>本题关注比例</label><strong id="mon-attn-ratio">—</strong></div>
+                <div class="mon-metric"><label>样本数</label><strong id="mon-attn-samples">—</strong></div>
+                <div class="mon-metric"><label>Provider</label><strong id="mon-attn-provider">—</strong></div>
+                <div class="mon-metric"><label>状态</label><strong id="mon-session-status">—</strong></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mon-live-block mon-ambient-block">
+            <div class="mon-live-subhead">
+              <strong>环境摄像头</strong>
+              <span class="mon-muted">服务端本机</span>
+            </div>
+            <div class="mon-ambient-controls">
+              <label class="mon-ambient-toggle">
+                <input type="checkbox" id="mon-ambient-enabled" />
+                <span>开启</span>
+              </label>
+              <select id="mon-ambient-device" class="mon-ambient-select" disabled>
+                <option value="">检测摄像头…</option>
+              </select>
+            </div>
+            <div class="mon-preview mon-ambient-preview" id="mon-ambient-preview">
+              <div class="mon-preview-placeholder" id="mon-ambient-placeholder">
+                <strong>环境摄像头已关闭</strong>
+                <span>无训练时可手动开启；训练进行中将强制保持开启</span>
+              </div>
+              <img id="mon-ambient-img" class="mon-preview-img hidden" alt="环境摄像头预览" />
+            </div>
+            <p class="mon-ambient-hint" id="mon-ambient-hint"></p>
+          </div>
+        </section>
+
+        <section class="mon-panel mon-screens">
+          <div class="mon-panel-head">
+            <span class="mon-panel-title"><i class="accent"></i>三端连接与问题摘要</span>
+          </div>
+          <div class="mon-screen-grid">
+            <div class="mon-screen-card" data-connection-card="server">
+              <div class="mon-screen-bar">服务端 <span id="mon-server-online" class="mon-tag">检查中</span></div>
+              <div class="mon-screen-body">
+                <strong id="mon-server-summary">正在读取服务状态…</strong>
+                <div id="mon-server-detail" class="mon-child-sub">服务端负责连接教师端、儿童端和 Robot Runtime。</div>
+              </div>
+            </div>
+            <div class="mon-screen-card" data-connection-card="teacher">
+              <div class="mon-screen-bar">教师端 <span id="mon-teacher-online" class="mon-tag">检查中</span></div>
+              <div class="mon-screen-body">
+                <strong id="mon-teacher-summary">正在检查教师端连接…</strong>
+                <div id="mon-teacher-detail" class="mon-child-sub">建议只保留一个可操作的教师页面。</div>
+                <div id="mon-teacher-connections" class="mon-conn-list"></div>
+              </div>
+            </div>
+            <div class="mon-screen-card">
+              <div class="mon-screen-bar">儿童端 <span id="mon-child-online" class="mon-tag">离线</span></div>
+              <div class="mon-screen-body">
+                <strong id="mon-child-summary">正在检查儿童端连接…</strong>
+                <div id="mon-child-detail" class="mon-child-sub">儿童端负责显示课程和播放声音。</div>
+                <div class="mon-child-title mon-course-inline" id="mon-course-title">—</div>
+                <div class="mon-child-sub" id="mon-course-sub">课点 / 题序 / 用时</div>
+                <div class="mon-dir" id="mon-human-dir">录像目录：—</div>
+              </div>
+            </div>
+            <div class="mon-screen-card">
+              <div class="mon-screen-bar">机器人动作 Runtime <span id="mon-robot-online" class="mon-tag">未知</span></div>
+              <div class="mon-screen-body">
+                <strong id="mon-runtime-summary">正在检查动作链路…</strong>
+                <div id="mon-runtime-detail" class="mon-child-sub">Runtime 负责把动作发送到机器人硬件。</div>
+                <div id="mon-robot-state">动画 / 播放：未知</div>
+                <div id="mon-robot-command" class="mon-muted">最近命令：—</div>
+                <div id="mon-robot-targets" class="mon-muted">执行目标：—</div>
+              </div>
+            </div>
+          </div>
+          <div class="mon-connection-issues">
+            <strong>当前需要处理</strong>
+            <ul id="mon-connection-issues"><li>正在检查三端连接…</li></ul>
+          </div>
+        </section>
+
+        <section class="mon-panel mon-voice">
+          <div class="mon-panel-head">
+            <span class="mon-panel-title"><i class="accent"></i>语音与表达性语言</span>
+            <span id="mon-voice-active" class="mon-tag">收声 · —</span>
+          </div>
+          <div class="mon-voice-body">
+            <div class="mon-text-card">
+              <label>最近 ASR / 文本</label>
+              <p id="mon-voice-transcript">—</p>
+            </div>
+            <div class="mon-text-card">
+              <label>匹配</label>
+              <p id="mon-voice-match">—</p>
+            </div>
+            <div class="mon-text-card">
+              <label>表达性语言观测</label>
+              <p id="mon-voice-expressive">—</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="mon-panel mon-analytics">
+          <div class="mon-panel-head">
+            <span class="mon-panel-title"><i class="accent"></i>近 60s 注意力趋势</span>
+            <span id="mon-media-session" class="mon-muted">mediaSession · —</span>
+          </div>
+          <div class="mon-chart-wrap">
+            <svg id="mon-attn-chart" viewBox="0 0 400 140" preserveAspectRatio="none" aria-label="注意力曲线"></svg>
+          </div>
+          <div class="mon-emotion-row" id="mon-emotion-row">
+            <label>情绪占比</label>
+            <div class="mon-emotion-bar">
+              <i id="mon-emo-pos" style="width:0%"></i>
+              <i id="mon-emo-neu" class="neu" style="width:0%"></i>
+              <i id="mon-emo-neg" class="neg" style="width:0%"></i>
+            </div>
+            <span id="mon-emo-label" class="mon-muted">不可用</span>
+          </div>
+        </section>
+
+        <section class="mon-panel mon-health">
+          <div class="mon-panel-head">
+            <span class="mon-panel-title"><i class="accent"></i>健康与限制</span>
+          </div>
+          <div id="mon-pending-panel" class="mon-pending-panel hidden">
+            <div class="mon-pending-panel-head">
+              <strong>待处理报告</strong>
+              <button type="button" class="cc-btn soft" id="mon-pending-open">继续处理</button>
+            </div>
+            <ul id="mon-pending-list" class="mon-pending-list"></ul>
+          </div>
+          <ul id="mon-limitations" class="mon-limitations">
+            <li>等待 Snapshot…</li>
+          </ul>
+          <div class="mon-events-wrap">
+            <label>最近事件</label>
+            <ul id="mon-events" class="mon-events">
+              <li>暂无事件</li>
+            </ul>
+          </div>
+          <p class="mon-disclaimer">分析结论仅供教育训练参考，不作临床诊断。</p>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <!-- 报告审核弹窗 -->
+  <div id="mon-review-modal" class="mon-modal hidden" role="dialog" aria-modal="true" aria-labelledby="mon-review-title">
+    <div class="mon-modal-backdrop" data-review-dismiss></div>
+    <div class="mon-modal-card">
+      <h2 id="mon-review-title">训练报告待审核</h2>
+      <p class="mon-modal-meta" id="mon-review-meta">—</p>
+      <p class="mon-modal-warn hidden" id="mon-review-warn">报告仍为 PARTIAL（数据不完整），仍可推送。</p>
+      <div class="mon-modal-actions">
+        <button type="button" class="cc-btn primary" id="mon-review-publish">直接推送</button>
+        <button type="button" class="cc-btn soft" id="mon-review-edit">查看并修改</button>
+        <button type="button" class="cc-btn soft" id="mon-review-later" data-review-dismiss>稍后处理</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/server_monitor.js"></script>
+</body>
+</html>

@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "format": "dollser-motion",
+  "armBaselineVersion": 2,
+  "updatedAt": "2026-07-17T11:50:11.900Z",
+  "name": "06-吸引注意02",
+  "durationMs": 2140,
+  "motionDurationMs": 2140,
+  "motionStartTime": 0,
+  "initialPose": {
+    "pitch": 200,
+    "yaw": 160,
+    "armL": 320,
+    "armR": 50
+  },
+  "commands": [
+    {
+      "actionId": "child-12-01",
+      "time": 100,
+      "axis": "pitch",
+      "angle": 212,
+      "moveMs": 320,
+      "label": "安静低头看屏",
+      "phase": "move"
+    },
+    {
+      "actionId": "child-12-02",
+      "time": 280,
+      "axis": "armL",
+      "angle": 275,
+      "moveMs": 300,
+      "label": "左手轻收指向屏幕",
+      "phase": "move"
+    },
+    {
+      "actionId": "child-12-03",
+      "time": 280,
+      "axis": "armR",
+      "angle": 95,
+      "moveMs": 300,
+      "label": "右手轻收指向屏幕",
+      "phase": "move"
+    },
+    {
+      "actionId": "child-12-02",
+      "time": 1180,
+      "axis": "armL",
+      "angle": 320,
+      "moveMs": 420,
+      "label": "左手轻收指向屏幕 回中位",
+      "phase": "return"
+    },
+    {
+      "actionId": "child-12-03",
+      "time": 1180,
+      "axis": "armR",
+      "angle": 50,
+      "moveMs": 420,
+      "label": "右手轻收指向屏幕 回中位",
+      "phase": "return"
+    },
+    {
+      "actionId": "child-12-01",
+      "time": 1180,
+      "axis": "pitch",
+      "angle": 200,
+      "moveMs": 460,
+      "label": "安静低头看屏 回中位",
+      "phase": "return"
+    }
+  ],
+  "expression": null
+}

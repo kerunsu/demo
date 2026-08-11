@@ -1,0 +1,1424 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>配对游戏</title>
+  <script src="/static/js/vendor/socket.io.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700&display=swap" rel="stylesheet">
+  
+  <style>
+    /* Aligned with DemoRobot training UI: sky-blue gradient + large image cards */
+    :root {
+      --bg-top: #2ebbf4;
+      --bg-bottom: #a2e8f9;
+      --bg-gradient: linear-gradient(180deg, #2ebbf4 0%, #a2e8f9 100%);
+      --card-bg: #ffffff;
+      --primary-color: #0284c7;
+      --accent-blue: #3b82f6;
+      --success-color: #4cd964;
+      --error-color: #ff6b6b;
+      --hint-color: #f1c40f;
+      /* inset 底部不再用 #f0f9ff 硬边带（会与白底形成接缝），改柔和蓝色内阴影 */
+      --shadow-light: 0 10px 20px rgba(0, 0, 0, 0.08), inset 0 -6px 12px rgba(2, 132, 199, 0.10);
+      --shadow-hover: 0 15px 25px rgba(0, 0, 0, 0.12), inset 0 -6px 12px rgba(2, 132, 199, 0.14);
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      font-family: 'Nunito', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg-gradient);
+      background-color: var(--bg-top);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .immersive-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: clamp(12px, 2.2vh, 24px) clamp(12px, 2.5vw, 28px);
+      max-width: 1080px;
+      margin: 0 auto;
+      width: 100%;
+      height: 100%;
+      position: relative;
+      gap: clamp(8px, 1.5vh, 16px);
+    }
+
+    .hint-btn {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: white;
+      border: none;
+      box-shadow: 0 8px 16px rgba(2, 132, 199, 0.18);
+      font-size: 24px;
+      cursor: pointer;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      color: #95a5a6;
+    }
+
+    .hint-btn:active { transform: scale(0.9); }
+    .hint-btn:hover { color: var(--hint-color); transform: scale(1.05); }
+    .hint-btn.active {
+      background: var(--hint-color);
+      color: white;
+      box-shadow: 0 0 15px rgba(241, 196, 15, 0.4);
+      pointer-events: none;
+    }
+
+    /* Target above / options below (dual-screen) */
+    .target-zone {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: clamp(8px, 1.5vh, 14px);
+      padding-top: clamp(4px, 1vh, 12px);
+      min-height: min(40vh, 340px);
+    }
+
+    .speech-bubble {
+      background: #fff;
+      border-radius: 20px;
+      padding: 12px 25px;
+      font-size: clamp(18px, 2.6vh, 22px);
+      font-weight: 900;
+      color: var(--primary-color);
+      box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+      margin: 0;
+      text-align: center;
+    }
+
+    .target-frame {
+      background: rgba(255, 255, 255, 0.55);
+      width: min(37vh, 305px);
+      height: min(37vh, 305px);
+      border-radius: 40px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border: 6px solid white;
+      box-shadow: 0 15px 30px rgba(0, 100, 200, 0.15);
+      overflow: hidden;
+      position: relative;
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 2;
+      padding: 10px;
+    }
+
+    .target-image {
+      width: 100%;
+      height: 100%;
+      border-radius: 24px;
+      object-fit: contain;
+      display: block;
+      transition: opacity 0.3s ease;
+    }
+
+    .visual-divider {
+      height: 22px;
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      opacity: 0.7;
+    }
+
+    .divider-line {
+      width: 160px;
+      height: 6px;
+      background-image: linear-gradient(to right, #cbd5e1 50%, transparent 50%);
+      background-size: 12px 100%;
+      border-radius: 6px;
+    }
+
+    .options-zone {
+      flex: 1 1 auto;
+      padding: clamp(4px, 1vh, 12px) 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .options-grid {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      justify-content: center;
+      align-items: center;
+      gap: clamp(8px, 1.4vw, 18px);
+      width: 100%;
+      max-width: 1040px;
+      padding: 0 4px;
+      --option-count: 3;
+    }
+
+    .options-grid[data-count="4"] { gap: clamp(5px, 1vw, 12px); }
+    .options-grid[data-count="5"] { gap: clamp(3px, 0.7vw, 8px); padding: 0 2px; }
+
+    .option-card {
+      background: var(--card-bg);
+      border-radius: 28px;
+      padding: 8px;
+      border: 5px solid #f0f9ff;
+      box-shadow: var(--shadow-light);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+      transform-style: preserve-3d;
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      /* Share row width evenly; shrink before wrapping (nowrap) */
+      flex: 1 1 0;
+      /* 保证最小可点击尺寸（幼儿手指/触摸屏友好） */
+      min-width: clamp(52px, 9vw, 128px);
+      width: auto;
+      height: auto;
+      max-width: min(30vh, 255px);
+      overflow: hidden;
+    }
+
+    /* Fewer options → allow larger cards; more → tighter max so one row fits */
+    .options-grid[data-count="2"] .option-card { max-width: min(36vh, 290px); }
+    .options-grid[data-count="3"] .option-card { max-width: min(32vh, 270px); }
+    .options-grid[data-count="4"] .option-card {
+      max-width: min(28vh, 230px);
+      padding: 7px;
+      border-width: 4px;
+      border-radius: 26px;
+    }
+    .options-grid[data-count="5"] .option-card {
+      max-width: min(24vh, 195px);
+      padding: 5px;
+      border-width: 4px;
+      border-radius: 22px;
+    }
+
+    .option-card:not(.wrong):not(.correct):not(.correct-lvl3):hover {
+      transform: translateY(-5px);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .option-card:not(.wrong):not(.correct):not(.correct-lvl3):active {
+      transform: scale(0.95);
+    }
+
+    .option-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 18px;
+      pointer-events: none;
+    }
+
+    .option-card.correct {
+      background-color: var(--success-color);
+      transform: scale(1.05) !important;
+      box-shadow: 0 0 30px rgba(76, 217, 100, 0.6);
+      z-index: 10;
+      opacity: 1 !important;
+      filter: none !important;
+    }
+
+    .option-card.correct-lvl3 {
+      background-color: #ffd700;
+      border-color: #fbbf24;
+      /* keep in sync with praise wait window */
+      animation: flip-3d 3.2s ease-in-out forwards;
+      z-index: 10;
+    }
+
+    .option-card.wrong {
+      opacity: 0.35 !important;
+      filter: grayscale(100%) !important;
+      transform: scale(0.75) !important;
+      transition: opacity 0.4s ease, filter 0.4s ease, transform 0.4s ease !important;
+      pointer-events: none;
+    }
+
+    .option-card.dimmed {
+      opacity: 0.25;
+      transform: scale(0.95);
+      filter: grayscale(60%);
+    }
+
+    .option-card.hint-highlight {
+      border: 4px solid var(--hint-color);
+      box-shadow: 0 0 25px rgba(241, 196, 15, 0.5);
+      animation: hint-pulse 1.5s infinite ease-in-out;
+      z-index: 5;
+    }
+
+    .target-frame.celebrate { animation: bounce 0.6s; }
+    .target-frame.bounce-big { animation: bounce-big 0.8s infinite; }
+
+    @keyframes bounce {
+      0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-20px); }
+      60% { transform: translateY(-10px); }
+    }
+
+    @keyframes bounce-big {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-20px) scale(1.1); }
+    }
+
+    @keyframes flip-3d {
+      0% { transform: scale(1) rotateY(0); }
+      25% { transform: scale(1.2) rotateY(180deg); background-color: #ffecd2; }
+      50% { transform: scale(1.15) rotateY(360deg); background-color: #ffd700; }
+      75% { transform: scale(1.2) rotateY(540deg); background-color: #ffecd2; }
+      100% {
+        transform: scale(1.1) rotateY(720deg);
+        background-color: #ffd700;
+        box-shadow: 0 0 40px rgba(255, 215, 0, 0.8);
+      }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    @keyframes hint-pulse {
+      0% { transform: scale(1); border-color: rgba(241, 196, 15, 0.5); }
+      50% { transform: scale(1.08); border-color: rgba(241, 196, 15, 1); }
+      100% { transform: scale(1); border-color: rgba(241, 196, 15, 0.5); }
+    }
+
+    body.flash-bg {
+      animation: bg-flash 0.5s ease-out 4;
+    }
+
+    @keyframes bg-flash {
+      0% { background: #fffde7; }
+      100% { background: var(--bg-gradient); }
+    }
+
+    #confetti-canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    .game-overlay {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(46, 187, 244, 0.96) 0%, rgba(162, 232, 249, 0.96) 100%);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      transition: opacity 0.4s ease;
+    }
+
+    .game-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .waiting-icon {
+      font-size: 5em;
+      margin-bottom: 20px;
+      animation: pulse 2s infinite;
+    }
+
+    .waiting-text {
+      font-size: 1.5em;
+      color: #0f4c75;
+      font-weight: 700;
+    }
+
+    .result-content { text-align: center; display: none; }
+    .result-content.show { display: block; animation: fadeIn 0.5s ease; }
+    .result-emoji { font-size: 6em; margin-bottom: 20px; }
+    .result-text {
+      font-size: 2em;
+      color: var(--primary-color);
+      font-weight: 700;
+    }
+
+    #technical-panel { display: none !important; }
+
+    @media (max-width: 780px) {
+      .target-zone { min-height: min(34vh, 280px); }
+      .target-frame {
+        width: min(34vh, 255px);
+        height: min(34vh, 255px);
+        border-radius: 32px;
+      }
+      .option-card {
+        border-radius: 22px;
+        border-width: 4px;
+        padding: 6px;
+      }
+      .options-grid[data-count="2"] .option-card { max-width: min(30vh, 220px); }
+      .options-grid[data-count="3"] .option-card { max-width: min(29vh, 205px); }
+      .options-grid[data-count="4"] .option-card { max-width: min(25vh, 170px); }
+      .options-grid[data-count="5"] .option-card { max-width: min(21vh, 150px); }
+      .speech-bubble {
+        font-size: 18px;
+        padding: 10px 16px;
+      }
+    }
+
+    @media (max-height: 640px) and (orientation: landscape) {
+      .target-zone { min-height: auto; }
+      .target-frame {
+        width: min(30vh, 220px);
+        height: min(30vh, 220px);
+      }
+      .options-grid[data-count="2"] .option-card { max-width: min(29vh, 185px); }
+      .options-grid[data-count="3"] .option-card { max-width: min(26vh, 170px); }
+      .options-grid[data-count="4"] .option-card { max-width: min(23vh, 150px); }
+      .options-grid[data-count="5"] .option-card { max-width: min(20vh, 128px); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 粒子特效层 -->
+  <canvas id="confetti-canvas"></canvas>
+
+  <!-- 等待/结束 遮罩 -->
+  <div id="gameOverlay" class="game-overlay">
+    <!-- 等待内容 -->
+    <div id="waitingContent">
+      <div class="waiting-icon">🎯</div>
+      <div class="waiting-text">准备开始...</div>
+    </div>
+    
+    <!-- 结束内容 -->
+    <div id="resultContent" class="result-content">
+      <div class="result-emoji">🎉</div>
+      <div class="result-text">太棒了！</div>
+    </div>
+  </div>
+
+  <!-- 主游戏界面 -->
+  <div class="immersive-container matching-mode">
+    <!-- 提示按钮 -->
+    <button id="hintBtn" class="hint-btn" title="点击获取提示" style="display: none;">
+      💡
+    </button>
+
+    <!-- 顶部目标区 -->
+    <div class="target-zone">
+      <p class="speech-bubble">选和上面一样的</p>
+      <div class="target-frame" id="targetFrame">
+        <img id="targetImg" class="target-image" src="" alt="找到这个">
+      </div>
+    </div>
+
+    <!-- 视觉分割 -->
+    <div class="visual-divider">
+      <div class="divider-line"></div>
+    </div>
+
+    <!-- 底部选项区 -->
+    <div class="options-zone">
+      <div class="options-grid" id="optionsGrid">
+        <!-- 动态生成的卡片 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 隐藏的技术面板（保留原有ID以兼容逻辑） -->
+  <div id="technical-panel">
+    <div id="status"></div>
+    <div id="progressBar"></div>
+    <div id="difficultyLevel"></div>
+    <div id="accuracyRate"></div>
+    <div id="consecutiveCorrect"></div>
+    <div id="currentQuestion"></div>
+    <div id="gameMode"></div>
+    <div id="debugLog"></div>
+    <div id="feedback"></div>
+    <div id="feedbackText"></div>
+    <div id="waitingArea"></div>
+    <div id="gameArea"></div>
+  </div>
+
+  <script>
+    // ==================== 粒子特效系统 ====================
+    const canvas = document.getElementById('confetti-canvas');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function drawStar(cx, cy, spikes, outerRadius, innerRadius, color) {
+      let rot = Math.PI / 2 * 3;
+      let x = cx;
+      let y = cy;
+      let step = Math.PI / spikes;
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - outerRadius);
+      for (let i = 0; i < spikes; i++) {
+        x = cx + Math.cos(rot) * outerRadius;
+        y = cy + Math.sin(rot) * outerRadius;
+        ctx.lineTo(x, y);
+        rot += step;
+
+        x = cx + Math.cos(rot) * innerRadius;
+        y = cy + Math.sin(rot) * innerRadius;
+        ctx.lineTo(x, y);
+        rot += step;
+      }
+      ctx.lineTo(cx, cy - outerRadius);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    function createExplosion(x, y, level = 1) {
+      const colors = ['#ff595e', '#ffca3a', '#8ac926', '#1982c4', '#6a4c93', '#ff924c'];
+      let count = 15;
+      let speed = 8;
+
+      if (level === 2) {
+        count = 40;
+        speed = 12;
+      }
+      if (level === 3) {
+        count = 100;
+        speed = 15;
+        x = window.innerWidth / 2;
+        y = window.innerHeight / 2;
+      }
+
+      for (let i = 0; i < count; i++) {
+        const isStar = level >= 2 && Math.random() > 0.7;
+        particles.push({
+          x,
+          y,
+          vx: (Math.random() - 0.5) * speed,
+          vy: (Math.random() - 0.5) * speed,
+          radius: Math.random() * (level * 3) + 2,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          life: 1,
+          decay: level === 3 ? 0.01 : 0.03,
+          type: isStar ? 'star' : 'circle',
+          gravity: level === 3 ? 0.2 : 0
+        });
+      }
+    }
+
+    function animateParticles() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += p.gravity || 0;
+        p.life -= p.decay;
+        if (p.type !== 'star') p.radius *= 0.96;
+
+        ctx.globalAlpha = p.life;
+        if (p.type === 'star') {
+          drawStar(p.x, p.y, 5, p.radius, p.radius / 2, p.color);
+        } else {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+      requestAnimationFrame(animateParticles);
+    }
+    animateParticles();
+
+    // ==================== 全局变量 ====================
+    let socket = null;
+    
+    // 从 URL 获取参数
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('sessionId');
+    const courseId = urlParams.get('courseId');
+    const itemId = urlParams.get('itemId');
+    const trainingSessionId = urlParams.get('trainingSessionId');
+    const questionId = urlParams.get('questionId');
+
+    // ==================== 调试日志 ====================
+    function debugLog(message) {
+      console.log(`[MatchingGame] ${message}`);
+    }
+
+    // 对齐 DemoRobot MATCHING_IMAGE_SEMANTICS / config/interactive_image_semantics.yaml
+    const MATCHING_IMAGE_SEMANTICS = {
+      'image_1.jpg': { label: '苹果', description: '一颗红色苹果' },
+      'image_2.jpg': { label: '桃子', description: '一个粉色桃子' },
+      'image_3.jpg': { label: '香蕉', description: '一串黄色香蕉' },
+      'image_4.jpg': { label: '菠萝', description: '一个黄色菠萝' },
+      'image_5.jpg': { label: '西瓜', description: '一个绿色西瓜' },
+      'image_6.jpg': { label: '草莓', description: '一颗红色草莓' },
+      'image_7.jpg': { label: '葡萄', description: '一串紫色葡萄' },
+      '057': { label: '小汽车', description: '一辆红色小汽车' },
+      '058': { label: '篮球', description: '一个橙色篮球' },
+      '059': { label: '绿色尖尖块', description: '一个绿色尖尖块' },
+      '060': { label: '水杯', description: '一个蓝色水杯' },
+      '061': { label: '椅子', description: '一把橙色椅子' },
+      '062': { label: '自行车', description: '一辆小自行车' },
+      '063': { label: '碗', description: '一个黄色的碗' },
+      '064': { label: '彩色球', description: '一个彩色球' },
+      '057/001.jpg': { label: '小汽车', description: '一辆红色小汽车' },
+      '058/001.jpg': { label: '篮球', description: '一个橙色篮球' },
+      '059/001.jpg': { label: '绿色尖尖块', description: '一个绿色尖尖块' },
+      '060/001.jpg': { label: '水杯', description: '一个蓝色水杯' },
+      '061/001.jpg': { label: '椅子', description: '一把橙色椅子' },
+      '062/001.jpg': { label: '自行车', description: '一辆小自行车' },
+      '063/001.jpg': { label: '碗', description: '一个黄色的碗' },
+      '064/001.jpg': { label: '彩色球', description: '一个彩色球' },
+    };
+
+    function matchingRelKeys(src) {
+      const s = String(src || '').replace(/\\/g, '/');
+      const keys = [];
+      const marker = '/matching/';
+      const idx = s.toLowerCase().indexOf(marker);
+      if (idx >= 0) {
+        const rel = s.slice(idx + marker.length);
+        keys.push(rel);
+        const parts = rel.split('/').filter(Boolean);
+        if (parts.length >= 2) {
+          keys.push(parts[0]);
+          keys.push(parts.slice(-2).join('/'));
+        }
+        if (parts.length) keys.push(parts[parts.length - 1]);
+      } else {
+        const parts = s.split('/').filter(Boolean);
+        if (parts.length) {
+          keys.push(parts[parts.length - 1]);
+          if (parts.length >= 2) {
+            keys.push(parts[parts.length - 2]);
+            keys.push(`${parts[parts.length - 2]}/${parts[parts.length - 1]}`);
+          }
+        }
+      }
+      return [...new Set(keys)];
+    }
+
+    /** fallbackIndex：选项从左到右下标；目标图勿传 0（避免被标成「左边」）。 */
+    function labelFromMatchingSrc(src, fallbackIndex) {
+      for (const key of matchingRelKeys(src)) {
+        const hit = MATCHING_IMAGE_SEMANTICS[key];
+        if (hit && hit.label) return hit.label;
+      }
+      if (fallbackIndex == null) return '这张';
+      if (fallbackIndex === 0) return '左边';
+      return `第${fallbackIndex + 1}张`;
+    }
+
+    // ==================== Socket 初始化 ====================
+    function initSocket() {
+      socket = io();
+      
+      socket.on('connect', () => {
+        debugLog('Socket连接成功');
+        
+        // 如果有 sessionId，加入对应房间
+        if (sessionId) {
+          socket.emit('join_session', { sessionId: sessionId, role: 'child' });
+          debugLog(`加入会话房间: ${sessionId}`);
+        }
+      });
+      
+      socket.on('disconnect', () => {
+        debugLog('Socket连接断开');
+      });
+      
+      // 监听教师端启动游戏
+      socket.on('matching_start', (data) => {
+        debugLog('收到启动游戏指令');
+        if (window.matchingGame && !window.matchingGame.isGameActive) {
+          window.matchingGame.startGame();
+        }
+      });
+      
+      // 监听教师端设置难度
+      socket.on('matching_set_difficulty', (data) => {
+        const difficulty = data.difficulty;
+        debugLog(`收到难度设置: ${difficulty}选1`);
+        if (window.matchingGame) {
+          window.matchingGame.setTeacherDifficulty(difficulty);
+        }
+      });
+      
+      // 监听教师端下一题
+      socket.on('matching_next', (data) => {
+        debugLog('收到下一题指令');
+        if (window.matchingGame && window.matchingGame.isGameActive) {
+          window.matchingGame.forceNextQuestion();
+        }
+      });
+      
+      // 监听教师端提示指令
+      socket.on('matching_hint', (data) => {
+        debugLog('收到提示指令');
+        if (window.matchingGame && window.matchingGame.isGameActive) {
+          window.matchingGame.showHint();
+        }
+      });
+      
+      // 监听 play_resource（兼容旧版本）
+      socket.on('play_resource', (data) => {
+        debugLog(`收到 play_resource: ${JSON.stringify(data)}`);
+      });
+    }
+
+    // ==================== 配对游戏类 ====================
+    class MatchingGame {
+      constructor() {
+        // 图片资源
+        this.gameImages = [];
+
+        // 资源加载状态
+        this.imagesLoaded = false;
+        this.loadingImagesPromise = null;
+
+        // 防止并发启动（首次加载慢时可能收到多次 start 指令）
+        this.isStarting = false;
+
+        // 防止连点
+        this.isProcessing = false;
+        
+        // 游戏状态
+        this.isGameActive = false;
+        this.gameComplete = false;
+        this.currentQuestion = 0;
+        this.maxQuestions = 15;
+        
+        // 答题统计
+        this.correctAnswers = 0;
+        this.consecutiveCorrect = 0;
+        this.consecutiveWrong = 0;
+        this.questionStartAt = null;
+        this.responseTimesMs = [];
+        
+        // 难度系统
+        this.baseDifficulty = 3;
+        this.teacherDifficulty = null;
+        this.autoDifficulty = 3;
+        this.currentDifficulty = 3;
+        
+        // 自动难度调整参数
+        this.questionsInCurrentLevel = 0;
+        this.maxQuestionsInLevel = 5;
+        this.consecutiveWrongInLevel1 = 0;
+        this.isSimplifiedMode = false;
+        
+        // 当前题目
+        this.currentTarget = null;
+        this.currentOptions = [];
+        
+        // 当前题目是否已经答错过（用于统计：只要点错过就不算正确）
+        this.hasAnsweredWrong = false;
+        this.wrongAttemptsThisQuestion = 0;
+        
+        this.init();
+      }
+      
+      async init() {
+        debugLog('初始化配对游戏');
+        debugLog(`URL参数: sessionId=${sessionId}, courseId=${courseId}, itemId=${itemId}`);
+        
+        await this.loadGameImages();
+      }
+      
+      async loadGameImages() {
+        if (this.imagesLoaded) return true;
+        if (this.loadingImagesPromise) return this.loadingImagesPromise;
+
+        this.loadingImagesPromise = (async () => {
+          try {
+            debugLog('正在加载配对图片...');
+            const response = await fetch('/api/getMatchingImages', { cache: 'no-store' });
+            const data = await response.json();
+
+            if (data.error) {
+              debugLog(`加载图片失败: ${data.error}`);
+              return false;
+            }
+
+            this.gameImages = (data.items && data.items.length
+              ? data.items
+              : (data.images || []).map((src) => ({ src }))
+            ).map((item, index) => {
+              const src = typeof item === 'string' ? item : item.src;
+              // 加载时不按 index 标「左边」——该图可能被用作上面目标
+              const label = (item && item.label) || labelFromMatchingSrc(src);
+              return {
+                id: `img_${index}`,
+                src,
+                label,
+                description: (item && item.description) || label,
+              };
+            });
+
+            this.gameImages.forEach((item) => {
+              if (!item || !item.src) return;
+              const image = new Image();
+              image.decoding = 'async';
+              image.src = item.src;
+              image.decode?.().catch(() => {});
+            });
+            this.imagesLoaded = true;
+            debugLog(`加载成功: ${this.gameImages.length} 个物品类别`);
+            return true;
+          } catch (error) {
+            debugLog(`加载图片异常: ${error.message}`);
+            return false;
+          } finally {
+            // 允许后续重试（如果失败）
+            this.loadingImagesPromise = null;
+          }
+        })();
+
+        return this.loadingImagesPromise;
+      }
+
+      async ensureImagesLoaded() {
+        const ok = await this.loadGameImages();
+        if (ok && this.gameImages.length >= 2) return true;
+
+        // 轻量重试一次，解决“首次进入接口还没准备好”的偶发情况
+        await new Promise(resolve => setTimeout(resolve, 300));
+        const ok2 = await this.loadGameImages();
+        return ok2 && this.gameImages.length >= 2;
+      }
+      
+      // ==================== 教师端控制方法 ====================
+      
+      setTeacherDifficulty(level) {
+        this.teacherDifficulty = level;
+        debugLog(`教师设置难度: ${level}选1 (下一题生效)`);
+      }
+      
+      async startGame() {
+        if (this.isStarting) return;
+        this.isStarting = true;
+
+        // 首次进入常见卡住原因：startGame 先于图片加载完成被调用，导致直接 return。
+        // 这里改为：确保图片加载完成后再开始。
+        const overlay = document.getElementById('gameOverlay');
+        const waitingContent = document.getElementById('waitingContent');
+        const waitingText = waitingContent ? waitingContent.querySelector('.waiting-text') : null;
+
+        try {
+          if (waitingText) waitingText.textContent = '正在加载...';
+          if (overlay) overlay.classList.remove('hidden');
+
+          const ready = await this.ensureImagesLoaded();
+          if (!ready) {
+            debugLog('图片数量不足/加载失败，无法开始游戏');
+            if (waitingText) waitingText.textContent = '资源加载失败，请稍后重试';
+            return;
+          }
+        
+        // 重置游戏状态
+        this.isGameActive = true;
+        this.gameComplete = false;
+        this.currentQuestion = 0;
+        this.correctAnswers = 0;
+        this.consecutiveCorrect = 0;
+        this.consecutiveWrong = 0;
+        this.questionsInCurrentLevel = 0;
+        this.consecutiveWrongInLevel1 = 0;
+        this.isSimplifiedMode = false;
+        this.autoDifficulty = this.baseDifficulty;
+        this.questionStartAt = null;
+        this.responseTimesMs = [];
+        
+        // 应用教师设置的难度
+        if (this.teacherDifficulty !== null) {
+          this.baseDifficulty = this.teacherDifficulty;
+          this.autoDifficulty = this.teacherDifficulty;
+          this.teacherDifficulty = null;
+        }
+        
+        // 隐藏等待遮罩
+        document.getElementById('gameOverlay').classList.add('hidden');
+        
+        debugLog('游戏开始');
+
+          this.nextQuestion();
+        } finally {
+          this.isStarting = false;
+        }
+      }
+      
+      forceNextQuestion() {
+        if (!this.isGameActive) return;
+        debugLog('教师强制跳转下一题');
+        // 作废进行中的表扬语音等待，避免稍后重复切题
+        this._advanceToken = (this._advanceToken || 0) + 1;
+        this.nextQuestion();
+      }
+
+      /**
+       * 等表扬/鼓励 browser TTS 结束再切题（与 sequencing 一致）。
+       * minMs：最短停留，避免动画过早被清掉；maxMs：TTS 失败时兜底，不永久卡住。
+       */
+      waitForFeedbackSpeech(intent, { minMs = 2800, maxMs = 4200 } = {}) {
+        return new Promise((resolve) => {
+          const start = Date.now();
+          let settled = false;
+          const cleanup = () => {
+            if (socket) socket.off('robot_speak_ended', onSpeakEnded);
+            window.removeEventListener('message', onMessage);
+            clearTimeout(maxTimer);
+          };
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            const elapsed = Date.now() - start;
+            const remain = Math.max(0, minMs - elapsed);
+            setTimeout(resolve, remain);
+          };
+          const onSpeakEnded = (data) => {
+            if (!data) return;
+            if (data.sessionId && sessionId && data.sessionId !== sessionId) return;
+            if (intent && data.intent && data.intent !== intent) return;
+            finish();
+          };
+          const onMessage = (ev) => {
+            const payload = ev && ev.data;
+            if (payload && payload.type === 'robot_speak_ended') {
+              onSpeakEnded(payload);
+            }
+          };
+          if (socket) socket.on('robot_speak_ended', onSpeakEnded);
+          window.addEventListener('message', onMessage);
+          const maxTimer = setTimeout(finish, maxMs);
+        });
+      }
+      
+      // ==================== 游戏核心逻辑 ====================
+      
+      nextQuestion() {
+        this.isProcessing = false;
+        if (this.currentQuestion >= this.maxQuestions) {
+          this.finishGame();
+          return;
+        }
+        
+        this.currentQuestion++;
+        this.hasAnsweredWrong = false; // 重置当前题目的错误标记
+        this.wrongAttemptsThisQuestion = 0;
+        
+        // 如果教师设置了新难度，在这里应用
+        if (this.teacherDifficulty !== null) {
+          this.baseDifficulty = this.teacherDifficulty;
+          this.autoDifficulty = this.teacherDifficulty;
+          this.teacherDifficulty = null;
+          debugLog(`应用教师难度: ${this.baseDifficulty}选1`);
+        }
+        
+        this.generateQuestion();
+      }
+      
+      generateQuestion() {
+        // 确定本题难度
+        this.currentDifficulty = this.calculateDifficulty();
+        
+        // 确保不超过可用图片数量
+        const numOptions = Math.min(this.currentDifficulty, this.gameImages.length);
+        
+        // 随机选择目标图片
+        const targetIndex = Math.floor(Math.random() * this.gameImages.length);
+        this.currentTarget = this.gameImages[targetIndex];
+        
+        // 构建选项
+        this.currentOptions = [this.currentTarget];
+        
+        while (this.currentOptions.length < numOptions) {
+          const randomIndex = Math.floor(Math.random() * this.gameImages.length);
+          const option = this.gameImages[randomIndex];
+          if (!this.currentOptions.find(o => o.id === option.id)) {
+            this.currentOptions.push(option);
+          }
+        }
+        
+        // 打乱选项顺序
+        this.shuffleArray(this.currentOptions);
+        
+        this.displayQuestion();
+      }
+      
+      calculateDifficulty() {
+        if (this.isSimplifiedMode) {
+          return 3;
+        }
+        return this.autoDifficulty;
+      }
+      
+      displayQuestion() {
+        // 显示目标图片（带淡入效果）
+        const targetImg = document.getElementById('targetImg');
+        const targetFrame = document.getElementById('targetFrame');
+        const hintBtn = document.getElementById('hintBtn');
+        
+        // 重置提示按钮状态
+        hintBtn.classList.remove('active');
+        
+        targetImg.style.opacity = '0';
+        targetImg.src = this.currentTarget.src;
+        targetFrame.classList.remove('celebrate', 'bounce-big');
+        
+        setTimeout(() => {
+          targetImg.style.opacity = '1';
+        }, 50);
+        
+        // 生成选项卡片（单行排布，按数量缩放）
+        const optionsGrid = document.getElementById('optionsGrid');
+        optionsGrid.innerHTML = '';
+        const optionCount = this.currentOptions.length;
+        optionsGrid.dataset.count = String(optionCount);
+        optionsGrid.style.setProperty('--option-count', String(optionCount));
+        
+        this.currentOptions.forEach((option, index) => {
+          const card = document.createElement('div');
+          card.className = 'option-card';
+          card.dataset.id = option.id;
+          card.style.animation = `fadeIn 0.3s ease ${index * 0.1}s both`;
+          
+          // 标记正确答案，方便提示功能使用
+          if (option.id === this.currentTarget.id) {
+            card.dataset.isCorrect = "true";
+          }
+          
+          const img = document.createElement('img');
+          img.src = option.src;
+          img.alt = `选项 ${index + 1}`;
+          
+          card.appendChild(img);
+          card.addEventListener('click', (e) => this.selectOption(option, card, e));
+          
+          optionsGrid.appendChild(card);
+        });
+
+        // 题目展示完成，开始计时作答反应
+        this.questionStartAt = Date.now();
+        this._responseRecordedForQuestion = false;
+        this.publishPageContext();
+        this.emitQuestionReady();
+      }
+
+      emitQuestionReady() {
+        if (!socket || !socket.connected || !sessionId) return;
+        const pageContext = this.buildPageContext();
+        socket.emit('matching_question_ready', {
+          sessionId,
+          courseType: 'pairing',
+          pageContext,
+          prompt: pageContext.prompt,
+        });
+        debugLog('提问语音: pairing');
+      }
+
+      labelFromSrc(src, fallbackIndex) {
+        // 优先用已加载条目上的 label
+        const hit = (this.gameImages || []).find((g) => g.src === src);
+        if (hit && hit.label) return hit.label;
+        return labelFromMatchingSrc(src, fallbackIndex);
+      }
+
+      buildPageContext() {
+        // 对齐 DemoRobot：上面=target，下面从左到右=options（1-based）
+        const options = (this.currentOptions || []).map((opt, index) => {
+          const label = opt.label || this.labelFromSrc(opt.src, index);
+          return {
+            id: opt.id,
+            label,
+            description: opt.description || label,
+            // 不把文件路径暴露给 LLM
+          };
+        });
+        const correctIndex = options.findIndex(
+          (o) => this.currentTarget && o.id === this.currentTarget.id
+        );
+        const targetLabel = this.currentTarget
+          ? (this.currentTarget.label || this.labelFromSrc(this.currentTarget.src))
+          : '上面那张';
+        const targetDescription = this.currentTarget
+          ? (this.currentTarget.description || targetLabel)
+          : targetLabel;
+        return {
+          courseType: 'pairing',
+          prompt: '选和上面一样的。',
+          target: targetLabel,
+          targetDescription,
+          options,
+          optionsLeftToRight: options.map((o) => o.label),
+          wrongAttempts: this.wrongAttemptsThisQuestion || 0,
+          questionIndex: this.currentQuestion,
+          totalQuestions: this.maxQuestions,
+          questionId: questionId || `${courseId || 'pairing'}_${this.currentQuestion}`,
+          itemId: itemId || null,
+          correctPosition: correctIndex >= 0 ? correctIndex + 1 : null,
+          correctLabel: correctIndex >= 0 ? options[correctIndex].label : null,
+        };
+      }
+
+      publishPageContext() {
+        const pageContext = this.buildPageContext();
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+              type: 'interactive_page_context',
+              pageContext,
+              sessionId,
+            }, '*');
+          }
+        } catch (e) {
+          debugLog(`postMessage pageContext 失败: ${e}`);
+        }
+        if (socket && socket.connected && sessionId) {
+          socket.emit('interactive_page_context', {
+            sessionId,
+            courseType: 'pairing',
+            pageContext,
+          });
+        }
+      }
+      
+      // ==================== 提示功能 ====================
+      
+      showHint() {
+        if (!this.isGameActive) return;
+        
+        debugLog('显示提示效果');
+        
+        // 激活按钮状态
+        const hintBtn = document.getElementById('hintBtn');
+        hintBtn.classList.add('active');
+        
+        // 获取所有选项卡片
+        const optionsGrid = document.getElementById('optionsGrid');
+        const cards = Array.from(optionsGrid.children);
+        
+        // 遍历卡片，应用提示样式
+        cards.forEach(card => {
+          // 忽略已经选错的卡片
+          if (card.classList.contains('wrong')) return;
+          // 忽略已经选对的卡片
+          if (card.classList.contains('correct')) return;
+          
+          if (card.dataset.isCorrect === "true") {
+            // 正确答案：黄色光晕呼吸效果
+            card.classList.add('hint-highlight');
+          } else {
+            // 错误答案：变暗缩小
+            card.classList.add('dimmed');
+          }
+        });
+      }
+      
+      selectOption(selectedOption, cardElement, event) {
+        if (!this.isGameActive || this.isProcessing) return;
+        if (cardElement.classList.contains('wrong')) return;
+
+        // 本题首次点击记一次反应时
+        if (this.questionStartAt != null && !this._responseRecordedForQuestion) {
+          this.responseTimesMs.push(Math.max(0, Date.now() - this.questionStartAt));
+          this._responseRecordedForQuestion = true;
+        }
+        
+        const isCorrect = selectedOption.id === this.currentTarget.id;
+        
+        if (isCorrect) {
+          this.isProcessing = true;
+          // 正确反馈 - 但只有在本题没点错过的情况下才计入正确数
+          if (!this.hasAnsweredWrong) {
+            this.correctAnswers++;
+            this.consecutiveCorrect++;
+            this.consecutiveWrong = 0;
+            this.questionsInCurrentLevel++;
+            
+            if (this.autoDifficulty === 2) {
+              this.consecutiveWrongInLevel1 = 0;
+            }
+            
+            // 自动难度提升（只有真正答对才提升）
+            if (this.questionsInCurrentLevel >= this.maxQuestionsInLevel && 
+                this.autoDifficulty < 5 && 
+                !this.isSimplifiedMode) {
+              this.autoDifficulty++;
+              this.questionsInCurrentLevel = 0;
+              debugLog(`难度提升至 ${this.autoDifficulty}选1`);
+            }
+          } else {
+            // 本题之前点错过，虽然最终点对了但不计入正确数
+            debugLog('本题之前已点错，不计入正确数');
+          }
+          
+          // 视觉效果（无论是否之前点错都显示）
+          cardElement.classList.add('correct-lvl3');
+          cardElement.classList.remove('hint-highlight', 'dimmed');
+          document.getElementById('targetFrame').classList.add('bounce-big');
+
+          // 背景闪光（覆盖表扬语音最短等待，避免切题时突兀收尾）
+          document.body.classList.add('flash-bg');
+          setTimeout(() => document.body.classList.remove('flash-bg'), 3200);
+          
+          // 粒子爆炸
+          const rect = cardElement.getBoundingClientRect();
+          createExplosion(rect.left + rect.width / 2, rect.top + rect.height / 2, 3);
+          
+          // 先挂 wait 再上报，避免 praise TTS ended 早于监听
+          const token = (this._advanceToken = (this._advanceToken || 0) + 1);
+          const waitSpeech = this.waitForFeedbackSpeech('praise', {
+            minMs: 2800,
+            maxMs: 4200,
+          });
+          // 发送状态更新给教师端（isCorrect=计分正确；triggerPraise=点对即表扬）
+          this.emitStatusUpdate(isCorrect && !this.hasAnsweredWrong, true);
+          waitSpeech.then(() => {
+            if (token !== this._advanceToken) return;
+            this.nextQuestion();
+          });
+          
+        } else {
+          // 错误反馈
+          // 标记本题已答错（后续即使点对也不算正确）
+          if (!this.hasAnsweredWrong) {
+            this.hasAnsweredWrong = true;
+            this.consecutiveWrong++;
+            this.consecutiveCorrect = 0;
+            
+            // 难度调整逻辑
+            if (this.autoDifficulty === 2) {
+              this.consecutiveWrongInLevel1++;
+              if (this.consecutiveWrongInLevel1 >= 5) {
+                this.isSimplifiedMode = true;
+                this.autoDifficulty = 3;
+                this.questionsInCurrentLevel = 0;
+                debugLog('进入简化模式');
+              }
+            }
+          }
+          this.wrongAttemptsThisQuestion = (this.wrongAttemptsThisQuestion || 0) + 1;
+          this.publishPageContext();
+          
+          cardElement.classList.add('wrong');
+          // 点错：播鼓励/安慰（不切题，可继续点）
+          this.emitStatusUpdate(false, false);
+        }
+      }
+      
+      finishGame() {
+        this.isGameActive = false;
+        this.gameComplete = true;
+        
+        const accuracy = this.currentQuestion > 0 
+          ? ((this.correctAnswers / this.currentQuestion) * 100).toFixed(1)
+          : 0;
+        
+        debugLog(`游戏结束，正确率: ${accuracy}%`);
+        
+        // 显示结束界面
+        const overlay = document.getElementById('gameOverlay');
+        const waitingContent = document.getElementById('waitingContent');
+        const resultContent = document.getElementById('resultContent');
+        
+        waitingContent.style.display = 'none';
+        resultContent.classList.add('show');
+        overlay.classList.remove('hidden');
+        
+        // 满屏撒花
+        createExplosion(window.innerWidth / 2, window.innerHeight / 2);
+        setTimeout(() => {
+          createExplosion(window.innerWidth / 3, window.innerHeight / 2);
+          createExplosion(window.innerWidth * 2 / 3, window.innerHeight / 2);
+        }, 200);
+        
+        // 发送游戏结束事件
+        this.emitGameEnd(accuracy);
+        
+        // 保存结果
+        this.saveResult(accuracy);
+      }
+      
+      // ==================== 事件发送 ====================
+      
+      emitStatusUpdate(isCorrect, triggerPraise = false) {
+        if (!socket || !socket.connected) return;
+        const answered = this.currentQuestion;
+        const accuracy = answered > 0
+          ? (this.correctAnswers / answered) * 100
+          : 0;
+        const avgResponseMs = this.responseTimesMs.length
+          ? this.responseTimesMs.reduce((a, b) => a + b, 0) / this.responseTimesMs.length
+          : null;
+        
+        const data = {
+          sessionId: sessionId,
+          trainingSessionId: trainingSessionId,
+          questionId: questionId,
+          courseId: courseId,
+          difficulty: this.currentDifficulty,
+          questionIndex: this.currentQuestion,
+          isCorrect: isCorrect,
+          triggerPraise: !!triggerPraise,
+          accuracy: accuracy,
+          correct: this.correctAnswers,
+          total: answered,
+          answered: answered,
+          partial: true,
+          avgResponseMs: avgResponseMs,
+          lastResponseMs: this.responseTimesMs.length
+            ? this.responseTimesMs[this.responseTimesMs.length - 1]
+            : null,
+          isFinished: false,
+          consecutiveCorrect: this.consecutiveCorrect,
+          isSimplifiedMode: this.isSimplifiedMode,
+          pageContext: this.buildPageContext(),
+          wrongAttempts: this.wrongAttemptsThisQuestion || 0,
+        };
+        
+        socket.emit('matching_status_update', data);
+        debugLog(`状态更新: 第${this.currentQuestion}题, ${isCorrect ? '正确' : '错误'}${triggerPraise ? ' [表扬]' : ''}`);
+      }
+      
+      emitGameEnd(accuracy) {
+        if (!socket || !socket.connected) return;
+        const avgResponseMs = this.responseTimesMs.length
+          ? this.responseTimesMs.reduce((a, b) => a + b, 0) / this.responseTimesMs.length
+          : null;
+        
+        const data = {
+          sessionId: sessionId,
+          trainingSessionId: trainingSessionId,
+          questionId: questionId,
+          courseId: courseId,
+          accuracy: parseFloat(accuracy),
+          total: this.currentQuestion || this.maxQuestions,
+          correct: this.correctAnswers,
+          answered: this.currentQuestion,
+          partial: false,
+          avgResponseMs: avgResponseMs,
+          responseTimesMs: this.responseTimesMs.slice()
+        };
+        
+        socket.emit('matching_game_end', data);
+        debugLog('发送游戏结束事件');
+      }
+      
+      // ==================== 兼容性方法（保持原有接口） ====================
+      
+      updateStatus(text, type = '') {
+        // 不再显示状态栏，仅保留接口兼容
+      }
+      
+      updateStats() {
+        // 不再显示统计，仅保留接口兼容
+      }
+      
+      updateProgress() {
+        // 不再显示进度条，仅保留接口兼容
+      }
+      
+      showFeedback(message, type) {
+        // 使用视觉动效替代文字反馈
+      }
+      
+      // ==================== 工具方法 ====================
+      
+      shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+      }
+      
+      async saveResult(accuracy) {
+        try {
+          const response = await fetch('/api/saveResult', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              gameType: 'matching',
+              sessionId: sessionId,
+              courseId: courseId,
+              total: this.maxQuestions,
+              correct: this.correctAnswers,
+              accuracy: accuracy,
+              difficulty: this.currentDifficulty,
+              isSimplifiedMode: this.isSimplifiedMode,
+              timestamp: new Date().toISOString()
+            })
+          });
+          
+          const result = await response.json();
+          debugLog(`结果保存: ${result.message || 'OK'}`);
+        } catch (error) {
+          debugLog(`结果保存失败: ${error.message}`);
+        }
+      }
+    }
+
+    // ==================== 页面初始化 ====================
+    document.addEventListener('DOMContentLoaded', async () => {
+      debugLog('页面加载完成，初始化配对游戏');
+      
+      // 初始化 Socket 连接
+      initSocket();
+      
+      // 初始化游戏
+      window.matchingGame = new MatchingGame();
+      debugLog('配对游戏初始化完成，自动启动');
+      await window.matchingGame.startGame();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# Child Media Agent 依赖（通常与主项目 requirements.txt 重叠）
+# 在儿童机上可单独: pip install -r child_media_agent/requirements.txt
+flask>=2.3.0
+flask-cors>=4.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+pyaudio>=0.2.14
+requests>=2.31.0

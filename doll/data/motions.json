@@ -1,0 +1,686 @@
+{
+  "version": 2,
+  "updatedAt": "2026-08-08T10:10:16.022441+00:00",
+  "motions": {
+    "惊讶/鼓励": [
+      {
+        "time": 0,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 100
+      },
+      {
+        "time": 160,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 275,
+          "armR": 95
+        },
+        "moveMs": 380
+      },
+      {
+        "time": 240,
+        "pose": {
+          "pitch": 190,
+          "yaw": 160,
+          "armL": 275,
+          "armR": 95
+        },
+        "moveMs": 280
+      },
+      {
+        "time": 1100,
+        "pose": {
+          "pitch": 190,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 500
+      },
+      {
+        "time": 1200,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 420
+      },
+      {
+        "time": 1280,
+        "pose": {
+          "pitch": 208,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 260
+      },
+      {
+        "time": 1680,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 380
+      }
+    ],
+    "空动作": [
+      {
+        "time": 0,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 300
+      },
+      {
+        "time": 460,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 360
+      }
+    ],
+    "01-打招呼": [
+      {
+        "time": 0,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 100
+      },
+      {
+        "time": 120,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 620
+      },
+      {
+        "time": 360,
+        "pose": {
+          "pitch": 185,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 300
+      },
+      {
+        "time": 740,
+        "pose": {
+          "pitch": 185,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 360
+      },
+      {
+        "time": 1320,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 620
+      },
+      {
+        "time": 2010,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 360
+      }
+    ],
+    "03-表扬": [
+      {
+        "time": 0,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 100
+      },
+      {
+        "time": 380,
+        "pose": {
+          "pitch": 208,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 260
+      },
+      {
+        "time": 420,
+        "pose": {
+          "pitch": 208,
+          "yaw": 160,
+          "armL": 275,
+          "armR": 95
+        },
+        "moveMs": 320
+      },
+      {
+        "time": 860,
+        "pose": {
+          "pitch": 208,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 420
+      },
+      {
+        "time": 880,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 380
+      },
+      {
+        "time": 1320,
+        "pose": {
+          "pitch": 208,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 260
+      },
+      {
+        "time": 1380,
+        "pose": {
+          "pitch": 208,
+          "yaw": 160,
+          "armL": 275,
+          "armR": 50
+        },
+        "moveMs": 300
+      },
+      {
+        "time": 1420,
+        "pose": {
+          "pitch": 208,
+          "yaw": 160,
+          "armL": 275,
+          "armR": 95
+        },
+        "moveMs": 300
+      },
+      {
+        "time": 1700,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 275,
+          "armR": 95
+        },
+        "moveMs": 380
+      },
+      {
+        "time": 1760,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 380
+      },
+      {
+        "time": 1800,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 380
+      }
+    ],
+    "04-摇头再来一次": [
+      {
+        "time": 0,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 100
+      },
+      {
+        "time": 380,
+        "pose": {
+          "pitch": 200,
+          "yaw": 178,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 300
+      },
+      {
+        "time": 400,
+        "pose": {
+          "pitch": 200,
+          "yaw": 178,
+          "armL": 302,
+          "armR": 68
+        },
+        "moveMs": 300
+      },
+      {
+        "time": 840,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 302,
+          "armR": 68
+        },
+        "moveMs": 360
+      },
+      {
+        "time": 860,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 360
+      },
+      {
+        "time": 1180,
+        "pose": {
+          "pitch": 200,
+          "yaw": 142,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 300
+      },
+      {
+        "time": 1640,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 360
+      }
+    ],
+    "06-吸引注意02": [
+      {
+        "time": 0,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 100
+      },
+      {
+        "time": 100,
+        "pose": {
+          "pitch": 212,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 320
+      },
+      {
+        "time": 280,
+        "pose": {
+          "pitch": 212,
+          "yaw": 160,
+          "armL": 275,
+          "armR": 95
+        },
+        "moveMs": 300
+      },
+      {
+        "time": 1180,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 460
+      }
+    ],
+    "07-再见": [
+      {
+        "time": 0,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 100
+      },
+      {
+        "time": 280,
+        "pose": {
+          "pitch": 192,
+          "yaw": 170,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 320
+      },
+      {
+        "time": 360,
+        "pose": {
+          "pitch": 192,
+          "yaw": 170,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 420
+      },
+      {
+        "time": 860,
+        "pose": {
+          "pitch": 192,
+          "yaw": 170,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 460
+      },
+      {
+        "time": 1420,
+        "pose": {
+          "pitch": 192,
+          "yaw": 170,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 420
+      },
+      {
+        "time": 1500,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 480
+      },
+      {
+        "time": 1920,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 500
+      }
+    ],
+    "02-提问": [
+      {
+        "time": 0,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 100
+      },
+      {
+        "time": 120,
+        "pose": {
+          "pitch": 218,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 300
+      },
+      {
+        "time": 240,
+        "pose": {
+          "pitch": 218,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 320
+      },
+      {
+        "time": 1120,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 420
+      },
+      {
+        "time": 1180,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 440
+      }
+    ],
+    "05-吸引注意01": [
+      {
+        "time": 0,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 100
+      },
+      {
+        "time": 300,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 400
+      },
+      {
+        "time": 420,
+        "pose": {
+          "pitch": 218,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 300
+      },
+      {
+        "time": 780,
+        "pose": {
+          "pitch": 218,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 420
+      },
+      {
+        "time": 1280,
+        "pose": {
+          "pitch": 218,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 420
+      },
+      {
+        "time": 1620,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 95
+        },
+        "moveMs": 420
+      },
+      {
+        "time": 1780,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 50
+        },
+        "moveMs": 420
+      }
+    ]
+  },
+  "motionMeta": {
+    "01-打招呼": {
+      "sourceFormat": "dollser-motion",
+      "sourceVersion": 2,
+      "durationMs": 2438,
+      "motionDurationMs": 2438,
+      "motionStartTime": 0,
+      "expression": {
+        "mediaId": "v2开心.mp4",
+        "offsetMs": 0,
+        "durationMs": 2438,
+        "loop": true
+      },
+      "speedMultiplier": 0.8
+    },
+    "03-表扬": {
+      "sourceFormat": "dollser-motion",
+      "sourceVersion": 2,
+      "durationMs": 4249,
+      "motionDurationMs": 2580,
+      "motionStartTime": 0,
+      "expression": {
+        "mediaId": "兴奋 (1).mp4",
+        "offsetMs": 0,
+        "durationMs": 4249,
+        "loop": true
+      },
+      "speedMultiplier": 0.8
+    },
+    "04-摇头再来一次": {
+      "sourceFormat": "dollser-motion",
+      "sourceVersion": 2,
+      "durationMs": 3000,
+      "motionDurationMs": 3000,
+      "motionStartTime": 0,
+      "expression": {
+        "mediaId": "",
+        "offsetMs": 0,
+        "durationMs": 0,
+        "loop": false
+      }
+    },
+    "06-吸引注意02": {
+      "sourceFormat": "dollser-motion",
+      "sourceVersion": 2,
+      "durationMs": 2140,
+      "motionDurationMs": 2140,
+      "motionStartTime": 0,
+      "expression": {
+        "mediaId": "",
+        "offsetMs": 0,
+        "durationMs": 0,
+        "loop": false
+      },
+      "speedMultiplier": 0.8
+    },
+    "07-再见": {
+      "sourceFormat": "dollser-motion",
+      "sourceVersion": 2,
+      "durationMs": 2920,
+      "motionDurationMs": 2920,
+      "motionStartTime": 0,
+      "expression": {
+        "mediaId": "",
+        "offsetMs": 0,
+        "durationMs": 0,
+        "loop": false
+      },
+      "speedMultiplier": 0.8
+    },
+    "02-提问": {
+      "sourceFormat": "dollser-motion",
+      "sourceVersion": 2,
+      "durationMs": 2120,
+      "motionDurationMs": 2120,
+      "motionStartTime": 0,
+      "expression": {
+        "mediaId": "",
+        "offsetMs": 0,
+        "durationMs": 0,
+        "loop": false
+      },
+      "speedMultiplier": 0.8
+    },
+    "05-吸引注意01": {
+      "sourceFormat": "dollser-motion",
+      "sourceVersion": 2,
+      "durationMs": 2700,
+      "motionDurationMs": 2700,
+      "motionStartTime": 0,
+      "expression": {
+        "mediaId": "",
+        "offsetMs": 0,
+        "durationMs": 0,
+        "loop": false
+      },
+      "speedMultiplier": 0.8
+    },
+    "惊讶/鼓励": {
+      "speedMultiplier": 0.8
+    }
+  }
+}

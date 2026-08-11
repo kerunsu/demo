@@ -1,0 +1,435 @@
+"""报告评分 v2：逐课点教师评分 + 客观任务指标。"""
+from __future__ import annotations
+
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+import yaml
+
+
+DEFAULT_WEIGHTS = {
+    "attention": 20,
+    "expressiveLanguage": 20,
+    "receptiveLanguage": 20,
+    "matching": 20,
+    "ordering": 20,
+}
+DEFAULT_COURSE_WEIGHTS = {
+    "mimic": 1,
+    "naming": 1,
+    "onomatopoeia": 1,
+    "pairing": 1,
+    "ordering": 1,
+}
+
+COURSE_ALIASES = {
+    "matching": "pairing",
+    "sequencing": "ordering",
+    "speech": "naming",
+    "imitation": "mimic",
+    "pose": "mimic",
+}
+COURSE_TYPE_EXPECTATIONS = {
+    "pairing": ["matching", "receptiveLanguage"],
+    "ordering": ["ordering", "receptiveLanguage"],
+    "naming": ["receptiveLanguage", "expressiveLanguage"],
+    "onomatopoeia": ["receptiveLanguage", "expressiveLanguage"],
+    "mimic": ["attention"],
+}
+
+
+def load_scoring_config() -> Dict[str, Any]:
+    from app.config import BASE_DIR
+    path = BASE_DIR / "config" / "report_scoring.yaml"
+    if not path.exists():
+        return {
+            "schema_version": "education-training-index-v2-teacher-rating",
+            "score_boundary": "education_training_reference_only",
+            "weights": DEFAULT_WEIGHTS,
+            "course_weights": DEFAULT_COURSE_WEIGHTS,
+            "teacher_rating": {"min": 1, "max": 5, "scale": 20},
+            "interactive_course": {
+                "accuracy_weight": 0.75,
+                "response_weight": 0.25,
+                "objective_weight": 0.70,
+                "teacher_weight": 0.30,
+                "ideal_response_sec": 3.0,
+                "slow_response_sec": 12.0,
+            },
+            "grade_thresholds": {
+                "excellent": 85,
+                "good": 70,
+                "fair": 55,
+                "needs_support": 0,
+            },
+            "narrative_provider": "rule",
+        }
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def validate_scoring_config(cfg: Dict[str, Any]) -> List[str]:
+    errors: List[str] = []
+    weights = cfg.get("weights") or {}
+    if not isinstance(weights, dict):
+        errors.append("weights 必须为对象")
+        return errors
+    keys = ("attention", "expressiveLanguage", "receptiveLanguage", "matching", "ordering")
+    total = 0.0
+    for k in keys:
+        if k not in weights:
+            errors.append(f"缺少权重 {k}")
+            continue
+        try:
+            total += float(weights[k])
+        except (TypeError, ValueError):
+            errors.append(f"权重 {k} 必须为数字")
+    if abs(total - 100.0) > 0.01:
+        errors.append(f"五维 weights 之和必须为 100（当前 {total:.2f}）")
+    np_ = cfg.get("narrative_provider")
+    if np_ is not None and np_ not in ("rule", "mock"):
+        errors.append("narrative_provider 仅为 rule|mock")
+    ic = cfg.get("interactive_course")
+    if ic is not None and not isinstance(ic, dict):
+        errors.append("interactive_course 必须为对象")
+    return errors
+
+
+def save_scoring_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """校验后写盘；先备份 .bak。"""
+    import shutil
+    from app.config import BASE_DIR
+
+    errors = validate_scoring_config(cfg)
+    if errors:
+        raise ValueError("；".join(errors))
+
+    path = BASE_DIR / "config" / "report_scoring.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        shutil.copy2(path, path.with_suffix(path.suffix + ".bak"))
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    return cfg
+
+
+def _clamp(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
+    return max(lo, min(hi, float(v)))
+
+
+def _mean(values: Iterable[float]) -> Optional[float]:
+    items = [float(v) for v in values]
+    return sum(items) / len(items) if items else None
+
+
+def _weighted_mean(values: Dict[str, Optional[float]], weights: Dict[str, Any]) -> Optional[float]:
+    total = 0.0
+    weight_total = 0.0
+    for key, value in values.items():
+        if value is None:
+            continue
+        weight = float(weights.get(key, 1))
+        if weight <= 0:
+            continue
+        total += float(value) * weight
+        weight_total += weight
+    return total / weight_total if weight_total else None
+
+
+def _metric_section(metrics: Dict[str, Any], key: str) -> Dict[str, Any]:
+    section = metrics.get(key)
+    if isinstance(section, dict):
+        return section
+    if metrics.get("type") == key:
+        return metrics
+    return {}
+
+
+def _canonical_course_type(value: Any) -> str:
+    course_type = str(value or "").lower()
+    return COURSE_ALIASES.get(course_type, course_type)
+
+
+def _normalize_rate(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    rate = float(value)
+    if 0 <= rate <= 1:
+        rate *= 100
+    return _clamp(rate)
+
+
+def _response_score(response_ms: Optional[float], cfg: Dict[str, Any]) -> Optional[float]:
+    if response_ms is None:
+        return None
+    interactive = cfg.get("interactive_course") or {}
+    ideal = float(interactive.get("ideal_response_sec", 3.0))
+    slow = float(interactive.get("slow_response_sec", 12.0))
+    if slow <= ideal:
+        return 50.0
+    response_sec = float(response_ms) / 1000.0
+    return _clamp(100.0 * (slow - response_sec) / (slow - ideal))
+
+
+def build_course_metrics(summary: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """从题目窗口构建类型平衡的课程分、表现率和响应时长。"""
+    course_points: Dict[str, List[float]] = {key: [] for key in DEFAULT_COURSE_WEIGHTS}
+    performance_points: Dict[str, List[float]] = {key: [] for key in DEFAULT_COURSE_WEIGHTS}
+    response_points: Dict[str, List[float]] = {key: [] for key in DEFAULT_COURSE_WEIGHTS}
+    rating_counts: Dict[str, int] = {key: 0 for key in DEFAULT_COURSE_WEIGHTS}
+    missing_rating_types = set()
+    interactive_cfg = cfg.get("interactive_course") or {}
+    accuracy_weight = float(interactive_cfg.get("accuracy_weight", 0.75))
+    response_weight = float(interactive_cfg.get("response_weight", 0.25))
+    objective_weight = float(interactive_cfg.get("objective_weight", 0.70))
+    teacher_weight = float(interactive_cfg.get("teacher_weight", 0.30))
+
+    for window in summary.get("windows") or []:
+        course_type = _canonical_course_type(window.get("course_type"))
+        if course_type not in course_points:
+            continue
+        metrics = window.get("task_metrics") or {}
+        teacher = metrics.get("teacher_rating") if isinstance(metrics.get("teacher_rating"), dict) else {}
+        teacher_score = teacher.get("normalized_score")
+        if teacher_score is None and teacher.get("rating") is not None:
+            teacher_score = float(teacher["rating"]) * float((cfg.get("teacher_rating") or {}).get("scale", 20))
+        teacher_score = _clamp(teacher_score) if teacher_score is not None else None
+        if teacher_score is not None:
+            rating_counts[course_type] += 1
+        else:
+            missing_rating_types.add(course_type)
+
+        response_ms = teacher.get("response_ms")
+        accuracy = None
+        if course_type == "pairing":
+            objective = _metric_section(metrics, "matching")
+            accuracy = _normalize_rate(objective.get("accuracy", metrics.get("accuracy")))
+        elif course_type == "ordering":
+            objective = _metric_section(metrics, "sequencing")
+            accuracy = _normalize_rate(objective.get("accuracy", metrics.get("accuracy")))
+        else:
+            objective = {}
+
+        if course_type in ("pairing", "ordering"):
+            objective_response = objective.get("avg_response_ms")
+            if objective_response is None:
+                objective_response = metrics.get("avg_response_ms")
+            if objective_response is not None:
+                response_ms = objective_response
+            if accuracy is not None:
+                speed_score = _response_score(float(response_ms), cfg) if response_ms is not None else None
+                if speed_score is None:
+                    objective_score = accuracy
+                else:
+                    denom = accuracy_weight + response_weight
+                    objective_score = (
+                        accuracy * accuracy_weight + speed_score * response_weight
+                    ) / denom if denom > 0 else accuracy
+                if teacher_score is None:
+                    point_score = objective_score
+                else:
+                    denom = objective_weight + teacher_weight
+                    point_score = (
+                        objective_score * objective_weight + teacher_score * teacher_weight
+                    ) / denom if denom > 0 else objective_score
+                course_points[course_type].append(_clamp(point_score))
+                performance_points[course_type].append(accuracy)
+        elif teacher_score is not None:
+            course_points[course_type].append(teacher_score)
+            performance_points[course_type].append(teacher_score)
+
+        # 历史命名训练可用旧 receptive 指标兜底，但不伪造教师评分。
+        if course_type in ("naming", "onomatopoeia") and teacher_score is None:
+            receptive = _metric_section(metrics, "receptive")
+            historical = receptive.get("score")
+            if historical is None:
+                historical = receptive.get("pass_rate")
+            historical = _normalize_rate(historical)
+            if historical is not None:
+                course_points[course_type].append(historical)
+                performance_points[course_type].append(historical)
+
+        if response_ms is not None:
+            try:
+                response = float(response_ms)
+                if 0 <= response <= 7_200_000:
+                    response_points[course_type].append(response)
+            except (TypeError, ValueError):
+                pass
+
+    course_scores = {key: _mean(values) for key, values in course_points.items()}
+    performance_by_type = {key: _mean(values) for key, values in performance_points.items()}
+    response_by_type = {key: _mean(values) for key, values in response_points.items()}
+    course_weights = cfg.get("course_weights") or DEFAULT_COURSE_WEIGHTS
+    overall = _weighted_mean(course_scores, course_weights)
+    task_performance = _weighted_mean(performance_by_type, course_weights)
+    avg_response_ms = _weighted_mean(response_by_type, course_weights)
+
+    return {
+        "course_scores": course_scores,
+        "overall": overall,
+        "performance_by_type": performance_by_type,
+        "task_performance": task_performance,
+        "response_by_type_ms": response_by_type,
+        "avg_response_ms": avg_response_ms,
+        "covered_course_types": [key for key, value in response_by_type.items() if value is not None],
+        "response_sample_count": sum(len(values) for values in response_points.values()),
+        "rating_counts": rating_counts,
+        "missing_rating_types": sorted(missing_rating_types),
+    }
+
+
+def _legacy_expressive(summary: Dict[str, Any], cfg: Dict[str, Any]) -> Optional[float]:
+    lang = summary.get("language") or {}
+    speech_ratio = lang.get("avg_speech_ratio")
+    word_count = lang.get("total_word_count") or 0
+    if speech_ratio is None and not word_count:
+        return None
+    exp = cfg.get("expressive") or {}
+    cap = float(exp.get("word_count_cap", 40) or 40)
+    speech_score = _clamp((speech_ratio or 0) * 100)
+    word_score = _clamp(float(word_count) / cap * 100) if cap > 0 else 0
+    return _clamp(speech_score * 0.7 + word_score * 0.3)
+
+
+def _legacy_receptive(summary: Dict[str, Any]) -> Optional[float]:
+    task = summary.get("task") or {}
+    values = [_normalize_rate(task.get(key)) for key in (
+        "matching_accuracy", "sequencing_accuracy", "receptive_pass_rate"
+    )]
+    return _mean(v for v in values if v is not None)
+
+
+def grade_label(overall: float, thresholds: Dict[str, Any]) -> str:
+    if overall >= float(thresholds.get("excellent", 85)):
+        return "优秀 (Excellent)"
+    if overall >= float(thresholds.get("good", 70)):
+        return "良好 (Good)"
+    if overall >= float(thresholds.get("fair", 55)):
+        return "一般 (Fair)"
+    return "需加强 (Needs Support)"
+
+
+def _expected_dimensions(summary: Dict[str, Any]) -> set:
+    expected = set()
+    if summary.get("windows") or (summary.get("attention") or {}).get("avg_score") is not None:
+        expected.add("attention")
+    for window in summary.get("windows") or []:
+        course_type = _canonical_course_type(window.get("course_type"))
+        expected.update(COURSE_TYPE_EXPECTATIONS.get(course_type, []))
+    return expected
+
+
+def compute_dimensions(
+    summary: Dict[str, Any],
+    cfg: Optional[Dict[str, Any]] = None,
+    *,
+    soft: bool = True,
+) -> Dict[str, Any]:
+    cfg = cfg or load_scoring_config()
+    legacy_weights = cfg.get("weights") or DEFAULT_WEIGHTS
+    expected = _expected_dimensions(summary)
+    course_metrics = build_course_metrics(summary, cfg)
+    course_scores = course_metrics["course_scores"]
+
+    dimension_cfg = cfg.get("dimension_weights") or {}
+    attention_auto = (summary.get("attention") or {}).get("avg_score")
+    attention_weights = dimension_cfg.get("attention") or {"automatic": 0.7, "mimic_teacher": 0.3}
+    attention = _weighted_mean(
+        {"automatic": attention_auto, "mimic_teacher": course_scores.get("mimic")},
+        attention_weights,
+    )
+    expressive = _weighted_mean(
+        {"naming": course_scores.get("naming"), "onomatopoeia": course_scores.get("onomatopoeia")},
+        dimension_cfg.get("expressive") or {"naming": 1, "onomatopoeia": 1},
+    )
+    if expressive is None:
+        expressive = _legacy_expressive(summary, cfg)
+    receptive = _weighted_mean(
+        {key: course_scores.get(key) for key in ("pairing", "ordering", "naming", "onomatopoeia")},
+        dimension_cfg.get("receptive") or {
+            "pairing": 1, "ordering": 1, "naming": 1, "onomatopoeia": 1,
+        },
+    )
+    if receptive is None:
+        receptive = _legacy_receptive(summary)
+
+    task = summary.get("task") or {}
+    matching = course_scores.get("pairing")
+    if matching is None:
+        matching = _normalize_rate(task.get("matching_accuracy"))
+    ordering = course_scores.get("ordering")
+    if ordering is None:
+        ordering = _normalize_rate(task.get("sequencing_accuracy"))
+
+    values: List[Tuple[str, Optional[float], str]] = [
+        ("attention", attention, "ATTENTION_DATA_MISSING"),
+        ("expressiveLanguage", expressive, "EXPRESSIVE_DATA_MISSING"),
+        ("receptiveLanguage", receptive, "RECEPTIVE_DATA_MISSING"),
+        ("matching", matching, "MATCHING_DATA_MISSING"),
+        ("ordering", ordering, "SEQUENCING_DATA_MISSING"),
+    ]
+    dimensions: Dict[str, Any] = {}
+    modules: Dict[str, str] = {}
+    limitations: List[str] = list(summary.get("limitations") or [])
+    for key, value, limitation in values:
+        status = "ready" if value is not None else ("pending" if soft and key in expected else "missing")
+        dimensions[key] = {
+            "score": round(float(value), 1) if value is not None else None,
+            "available": value is not None,
+            "status": status,
+            "weight": float(legacy_weights.get(key, 0)),
+        }
+        modules[key] = status
+        if value is None:
+            limitations.append(limitation)
+
+    overall = course_metrics.get("overall")
+    if overall is None:
+        # 历史训练没有可构造的课程分时，维持旧的五维加权回退。
+        overall = _weighted_mean(
+            {key: dimensions[key]["score"] for key in dimensions},
+            legacy_weights,
+        )
+    overall = round(float(overall), 1) if overall is not None else None
+
+    if course_metrics["missing_rating_types"]:
+        limitations.append("TEACHER_RATING_MISSING")
+    unique_limitations = list(dict.fromkeys(item for item in limitations if item))
+    any_pending = any(status == "pending" for status in modules.values())
+    report_status = "PARTIAL" if any_pending else "READY"
+    modules["narrative"] = "ready" if overall is not None else "pending"
+    modules["attentionCurve"] = (
+        "ready" if attention_auto is not None else ("pending" if soft and "attention" in expected else "missing")
+    )
+
+    return {
+        "dimensions": dimensions,
+        "modules": modules,
+        "status": report_status,
+        "overall": overall,
+        "grade": grade_label(overall, cfg.get("grade_thresholds") or {}) if overall is not None else "数据加载中",
+        "overallNote": "按本次参与课程类型平衡计算" if overall is not None else None,
+        "limitations": unique_limitations,
+        "formulaVersion": cfg.get("schema_version", "education-training-index-v2-teacher-rating"),
+        "scoreBoundary": cfg.get("score_boundary", "education_training_reference_only"),
+        "courseScores": {
+            key: (round(value, 1) if value is not None else None)
+            for key, value in course_scores.items()
+        },
+        "taskPerformance": (
+            round(course_metrics["task_performance"], 1)
+            if course_metrics["task_performance"] is not None else None
+        ),
+        "responseMetrics": {
+            "avgResponseMs": (
+                round(course_metrics["avg_response_ms"], 1)
+                if course_metrics["avg_response_ms"] is not None else None
+            ),
+            "sampleCount": course_metrics["response_sample_count"],
+            "coveredCourseTypes": course_metrics["covered_course_types"],
+            "byCourseTypeMs": {
+                key: (round(value, 1) if value is not None else None)
+                for key, value in course_metrics["response_by_type_ms"].items()
+            },
+        },
+        "teacherRatingCounts": course_metrics["rating_counts"],
+    }

@@ -1,0 +1,91 @@
+{
+  "version": 2,
+  "format": "dollser-motion",
+  "armBaselineVersion": 2,
+  "updatedAt": "2026-07-17T11:57:08.993Z",
+  "name": "空动作",
+  "durationMs": 2400,
+  "motionDurationMs": 2400,
+  "motionStartTime": 0,
+  "initialPose": {
+    "pitch": 200,
+    "yaw": 160,
+    "armL": 320,
+    "armR": 50
+  },
+  "commands": [
+    {
+      "actionId": "action-1784289399747-fb6ed8",
+      "time": 0,
+      "axis": "armL",
+      "angle": 320,
+      "moveMs": 300,
+      "label": "ArmL 动作",
+      "phase": "move"
+    },
+    {
+      "actionId": "action-1784289400800-a37a9a",
+      "time": 0,
+      "axis": "armR",
+      "angle": 50,
+      "moveMs": 300,
+      "label": "ArmR 动作",
+      "phase": "move"
+    },
+    {
+      "actionId": "action-1784289383180-e092b5",
+      "time": 0,
+      "axis": "pitch",
+      "angle": 200,
+      "moveMs": 300,
+      "label": "Pitch 动作",
+      "phase": "move"
+    },
+    {
+      "actionId": "action-1784289396876-782c3b",
+      "time": 0,
+      "axis": "yaw",
+      "angle": 160,
+      "moveMs": 300,
+      "label": "Yaw 动作",
+      "phase": "move"
+    },
+    {
+      "actionId": "action-1784289399747-fb6ed8",
+      "time": 460,
+      "axis": "armL",
+      "angle": 320,
+      "moveMs": 360,
+      "label": "ArmL 动作 回中位",
+      "phase": "return"
+    },
+    {
+      "actionId": "action-1784289400800-a37a9a",
+      "time": 460,
+      "axis": "armR",
+      "angle": 50,
+      "moveMs": 360,
+      "label": "ArmR 动作 回中位",
+      "phase": "return"
+    },
+    {
+      "actionId": "action-1784289383180-e092b5",
+      "time": 460,
+      "axis": "pitch",
+      "angle": 200,
+      "moveMs": 360,
+      "label": "Pitch 动作 回中位",
+      "phase": "return"
+    },
+    {
+      "actionId": "action-1784289396876-782c3b",
+      "time": 460,
+      "axis": "yaw",
+      "angle": 160,
+      "moveMs": 360,
+      "label": "Yaw 动作 回中位",
+      "phase": "return"
+    }
+  ],
+  "expression": null
+}

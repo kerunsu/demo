@@ -1,0 +1,83 @@
+{
+  "version": 2,
+  "format": "dollser-motion",
+  "armBaselineVersion": 2,
+  "updatedAt": "2026-07-17T11:49:49.766Z",
+  "name": "01-打招呼",
+  "durationMs": 4713,
+  "motionDurationMs": 3000,
+  "motionStartTime": 0,
+  "initialPose": {
+    "pitch": 200,
+    "yaw": 160,
+    "armL": 320,
+    "armR": 50
+  },
+  "commands": [
+    {
+      "actionId": "action-1777523369571-c591b9",
+      "time": 1080,
+      "axis": "armR",
+      "angle": 95,
+      "moveMs": 620,
+      "label": "挥手 1",
+      "phase": "move"
+    },
+    {
+      "actionId": "action-1777613910640-a0e797",
+      "time": 1200,
+      "axis": "pitch",
+      "angle": 185,
+      "moveMs": 300,
+      "label": "Pitch 动作",
+      "phase": "move"
+    },
+    {
+      "actionId": "action-1777523369571-c591b9",
+      "time": 1700,
+      "axis": "armR",
+      "angle": 50,
+      "moveMs": 360,
+      "label": "挥手 1 回中位",
+      "phase": "return"
+    },
+    {
+      "actionId": "action-1777523369571-615158",
+      "time": 2140,
+      "axis": "armR",
+      "angle": 95,
+      "moveMs": 620,
+      "label": "挥手 2",
+      "phase": "move"
+    },
+    {
+      "actionId": "action-1777613910640-a0e797",
+      "time": 2160,
+      "axis": "pitch",
+      "angle": 200,
+      "moveMs": 360,
+      "label": "Pitch 动作 回中位",
+      "phase": "return"
+    },
+    {
+      "actionId": "action-1777523369571-615158",
+      "time": 2830,
+      "axis": "armR",
+      "angle": 50,
+      "moveMs": 360,
+      "label": "挥手 2 回中位",
+      "phase": "return"
+    }
+  ],
+  "expression": {
+    "scope": "sequence",
+    "mediaId": "开心2.mp4",
+    "time": 0,
+    "motionStartTime": 0,
+    "offsetMs": 0,
+    "leadMs": 0,
+    "leadSeconds": 0,
+    "durationMs": 4713,
+    "loop": true
+  }
+}

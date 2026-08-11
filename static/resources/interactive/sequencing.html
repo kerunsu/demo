@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>排序游戏</title>
+  <script src="/static/js/vendor/socket.io.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700&display=swap" rel="stylesheet">
+  
+  <style>
+    /* Aligned with DemoRobot ordering training UI */
+    :root {
+      --bg-top: #2ebbf4;
+      --bg-bottom: #a2e8f9;
+      --bg-gradient: linear-gradient(180deg, #2ebbf4 0%, #a2e8f9 100%);
+      --card-bg: #ffffff;
+      --primary-color: #0284c7;
+      --accent-blue: #3b82f6;
+      --success-color: #4cd964;
+      --error-color: #ff6b6b;
+      --hint-color: #f1c40f;
+      /* inset 底部不再用 #f0f9ff 硬边带（会与白底形成接缝），改柔和蓝色内阴影 */
+      --shadow-light: 0 10px 20px rgba(0, 0, 0, 0.08), inset 0 -6px 12px rgba(2, 132, 199, 0.10);
+      --shadow-hover: 0 15px 25px rgba(0, 0, 0, 0.12), inset 0 -6px 12px rgba(2, 132, 199, 0.14);
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      font-family: 'Nunito', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg-gradient);
+      background-color: var(--bg-top);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    body.flash-bg {
+      animation: bg-flash 0.5s ease-out 4;
+    }
+
+    .immersive-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: clamp(12px, 2.2vh, 24px) clamp(12px, 2.5vw, 28px);
+      max-width: 1080px;
+      margin: 0 auto;
+      width: 100%;
+      height: 100%;
+      position: relative;
+      gap: clamp(10px, 2vh, 18px);
+      justify-items: center;
+    }
+
+    .rule-zone {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: clamp(10px, 1.6vh, 16px);
+      padding-top: clamp(4px, 1vh, 12px);
+      min-height: min(22vh, 200px);
+    }
+
+    .speech-bubble {
+      background: #fff;
+      border-radius: 20px;
+      padding: 12px 25px;
+      font-size: clamp(18px, 2.6vh, 22px);
+      font-weight: 900;
+      color: var(--primary-color);
+      box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+      margin: 0;
+      text-align: center;
+    }
+
+    .rule-text-wrapper {
+      background: rgba(255, 255, 255, 0.55);
+      width: min(74vw, 420px);
+      min-height: min(16vh, 130px);
+      padding: 0 24px;
+      border-radius: 40px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border: 6px solid white;
+      box-shadow: 0 15px 30px rgba(0, 100, 200, 0.15);
+    }
+
+    .rule-text {
+      font-size: clamp(36px, 5vw, 54px);
+      font-weight: 800;
+      color: var(--accent-blue);
+      text-shadow: 0 2px 10px rgba(59, 130, 246, 0.15);
+      margin: 0;
+      line-height: 1.08;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .rule-text.bounce-big {
+      animation: bounce-big 0.8s infinite;
+    }
+
+    .options-zone {
+      flex: 1 1 auto;
+      padding: clamp(8px, 1.5vh, 20px);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .options-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(215px, 1fr));
+      gap: clamp(20px, 4vw, 50px);
+      width: 100%;
+      max-width: 830px;
+      align-items: stretch;
+      justify-items: stretch;
+    }
+
+    .option-card {
+      background: var(--card-bg);
+      border-radius: 30px;
+      padding: 14px;
+      border: 5px solid #f0f9ff;
+      box-shadow: var(--shadow-light);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: min(39vh, 375px);
+      max-height: min(44vh, 410px);
+      aspect-ratio: 1;
+      position: relative;
+      transform-style: preserve-3d;
+      overflow: hidden;
+    }
+
+    .option-card:not(.wrong):not(.correct):not(.correct-lvl3):hover {
+      transform: translateY(-8px);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .option-card:not(.wrong):not(.correct):not(.correct-lvl3):active {
+      transform: scale(0.97);
+    }
+
+    .option-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 20px;
+      pointer-events: none;
+    }
+
+    .option-card.correct {
+      background-color: var(--success-color);
+      transform: scale(1.08) !important;
+      box-shadow: 0 0 40px rgba(76, 217, 100, 0.7);
+      z-index: 10;
+      opacity: 1 !important;
+      filter: none !important;
+    }
+
+    .option-card.correct-lvl3 {
+      background-color: #ffd700;
+      border-color: #fbbf24;
+      animation: flip-3d 2s ease-in-out forwards;
+      z-index: 10;
+    }
+
+    .option-card.wrong {
+      opacity: 0.3 !important;
+      filter: grayscale(100%) !important;
+      transform: scale(0.7) !important;
+      transition: opacity 0.5s ease, filter 0.5s ease, transform 0.5s ease !important;
+      pointer-events: none;
+    }
+
+    .option-card.dimmed {
+      opacity: 0.25;
+      transform: scale(0.95);
+      filter: grayscale(60%);
+    }
+
+    .option-card.hint-highlight {
+      border: 4px solid var(--hint-color);
+      box-shadow: 0 0 30px rgba(241, 196, 15, 0.6);
+      animation: hint-pulse 1.5s infinite ease-in-out;
+      z-index: 5;
+    }
+
+    @keyframes hint-pulse {
+      0% { transform: scale(1); border-color: rgba(241, 196, 15, 0.5); }
+      50% { transform: scale(1.08); border-color: rgba(241, 196, 15, 1); }
+      100% { transform: scale(1); border-color: rgba(241, 196, 15, 0.5); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    @keyframes bounce-big {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-20px) scale(1.1); }
+    }
+
+    @keyframes flip-3d {
+      0% { transform: scale(1) rotateY(0); }
+      25% { transform: scale(1.2) rotateY(180deg); background-color: #ffecd2; }
+      50% { transform: scale(1.15) rotateY(360deg); background-color: #ffd700; }
+      75% { transform: scale(1.2) rotateY(540deg); background-color: #ffecd2; }
+      100% {
+        transform: scale(1.1) rotateY(720deg);
+        background-color: #ffd700;
+        box-shadow: 0 0 40px rgba(255, 215, 0, 0.8);
+      }
+    }
+
+    @keyframes bg-flash {
+      0% { background: #fffde7; }
+      100% { background: var(--bg-gradient); }
+    }
+
+    #confetti-canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    .game-overlay {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(46, 187, 244, 0.96) 0%, rgba(162, 232, 249, 0.96) 100%);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      transition: opacity 0.4s ease;
+    }
+
+    .game-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .waiting-icon {
+      font-size: 5em;
+      margin-bottom: 20px;
+      animation: pulse 2s infinite;
+    }
+
+    .waiting-text {
+      font-size: 1.8em;
+      color: #0f4c75;
+      font-weight: 700;
+    }
+
+    .result-content { text-align: center; display: none; }
+    .result-content.show { display: block; animation: fadeIn 0.5s ease; }
+    .result-emoji { font-size: 6em; margin-bottom: 20px; }
+    .result-text {
+      font-size: 2em;
+      color: var(--primary-color);
+      font-weight: 700;
+    }
+
+    @media (max-width: 780px) {
+      .options-grid {
+        grid-template-columns: 1fr;
+        max-width: 360px;
+        gap: 15px;
+      }
+      .option-card {
+        min-height: min(34vh, 270px);
+        max-height: min(37vh, 305px);
+      }
+      .rule-text {
+        font-size: clamp(28px, 8vw, 40px);
+      }
+      .speech-bubble {
+        font-size: 18px;
+        padding: 10px 16px;
+      }
+    }
+
+    @media (max-height: 640px) and (orientation: landscape) {
+      .options-grid {
+        grid-template-columns: repeat(2, minmax(170px, 1fr));
+        max-width: 730px;
+      }
+      .option-card {
+        min-height: min(44vh, 255px);
+        max-height: min(49vh, 290px);
+      }
+      .rule-zone { min-height: auto; }
+      .rule-text-wrapper {
+        min-height: 72px;
+        border-radius: 28px;
+      }
+      .rule-text { font-size: clamp(28px, 6vh, 40px); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 粒子特效层 -->
+  <canvas id="confetti-canvas"></canvas>
+
+  <!-- 等待/结束 遮罩 -->
+  <div id="gameOverlay" class="game-overlay">
+    <!-- 等待内容 -->
+    <div id="waitingContent">
+      <div class="waiting-icon">🔢</div>
+      <div class="waiting-text">准备开始...</div>
+    </div>
+    
+    <!-- 结束内容 -->
+    <div id="resultContent" class="result-content">
+      <div class="result-emoji">🎉</div>
+      <div class="result-text">太棒了！</div>
+    </div>
+  </div>
+
+  <!-- 主游戏界面 -->
+  <div class="immersive-container ordering-mode">
+    <!-- 规则提示区 -->
+    <div class="rule-zone">
+      <p class="speech-bubble">请根据规则选择正确的图片</p>
+      <div class="rule-text-wrapper">
+        <div class="rule-text" id="ruleText">准备中...</div>
+      </div>
+    </div>
+
+    <!-- 选项区 -->
+    <div class="options-zone">
+      <div class="options-grid" id="optionsGrid">
+        <!-- 动态生成选项卡片 -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==================== 粒子特效系统 ====================
+    const canvas = document.getElementById('confetti-canvas');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function drawStar(cx, cy, spikes, outerRadius, innerRadius, color) {
+      let rot = Math.PI / 2 * 3;
+      let x = cx;
+      let y = cy;
+      let step = Math.PI / spikes;
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - outerRadius);
+      for (let i = 0; i < spikes; i++) {
+        x = cx + Math.cos(rot) * outerRadius;
+        y = cy + Math.sin(rot) * outerRadius;
+        ctx.lineTo(x, y);
+        rot += step;
+
+        x = cx + Math.cos(rot) * innerRadius;
+        y = cy + Math.sin(rot) * innerRadius;
+        ctx.lineTo(x, y);
+        rot += step;
+      }
+      ctx.lineTo(cx, cy - outerRadius);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    function createExplosion(x, y, level = 1) {
+      const colors = ['#ff595e', '#ffca3a', '#8ac926', '#1982c4', '#6a4c93', '#ff924c'];
+      let count = 15;
+      let speed = 8;
+
+      if (level === 2) {
+        count = 40;
+        speed = 12;
+      }
+      if (level === 3) {
+        count = 100;
+        speed = 15;
+        x = window.innerWidth / 2;
+        y = window.innerHeight / 2;
+      }
+
+      for (let i = 0; i < count; i++) {
+        const isStar = level >= 2 && Math.random() > 0.7;
+        particles.push({
+          x,
+          y,
+          vx: (Math.random() - 0.5) * speed,
+          vy: (Math.random() - 0.5) * speed,
+          radius: Math.random() * (level * 3) + 2,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          life: 1,
+          decay: level === 3 ? 0.01 : 0.03,
+          type: isStar ? 'star' : 'circle',
+          gravity: level === 3 ? 0.2 : 0
+        });
+      }
+    }
+
+    function animateParticles() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += p.gravity || 0;
+        p.life -= p.decay;
+        if (p.type !== 'star') p.radius *= 0.96;
+
+        ctx.globalAlpha = p.life;
+        if (p.type === 'star') {
+          drawStar(p.x, p.y, 5, p.radius, p.radius / 2, p.color);
+        } else {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+      requestAnimationFrame(animateParticles);
+    }
+    animateParticles();
+
+    // ==================== 全局变量 ====================
+    let socket = null;
+    
+    // 从 URL 获取参数
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('sessionId');
+    const courseId = urlParams.get('courseId');
+    const itemId = urlParams.get('itemId');
+    const trainingSessionId = urlParams.get('trainingSessionId');
+    const questionId = urlParams.get('questionId');
+
+    // ==================== 调试日志 ====================
+    function debugLog(message) {
+      console.log(`[SequencingGame] ${message}`);
+    }
+
+    // 对齐 DemoRobot paixu 前缀名 / config/interactive_image_semantics.yaml
+    const ORDERING_PREFIX_NAMES = {
+      Circle: '圆',
+      Square: '方块',
+      Triangle: '三角',
+      carrot: '胡萝卜',
+      pencil: '铅笔',
+      ruler: '尺子',
+      train: '火车',
+      house: '房子',
+      'house-red': '红房子',
+      apple: '苹果',
+      cookie: '饼干',
+      cup: '杯子',
+    };
+
+    function orderingObjectName(prefix) {
+      if (!prefix) return '东西';
+      if (ORDERING_PREFIX_NAMES[prefix]) return ORDERING_PREFIX_NAMES[prefix];
+      const lower = String(prefix).toLowerCase();
+      for (const [k, v] of Object.entries(ORDERING_PREFIX_NAMES)) {
+        if (k.toLowerCase() === lower) return v;
+      }
+      if (!/^\d+$/.test(prefix) && !prefix.includes('/') && !prefix.includes('\\')) {
+        return prefix;
+      }
+      return '东西';
+    }
+
+    function orderingOptionLabel(prefix, level, index) {
+      const name = orderingObjectName(prefix);
+      const side = index === 0 ? '左边' : (index === 1 ? '右边' : `第${index + 1}张`);
+      const degree = level != null ? `（程度${level}）` : '';
+      return `${side}${name}${degree}`;
+    }
+
+    // ==================== Socket 初始化 ====================
+    function initSocket() {
+      socket = io();
+      
+      socket.on('connect', () => {
+        debugLog(`Socket已连接: ${socket.id}`);
+        if (sessionId) {
+          socket.emit('join_session', { sessionId, role: 'child' });
+          debugLog(`加入房间: ${sessionId}`);
+        }
+      });
+      
+      socket.on('disconnect', () => {
+        debugLog('Socket连接断开');
+      });
+      
+      // 监听教师端启动游戏
+      socket.on('sequencing_start', (data) => {
+        debugLog('收到启动指令');
+        if (!game.isGameActive) {
+          game.startGame();
+        }
+      });
+      
+      // 监听教师端设置配置
+      socket.on('sequencing_set_config', (data) => {
+        debugLog(`收到配置: ${JSON.stringify(data)}`);
+        game.setConfig(data);
+      });
+      
+      // 监听教师端下一题
+      socket.on('sequencing_next', (data) => {
+        debugLog('收到下一题指令');
+        game.nextQuestion();
+      });
+      
+      // 监听教师端提示指令
+      socket.on('sequencing_hint', (data) => {
+        debugLog('收到提示指令');
+        game.showHint();
+      });
+    }
+
+    // ==================== 排序游戏类 ====================
+    class SequencingGame {
+      constructor() {
+        this.sessionId = sessionId;
+        this.autoMode = true;
+        this.category = 'size';
+        this.difficulty = 2;
+        this.rule = 'bigger';
+
+        this.isGameActive = false;
+        
+        this.currentQuestion = 0;
+        this.maxQuestions = 16;
+        this.questionsPerCategory = 4;
+        
+        // 类别统计
+        this.categoryStats = {
+          size: { correct: 0, wrong: 0 },
+          length: { correct: 0, wrong: 0 },
+          height: { correct: 0, wrong: 0 },
+          count: { correct: 0, wrong: 0 }
+        };
+        
+        // 自动模式：类别队列
+        this.categoryQueue = [];
+        this.currentCategoryCount = 0;
+        
+        // 图片数据
+        this.imageGroups = {};
+        
+        // 当前题目数据
+        this.options = [];
+        this.correctOption = null;
+        this.currentPrefix = null;
+        
+        // 是否正在处理选择
+        this.isProcessing = false;
+        this.questionStartAt = null;
+        this.responseTimesMs = [];
+        
+        // DOM 元素
+        this.overlay = document.getElementById('gameOverlay');
+        this.waitingContent = document.getElementById('waitingContent');
+        this.resultContent = document.getElementById('resultContent');
+        this.ruleText = document.getElementById('ruleText');
+        this.optionsGrid = document.getElementById('optionsGrid');
+      }
+      
+      setConfig(config) {
+        if (config.autoMode !== undefined) this.autoMode = config.autoMode;
+        if (!this.autoMode) {
+          // 手动模式：使用教师设置
+          if (config.category) this.category = config.category;
+          if (config.rule) this.rule = config.rule;
+        }
+        debugLog(`配置已更新: auto=${this.autoMode}, category=${this.category}, rule=${this.rule}`);
+      }
+      
+      async startGame() {
+        if (this.isGameActive) return;
+        this.isGameActive = true;
+        debugLog('开始游戏');
+        this.currentQuestion = 0;
+        this.resetStats();
+        
+        if (this.autoMode) {
+          // 随机打乱类别顺序
+          this.categoryQueue = this.shuffleArray(['size', 'length', 'height', 'count']);
+          this.category = this.categoryQueue[0];
+          this.currentCategoryCount = 0;
+          debugLog(`自动模式：类别顺序 = ${this.categoryQueue.join(' -> ')}`);
+        }
+        
+        await this.loadImages();
+        this.generateQuestion();
+        this.hideOverlay();
+      }
+      
+      resetStats() {
+        this.categoryStats = {
+          size: { correct: 0, wrong: 0 },
+          length: { correct: 0, wrong: 0 },
+          height: { correct: 0, wrong: 0 },
+          count: { correct: 0, wrong: 0 }
+        };
+        this.responseTimesMs = [];
+        this.questionStartAt = null;
+      }
+      
+      _computeProgress() {
+        let correct = 0;
+        let wrong = 0;
+        Object.values(this.categoryStats).forEach((v) => {
+          correct += v.correct || 0;
+          wrong += v.wrong || 0;
+        });
+        const answered = correct + wrong;
+        const accuracy = answered > 0 ? (correct / answered) * 100 : 0;
+        const avgResponseMs = this.responseTimesMs.length
+          ? this.responseTimesMs.reduce((a, b) => a + b, 0) / this.responseTimesMs.length
+          : null;
+        return { correct, wrong, answered, accuracy, avgResponseMs };
+      }
+      
+      async loadImages() {
+        try {
+          const response = await fetch(`/api/getSequencingImages?category=${this.category}`);
+          const data = await response.json();
+          this.imageGroups = data.groups;
+          Object.values(this.imageGroups || {}).flat().forEach((item) => {
+            const src = item && (item.path || item.src || item.file);
+            if (!src) return;
+            const image = new Image();
+            image.decoding = 'async';
+            image.src = src;
+            image.decode?.().catch(() => {});
+          });
+          debugLog(`已加载 ${Object.keys(this.imageGroups).length} 组图片`);
+        } catch (error) {
+          debugLog(`加载图片失败: ${error}`);
+        }
+      }
+      
+      async generateQuestion() {
+        // 清除提示效果
+        this.clearHintEffects();
+        
+        // 自动模式：每4题换类别
+        if (this.autoMode) {
+          if (this.currentCategoryCount >= this.questionsPerCategory) {
+            // 切换到下一个类别
+            const currentIndex = this.categoryQueue.indexOf(this.category);
+            if (currentIndex < this.categoryQueue.length - 1) {
+              this.category = this.categoryQueue[currentIndex + 1];
+              this.currentCategoryCount = 0;
+              debugLog(`切换类别: ${this.category}`);
+              await this.loadImages();
+            }
+          }
+          // 随机规则
+          this.rule = this.getRandomRule();
+        }
+        
+        // 随机选择一组图片
+        const prefixes = Object.keys(this.imageGroups);
+        if (prefixes.length === 0) {
+          debugLog('没有可用的图片组');
+          return;
+        }
+        
+        const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+        const group = this.imageGroups[prefix];
+        this.currentPrefix = prefix;
+        
+        // 随机选2张不同的图片
+        const shuffled = this.shuffleArray([...group]);
+        this.options = shuffled.slice(0, 2).map((opt) => ({
+          ...opt,
+          prefix: opt.prefix || prefix,
+          label: opt.label || orderingObjectName(opt.prefix || prefix),
+        }));
+        
+        // 确定正确答案（根据规则）
+        this.correctOption = this.getCorrectOption();
+        
+        this.displayQuestion();
+      }
+      
+      getRandomRule() {
+        const rules = {
+          size: ['bigger', 'smaller'],
+          length: ['longer', 'shorter'],
+          height: ['taller', 'shorter'],
+          count: ['more', 'less']
+        };
+        const options = rules[this.category] || ['bigger', 'smaller'];
+        return options[Math.floor(Math.random() * options.length)];
+      }
+      
+      getRuleText() {
+        const textMap = {
+          size: { bigger: '选大的', smaller: '选小的' },
+          length: { longer: '选长的', shorter: '选短的' },
+          height: { taller: '选高的', shorter: '选矮的' },
+          count: { more: '选多的', less: '选少的' }
+        };
+        return textMap[this.category]?.[this.rule] || '选择';
+      }
+
+      /** 与 dialogue_phrases.yaml 排序八问一致（孩子实际听到的提问） */
+      getSpeakPrompt() {
+        const speakMap = {
+          size: { bigger: '选出更大的那张。', smaller: '选出更小的那张。' },
+          length: { longer: '选出更长的那张。', shorter: '选出更短的那张。' },
+          height: { taller: '选出更高的那张。', shorter: '选出更矮的那张。' },
+          count: { more: '选出更多的那张。', less: '选出更少的那张。' }
+        };
+        return speakMap[this.category]?.[this.rule] || this.getRuleText();
+      }
+      
+      getCorrectOption() {
+        // 根据规则确定正确选项
+        const isSelectBigger = ['bigger', 'longer', 'taller', 'more'].includes(this.rule);
+        return this.options.reduce((a, b) => 
+          isSelectBigger ? (a.level > b.level ? a : b) : (a.level < b.level ? a : b)
+        );
+      }
+      
+      displayQuestion() {
+        // 更新规则文字
+        this.ruleText.textContent = this.getRuleText();
+        this.ruleText.classList.remove('bounce-big');
+        document.body.classList.remove('flash-bg');
+        
+        // 清空选项区（布局由 CSS grid 控制，避免内联 flex 覆盖样式）
+        this.optionsGrid.innerHTML = '';
+        this.optionsGrid.removeAttribute('style');
+        
+        // 创建选项卡片
+        this.options.forEach(option => {
+          const card = document.createElement('div');
+          card.className = 'option-card';
+          card.dataset.path = option.path;
+          card.dataset.level = option.level;
+          
+          const img = document.createElement('img');
+          img.src = option.path;
+          img.alt = '选项';
+          
+          card.appendChild(img);
+          card.onclick = () => this.selectOption(option);
+          
+          this.optionsGrid.appendChild(card);
+        });
+        
+        this.isProcessing = false;
+        this.questionStartAt = Date.now();
+        this.wrongAttemptsThisQuestion = 0;
+        this.publishPageContext();
+        this.emitQuestionReady();
+      }
+
+      buildPageContext() {
+        const ruleText = this.getRuleText();
+        const speakPrompt = this.getSpeakPrompt();
+        const prefix = this.currentPrefix || (this.options[0] && this.options[0].prefix) || '';
+        const opts = (this.options || []).map((opt, index) => {
+          const p = opt.prefix || prefix;
+          const label = orderingOptionLabel(p, opt.level, index);
+          return {
+            id: opt.path,
+            label,
+            name: orderingObjectName(p),
+            level: opt.level,
+            prefix: p,
+            // 不把文件路径暴露给 LLM
+          };
+        });
+        const correctIndex = opts.findIndex(
+          (o) => this.correctOption && o.id === this.correctOption.path
+        );
+        return {
+          courseType: 'ordering',
+          prompt: speakPrompt,
+          rule: this.rule,
+          ruleText,
+          category: this.category,
+          // 排序没有「上面的图片」；勿把 ruleText 塞进 target
+          target: null,
+          objectName: orderingObjectName(prefix),
+          options: opts,
+          optionsLeftToRight: opts.map((o) => o.label),
+          wrongAttempts: this.wrongAttemptsThisQuestion || 0,
+          questionIndex: (this.currentQuestion || 0) + 1,
+          totalQuestions: this.maxQuestions,
+          questionId: questionId || `${courseId || 'ordering'}_${(this.currentQuestion || 0) + 1}`,
+          itemId: itemId || null,
+          correctPosition: correctIndex >= 0 ? correctIndex + 1 : null,
+          correctLabel: correctIndex >= 0 ? opts[correctIndex].label : null,
+        };
+      }
+
+      publishPageContext() {
+        const pageContext = this.buildPageContext();
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+              type: 'interactive_page_context',
+              pageContext,
+              sessionId: this.sessionId,
+            }, '*');
+          }
+        } catch (e) {
+          debugLog(`postMessage pageContext 失败: ${e}`);
+        }
+        if (socket && socket.connected && this.sessionId) {
+          socket.emit('interactive_page_context', {
+            sessionId: this.sessionId,
+            courseType: 'ordering',
+            pageContext,
+          });
+        }
+      }
+
+      waitForFeedbackSpeech(intent, { minMs = 2800, maxMs = 4200 } = {}) {
+        return new Promise((resolve) => {
+          const start = Date.now();
+          let settled = false;
+          const cleanup = () => {
+            if (socket) socket.off('robot_speak_ended', onSpeakEnded);
+            window.removeEventListener('message', onMessage);
+            clearTimeout(maxTimer);
+          };
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            const elapsed = Date.now() - start;
+            const remain = Math.max(0, minMs - elapsed);
+            setTimeout(resolve, remain);
+          };
+          const onSpeakEnded = (data) => {
+            if (!data) return;
+            if (data.sessionId && this.sessionId && data.sessionId !== this.sessionId) return;
+            if (intent && data.intent && data.intent !== intent) return;
+            finish();
+          };
+          const onMessage = (ev) => {
+            const payload = ev && ev.data;
+            if (payload && payload.type === 'robot_speak_ended') {
+              onSpeakEnded(payload);
+            }
+          };
+          if (socket) socket.on('robot_speak_ended', onSpeakEnded);
+          window.addEventListener('message', onMessage);
+          const maxTimer = setTimeout(finish, maxMs);
+        });
+      }
+
+      emitQuestionReady() {
+        if (!socket || !socket.connected || !this.sessionId) return;
+        const pageContext = this.buildPageContext();
+        socket.emit('sequencing_question_ready', {
+          sessionId: this.sessionId,
+          trainingSessionId: trainingSessionId,
+          questionId: questionId,
+          courseId: courseId,
+          category: this.category,
+          rule: this.rule,
+          questionIndex: this.currentQuestion + 1,
+          prompt: pageContext.prompt,
+          pageContext,
+        });
+        debugLog(`提问语音: ${this.category}/${this.rule}`);
+      }
+      
+      selectOption(option) {
+        if (this.isProcessing) return;
+        this.isProcessing = true;
+
+        if (this.questionStartAt != null) {
+          this.responseTimesMs.push(Math.max(0, Date.now() - this.questionStartAt));
+          this.questionStartAt = null;
+        }
+        
+        const isCorrect = option.path === this.correctOption.path;
+        
+        // 更新统计
+        this.categoryStats[this.category][isCorrect ? 'correct' : 'wrong']++;
+        this.currentQuestion++;
+        this.currentCategoryCount++;
+        if (!isCorrect) {
+          this.wrongAttemptsThisQuestion = (this.wrongAttemptsThisQuestion || 0) + 1;
+        }
+        
+        // 显示反馈动画
+        this.showFeedback(option, isCorrect);
+
+        const progress = this._computeProgress();
+        const pageContext = this.buildPageContext();
+        this.publishPageContext();
+
+        // 必须先挂 wait，再发 status_update 触发 TTS；否则 ended 可能早于监听到达
+        const speakIntent = isCorrect ? 'praise' : 'encourage';
+        const token = (this._advanceToken = (this._advanceToken || 0) + 1);
+        const waitSpeech = this.waitForFeedbackSpeech(speakIntent, {
+          minMs: 2800,
+          maxMs: 4200,
+        });
+
+        // 上报状态（含部分进度正确率与反应时，中途退出也可出分）
+        socket.emit('sequencing_status_update', {
+          sessionId: this.sessionId,
+          trainingSessionId: trainingSessionId,
+          questionId: questionId,
+          courseId: courseId,
+          category: this.category,
+          rule: this.rule,
+          isCorrect,
+          questionIndex: this.currentQuestion,
+          categoryStats: this.categoryStats,
+          accuracy: progress.accuracy,
+          correct: progress.correct,
+          wrong: progress.wrong,
+          total: progress.answered,
+          answered: progress.answered,
+          partial: true,
+          avgResponseMs: progress.avgResponseMs,
+          lastResponseMs: this.responseTimesMs.length
+            ? this.responseTimesMs[this.responseTimesMs.length - 1]
+            : null,
+          pageContext,
+          wrongAttempts: this.wrongAttemptsThisQuestion || 0,
+          prompt: pageContext.prompt,
+        });
+
+        debugLog(`第${this.currentQuestion}题: ${isCorrect ? '正确' : '错误'}`);
+
+        waitSpeech.then(() => {
+          if (token !== this._advanceToken) return;
+          if (this.currentQuestion >= this.maxQuestions) {
+            this.finishGame();
+          } else {
+            this.generateQuestion();
+          }
+        });
+      }
+      
+      showFeedback(selectedOption, isCorrect) {
+        const cards = this.optionsGrid.querySelectorAll('.option-card');
+        cards.forEach(card => {
+          if (card.dataset.path === selectedOption.path) {
+            if (isCorrect) {
+              card.classList.add('correct-lvl3');
+            } else {
+              card.classList.add('wrong');
+            }
+          } else {
+            card.classList.add('wrong');
+          }
+        });
+
+        if (isCorrect) {
+          this.ruleText.classList.add('bounce-big');
+          document.body.classList.add('flash-bg');
+          setTimeout(() => document.body.classList.remove('flash-bg'), 3200);
+
+          const rect = this.optionsGrid
+            .querySelector(`.option-card[data-path="${selectedOption.path}"]`)
+            .getBoundingClientRect();
+          createExplosion(rect.left + rect.width / 2, rect.top + rect.height / 2, 3);
+        }
+      }
+      
+      showHint() {
+        // 与配对课程一致：正确选项高亮呼吸，错误选项变暗
+        this.clearHintEffects();
+        
+        const cards = this.optionsGrid.querySelectorAll('.option-card');
+        cards.forEach(card => {
+          // 跳过已选择的卡片
+          if (card.classList.contains('wrong') || card.classList.contains('correct')) return;
+          
+          if (card.dataset.path === this.correctOption.path) {
+            card.classList.add('hint-highlight');
+          } else {
+            card.classList.add('dimmed');
+          }
+        });
+        
+        debugLog('显示提示');
+      }
+      
+      clearHintEffects() {
+        const cards = this.optionsGrid.querySelectorAll('.option-card');
+        cards.forEach(card => {
+          card.classList.remove('hint-highlight', 'dimmed');
+        });
+      }
+      
+      nextQuestion() {
+        // 教师强制下一题：作废进行中的语音等待并立即出题
+        this._advanceToken = (this._advanceToken || 0) + 1;
+        this.isProcessing = false;
+        this.generateQuestion();
+      }
+      
+      finishGame() {
+        debugLog('游戏结束');
+        this.isGameActive = false;
+        const progress = this._computeProgress();
+        
+        // 上报结束
+        socket.emit('sequencing_game_end', {
+          sessionId: this.sessionId,
+          trainingSessionId: trainingSessionId,
+          questionId: questionId,
+          courseId: courseId,
+          totalStats: this.categoryStats,
+          totalQuestions: progress.answered || this.maxQuestions,
+          accuracy: progress.accuracy,
+          correct: progress.correct,
+          wrong: progress.wrong,
+          answered: progress.answered,
+          partial: false,
+          avgResponseMs: progress.avgResponseMs,
+          responseTimesMs: this.responseTimesMs.slice()
+        });
+        
+        // 显示结束界面
+        this.showEndScreen();
+      }
+      
+      hideOverlay() {
+        this.waitingContent.style.display = 'block';
+        this.resultContent.classList.remove('show');
+        this.overlay.classList.add('hidden');
+      }
+      
+      showEndScreen() {
+        this.waitingContent.style.display = 'none';
+        this.resultContent.classList.add('show');
+        this.overlay.classList.remove('hidden');
+      }
+      
+      shuffleArray(array) {
+        const arr = [...array];
+        for (let i = arr.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+      }
+    }
+
+    // ==================== 页面初始化 ====================
+    document.addEventListener('DOMContentLoaded', async () => {
+      debugLog('页面加载完成');
+      debugLog(`sessionId=${sessionId}, courseId=${courseId}, itemId=${itemId}`);
+      
+      // 初始化 Socket
+      initSocket();
+      
+      // 创建游戏实例
+      window.game = new SequencingGame();
+      debugLog('排序游戏初始化完成，自动启动');
+      window.game.startGame();
+    });
+  </script>
+</body>
+</html>

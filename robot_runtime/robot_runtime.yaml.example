@@ -1,0 +1,17 @@
+# Robot Runtime 本地配置示例
+# 复制为 robot_runtime.yaml 或通过环境变量覆盖
+
+backend_url: "http://192.168.1.10:8080"   # 后端主机局域网地址
+# key: ""                                  # 与后端 ROBOT_RUNTIME_KEY 一致
+advertise_host: ""                         # 空则自动探测本机局域网 IP
+host: "0.0.0.0"
+port: 19091
+
+camera_index: 0
+fps: 15
+width: 640
+height: 480
+jpeg_quality: 70
+
+dollser_osc_ip: "127.0.0.1"
+dollser_osc_port: 12000

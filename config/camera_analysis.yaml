@@ -1,0 +1,14 @@
+# 浏览器端摄像头分析（仅 CHILD_MEDIA_MODE=browser 联调）
+# 生产 agent 模式由 robot_runtime 上行帧，服务端 Real 分析写 behavior
+enabled: true
+fps: 1
+width: 160
+height: 120
+# 报告默认优先服务端有效样本；browser 联调时由 prefer_browser_when_media_mode_browser 控制
+prefer_browser_for_report: false
+# 仅当 CHILD_MEDIA_MODE=browser 时，才优先浏览器描述符（避免与服务端双源抢推）
+prefer_browser_when_media_mode_browser: true
+# 注意力质量非 complete 时的报告降权
+attention_incomplete_factor: 0.7
+# 情绪至少有效观测数
+emotion_min_samples: 2
