@@ -96,8 +96,10 @@ missing or invalid historical values read as `1.0`. The source frames are not
 rewritten. Runtime playback derives effective `time` and `moveMs` by dividing
 both fields by the multiplier, so Git diffs retain the original recording.
 
-`doll/data/emotions_meta.json` schema version 2 contains `default`, `styles`
-and `globalFilter`. A `styles.<filename>` object has `speedMultiplier`
+`doll/data/emotions_meta.json` schema version 2 contains `default`, `idlePool`,
+`styles` and `globalFilter`. `idlePool` is a non-empty ordered set of emotion
+filenames used for random, non-repeating-when-possible idle playback;
+`default` mirrors its first item for older clients. A `styles.<filename>` object has `speedMultiplier`
 (`0.25..4.0`, MP4 only), `scale` (`0.5..2.0`), `hueDeg` (`-180..180`),
 `brightness`/`saturation` (`0..2`) and `opacity` (`0..1`). Missing styles use
 identity values. `globalFilter` adds `enabled` and `contrast` (`0..2`) to the

@@ -52,11 +52,11 @@ def test_behavior_media_are_correlated_and_expression_self_heals():
     assert "this._rememberPlayback(blockedIdentity)" in audio_player
     assert "behaviorId: identity && (identity.behaviorId || identity.sequenceId)" in audio_player
 
-    assert "新行为接管旧表情状态" in emotion
-    assert "superseded_by_new_behavior" in emotion
+    assert "正式表情播放中，新事件进入队列" in emotion
+    assert "pendingEmotionEvents.push(eventData)" in emotion
+    assert "stopIdlePlayback();" in emotion
     assert "emotion_busy" not in emotion
     assert "robot_emotion_ended" in emotion
-    assert "pendingEmotions" not in emotion
 
 
 def test_browser_tts_delay_does_not_start_watchdog_before_speak():

@@ -2827,6 +2827,20 @@ class RobotService:
         from app.robot.emotion_assets import set_default_emotion
         return set_default_emotion(name)
 
+    def get_idle_emotions(self) -> List[str]:
+        from app.robot.emotion_assets import get_idle_emotions
+        return get_idle_emotions()
+
+    def set_idle_emotions(self, names: List[str]) -> List[str]:
+        from app.robot.emotion_assets import set_idle_emotions
+        result = set_idle_emotions(names)
+        if _socketio is not None:
+            _socketio.emit('robot_idle_pool_changed', {
+                'emotions': result,
+                'default': result[0],
+            })
+        return result
+
     def upload_emotion(self, filename: str, file_bytes: bytes) -> Dict[str, Any]:
         from app.robot.emotion_assets import save_uploaded_emotion
         return save_uploaded_emotion(filename, file_bytes, return_details=True)

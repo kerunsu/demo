@@ -5,6 +5,7 @@
   let items = [];
   let selected = null;
   let defaultEmotion = '';
+  let idlePool = [];
   let globalFilter = {
     enabled: false, hueDeg: 0, brightness: 1, saturation: 1, contrast: 1, opacity: 1,
   };
@@ -109,7 +110,7 @@
       card.className = 'cc-expr-card' + (selected === item.name ? ' selected' : '');
       card.dataset.name = item.name;
       const badges = [];
-      if (item.isDefault) badges.push('<span class="cc-badge primary">默认</span>');
+      if (item.isIdle) badges.push('<span class="cc-badge primary">待机池</span>');
       if (item.deprecated) badges.push('<span class="cc-badge gray">历史 GIF</span>');
       else badges.push('<span class="cc-badge primary">MP4 · 单次</span>');
       badges.push(`<span class="cc-badge gray">引用 ${item.refCount || 0}</span>`);
@@ -153,11 +154,17 @@
     populateTuning(item);
     if (label) label.textContent = name;
     if (meta && item) {
-      meta.textContent = item.isDefault
-        ? `默认待机 · ${item.format || 'gif'} · 被映射引用 ${item.refCount} 处`
+      meta.textContent = item.isIdle
+        ? `随机待机池 · ${item.format || 'gif'} · 被映射引用 ${item.refCount} 处`
         : `${item.deprecated ? '历史 GIF 兼容' : 'MP4 单次播放'} · 被映射引用 ${item.refCount} 处`;
     }
     setActionEnabled(!!item);
+    const idleButton = byId('btn-set-default');
+    if (idleButton && item) {
+      idleButton.textContent = item.isIdle ? '移出待机池' : '加入待机池';
+      idleButton.disabled = item.isIdle && idlePool.length <= 1;
+      idleButton.title = idleButton.disabled ? '待机池至少保留一个表情' : '';
+    }
   }
 
   async function loadEmotionLibrary() {
@@ -172,6 +179,9 @@
         url: `/static/resources/Emotions/${name}`,
       }));
       defaultEmotion = data.default || (data.emotions && data.emotions[0]) || '';
+      idlePool = Array.isArray(data.idlePool) && data.idlePool.length
+        ? data.idlePool.slice()
+        : (defaultEmotion ? [defaultEmotion] : []);
       globalFilter = { ...globalFilter, ...(data.globalFilter || {}) };
       render();
       if (selected && items.some((x) => x.name === selected)) {
@@ -208,16 +218,21 @@
     selectEmotion(data.emotion);
   }
 
-  async function setDefault() {
+  async function toggleIdleEmotion() {
     if (!selected) return;
-    const res = await fetch('/api/robot/emotions/default', {
+    const selectedIsIdle = idlePool.includes(selected);
+    const nextPool = selectedIsIdle
+      ? idlePool.filter((name) => name !== selected)
+      : [...idlePool, selected];
+    if (!nextPool.length) throw new Error('待机池至少保留一个表情');
+    const res = await fetch('/api/robot/emotions/idle-pool', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emotion: selected }),
+      body: JSON.stringify({ emotions: nextPool }),
     });
     const data = await res.json();
-    if (!data.success) throw new Error(data.error || '设置失败');
-    toast('已设为默认', selected);
+    if (!data.success) throw new Error(data.error || '设置待机池失败');
+    toast(selectedIsIdle ? '已移出待机池' : '已加入待机池', selected);
     await loadEmotionLibrary();
   }
 
@@ -355,7 +370,7 @@
     if (setDef) {
       setDef.addEventListener('click', async () => {
         try {
-          await setDefault();
+          await toggleIdleEmotion();
         } catch (err) {
           toast('设置失败', String(err.message || err), 'danger');
         }

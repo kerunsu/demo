@@ -93,6 +93,14 @@ top-level page at `GET /server/config/devices`; the historical
   A save notification reuses this event with `settingsOnly=true`; the robot
   display applies it immediately without starting, interrupting or completing
   a behavior.
+- `GET|PUT /api/robot/emotions/idle-pool` reads or replaces the non-empty
+  random idle-expression pool. The historical `default` field and endpoint
+  remain compatible and represent the first pool item. Idle media is locally
+  interruptible by a formal interaction expression; a formal expression plays
+  atomically to its media end (except an explicit behavior cancellation), then
+  the display runs any queued formal expression or returns to random idle. A
+  successful pool update emits `robot_idle_pool_changed` so an online robot
+  display applies the new pool without a page refresh.
 
 For a praise action, `course_map.json` may carry an `animation` filename next
 to `motions`, `emotion`, and `sequence`. The server sends the resolved static

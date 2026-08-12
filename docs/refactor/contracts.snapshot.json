@@ -3,9 +3,9 @@
   "generatedAt": "2026-08-12",
   "sourceCommit": "working-tree: realtime phrase configuration and config navigation",
   "generation": "Python AST scan of app.py and app/**/*.py; methods omitted by decorators default to GET; blueprint prefixes applied.",
-  "routeCount": 181,
+  "routeCount": 183,
   "runtimeImplicitRouteCount": 1,
-  "runtimeUrlRuleCountObserved": 182,
+  "runtimeUrlRuleCountObserved": 184,
   "runtimeImplicitRoutes": [
     "GET /static/<path:filename>"
   ],
@@ -317,6 +317,7 @@
     "readiness_force_enter_ack",
     "readiness_start_ack",
     "robot_emotion_change",
+    "robot_idle_pool_changed",
     "robot_motion_command",
     "robot_playback_status",
     "robot_recording_status",

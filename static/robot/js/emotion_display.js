@@ -1,19 +1,19 @@
 /**
  * 机器人表情显示页面
  * 全屏显示 MP4 表情，响应 WebSocket 事件切换（历史 GIF 只读兼容）
- * 60秒无操作时自动随机切换表情
+ * 待机池中的素材按真实结尾随机轮播
  * 
  * 逻辑：
- * - 非默认表情播放完一次后自动切回默认表情
- * - 默认 MP4 表情循环播放；每个事件 MP4 只播放一次
+ * - 待机表情可被正式交互立即抢占
+ * - 正式交互表情完整播放；后续正式事件排队，结束后回到随机待机
  * - 切换时无淡入淡出，紧密衔接
  * - 自动解析GIF帧数据获取真实播放时长
  * - 表情列表与默认表情启动时从 API 拉取（不再硬编码）
  */
 
 // ========== 配置 ==========
-const AUTO_SWITCH_TIMEOUT = 60000; // 60秒自动切换
-let DEFAULT_EMOTION = null; // 由 API 覆盖，禁止硬编码旧文件名
+let DEFAULT_EMOTION = null; // 兼容旧客户端：等于待机池第一项
+let IDLE_EMOTIONS = [];
 const EMOTION_BASE_PATH = '/static/resources/Emotions/';
 const DEFAULT_GIF_DURATION = 3000; // 解析失败时的默认时长
 
@@ -31,7 +31,6 @@ let GLOBAL_FILTER = {
 
 // ========== 状态管理 ==========
 let socket = null;
-let autoSwitchTimer = null;
 let currentEmotion = null;
 let emotionPlayTimer = null;  // 表情播放完成定时器
 let isPlayingNonDefault = false; // 是否正在播放非默认表情
@@ -43,6 +42,9 @@ let renderGeneration = 0; // 防止已过期的异步加载结果重新盖住待
 let scheduledEmotionTimer = null;
 let scheduledEmotionEvent = null;
 let emotionAssetsReady = false;
+let idlePlayTimer = null;
+let lastIdleEmotion = null;
+const pendingEmotionEvents = [];
 
 // ========== DOM 元素 ==========
 let emotionImg = document.getElementById('emotion-gif');
@@ -413,6 +415,21 @@ function preloadVideoAsset(mediaId) {
     return emotionVideo;
 }
 
+function stopIdlePlayback() {
+    if (idlePlayTimer) clearTimeout(idlePlayTimer);
+    idlePlayTimer = null;
+    idleVideo.pause();
+}
+
+function chooseIdleEmotion() {
+    const candidates = IDLE_EMOTIONS.filter((name) => ALL_EMOTIONS.includes(name));
+    if (!candidates.length) return DEFAULT_EMOTION;
+    const alternatives = candidates.length > 1
+        ? candidates.filter((name) => name !== lastIdleEmotion)
+        : candidates;
+    return alternatives[Math.floor(Math.random() * alternatives.length)];
+}
+
 function showIdleLayer() {
     emotionImg.hidden = true;
     emotionVideo.pause();
@@ -432,14 +449,15 @@ function showIdleLayer() {
     }
 }
 
-function loadIdleMedia() {
-    if (!DEFAULT_EMOTION) return;
-    const url = mediaUrl(DEFAULT_EMOTION);
+function loadIdleMedia(emotionName = DEFAULT_EMOTION) {
+    if (!emotionName) return;
+    DEFAULT_EMOTION = emotionName;
+    const url = mediaUrl(emotionName);
     if (isVideo(DEFAULT_EMOTION)) {
         idleImg.hidden = true;
         idleImg.removeAttribute('src');
         idleVideo.src = url;
-        idleVideo.loop = true;
+        idleVideo.loop = false;
         idleVideo.currentTime = 0;
         applyMediaStyle(idleVideo, DEFAULT_EMOTION);
     } else {
@@ -478,6 +496,9 @@ async function loadEmotionCatalog() {
             );
             applyGlobalFilter(listRes.globalFilter);
             if (listRes.default) DEFAULT_EMOTION = listRes.default;
+            IDLE_EMOTIONS = Array.isArray(listRes.idlePool) && listRes.idlePool.length
+                ? listRes.idlePool.filter((name) => ALL_EMOTIONS.includes(name))
+                : (DEFAULT_EMOTION ? [DEFAULT_EMOTION] : []);
         }
         if (defRes && defRes.success && defRes.emotion) {
             DEFAULT_EMOTION = defRes.emotion;
@@ -495,6 +516,7 @@ async function loadEmotionCatalog() {
             ? 'v2_idle.gif'
             : ALL_EMOTIONS[0];
     }
+    if (!IDLE_EMOTIONS.length && DEFAULT_EMOTION) IDLE_EMOTIONS = [DEFAULT_EMOTION];
     currentEmotion = DEFAULT_EMOTION;
 }
 
@@ -607,7 +629,6 @@ async function init() {
 
     connectWebSocket();
     playDefaultEmotion();
-    resetAutoSwitchTimer();
 
     if (failedAssets.length) {
         console.warn('[Emotion Display] 表情预热失败:', failedAssets);
@@ -663,13 +684,27 @@ function connectWebSocket() {
                 applySettingsUpdate(data);
                 return;
             }
-            if (queueEmotion(data)) {
-                resetAutoSwitchTimer(); // 仅实际接纳行为时重置自动切换定时器
-            }
+            queueEmotion(data);
         }
     });
 
+    socket.on('robot_idle_pool_changed', (data) => {
+        const nextPool = Array.isArray(data?.emotions)
+            ? data.emotions.filter((name) => ALL_EMOTIONS.includes(name))
+            : [];
+        if (!nextPool.length) return;
+        IDLE_EMOTIONS = nextPool;
+        DEFAULT_EMOTION = data.default || nextPool[0];
+        if (!isPlayingNonDefault) playDefaultEmotion();
+    });
+
     socket.on('behavior_cancel', (data) => {
+        for (let index = pendingEmotionEvents.length - 1; index >= 0; index -= 1) {
+            if (!matchesExactEmotionEnvelope(pendingEmotionEvents[index], data)) continue;
+            const cancelled = pendingEmotionEvents.splice(index, 1)[0];
+            rememberCompletedEmotion(emotionIdentity(cancelled));
+            emitEmotionTerminal(cancelled, 'stopped', 'behavior_cancelled_while_queued');
+        }
         if (scheduledEmotionEvent && matchesExactEmotionEnvelope(scheduledEmotionEvent, data)) {
             const cancelled = scheduledEmotionEvent;
             if (scheduledEmotionTimer) clearTimeout(scheduledEmotionTimer);
@@ -688,6 +723,7 @@ function connectWebSocket() {
 // ========== 表情切换互斥 ==========
 function queueEmotion(payload) {
     const emotionName = typeof payload === 'string' ? payload : payload.emotionName;
+    const eventData = typeof payload === 'string' ? { emotionName } : payload;
     const identity = emotionIdentity(payload);
     pruneCompletedEmotionIds();
 
@@ -715,9 +751,9 @@ function queueEmotion(payload) {
         return false;
     }
 
-    // Server-side behavior scheduling is serial. A different command arriving
-    // here means the browser retained stale state after the previous behavior.
-    // The latest formal command takes ownership instead of being dropped.
+    // Game-style state machine: IDLE is interruptible; EVENT is atomic. A
+    // defensive FIFO handles a command that reaches the display while another
+    // formal expression is still finishing.
     if (isPlayingNonDefault) {
         const activeKey = activeEmotionEvent && activeEmotionEvent.identity &&
             activeEmotionEvent.identity.key;
@@ -725,15 +761,16 @@ function queueEmotion(payload) {
             console.log('[Emotion Display] 忽略当前行为的重复表情:', identity.key);
             return false;
         }
-        console.log('[Emotion Display] 新行为接管旧表情状态:', identity.key || emotionName);
-        onEmotionPlayComplete('stopped', 'superseded_by_new_behavior');
+        pendingEmotionEvents.push(eventData);
+        console.log('[Emotion Display] 正式表情播放中，新事件进入队列:', identity.key || emotionName);
+        return true;
     }
 
     // Formal behavior transactions explicitly restart the same asset so every
     // state change gets one complete expression cycle. Settings/manual repeats
     // without restart remain idempotent.
     const restartRequested = typeof payload === 'object' && payload?.restart === true;
-    if (emotionName === currentEmotion && !restartRequested) {
+    if (isPlayingNonDefault && emotionName === currentEmotion && !restartRequested) {
         console.log('[Emotion Display] 表情未改变，跳过');
         emitEmotionTerminal(
             { ...(typeof payload === 'object' ? payload : { emotionName }), identity },
@@ -744,7 +781,6 @@ function queueEmotion(payload) {
         return false;
     }
     
-    const eventData = typeof payload === 'string' ? { emotionName } : payload;
     const relativeDelayMs = Number(eventData?.startDelayMs);
     const startAtEpochMs = Number(eventData?.startAtEpochMs || 0);
     const delayMs = Number.isFinite(relativeDelayMs)
@@ -795,13 +831,15 @@ function playEmotion(payload) {
     currentEmotion = emotionName;
     const generation = ++renderGeneration;
 
-    if (emotionName === DEFAULT_EMOTION) {
+    if (eventData.isIdle === true) {
         isPlayingNonDefault = false;
         activeEmotionEvent = null;
         showIdleLayer();
         console.log('[Emotion Display] 待机表情底层持续播放中');
         return;
     }
+
+    stopIdlePlayback();
 
     const video = isVideo(emotionName);
     const newSrc = mediaUrl(emotionName);
@@ -884,52 +922,41 @@ function onEmotionPlayComplete(status = 'ended', reason = '') {
     rememberCompletedEmotion(completedEvent && completedEvent.identity);
     emitEmotionTerminal(completedEvent, status, reason);
 
-    // 不播放活动期间到达的任何新表情，直接切回持续运行的待机层。
-    playDefaultEmotion();
+    const nextEvent = pendingEmotionEvents.shift();
+    if (nextEvent) {
+        queueEmotion(nextEvent);
+    } else {
+        playDefaultEmotion();
+    }
 }
 
 // ========== 播放默认表情 ==========
 function playDefaultEmotion() {
-    if (!DEFAULT_EMOTION) {
+    const nextIdle = chooseIdleEmotion();
+    if (!nextIdle) {
         console.warn('[Emotion Display] 默认表情尚未就绪');
         return;
     }
-    console.log('[Emotion Display] 切回默认表情');
-    playEmotion(DEFAULT_EMOTION);
+    lastIdleEmotion = nextIdle;
+    console.log('[Emotion Display] 随机待机表情:', nextIdle);
+    stopIdlePlayback();
+    loadIdleMedia(nextIdle);
+    playEmotion({ emotionName: nextIdle, isIdle: true });
+    if (!isVideo(nextIdle)) {
+        parseGifDuration(mediaUrl(nextIdle)).then((duration) => {
+            if (!isPlayingNonDefault && currentEmotion === nextIdle) {
+                idlePlayTimer = setTimeout(playDefaultEmotion, Math.max(500, duration));
+            }
+        });
+    }
 }
 
 // 每次事件视频都 loop=false，并由原生 ended 精确完成一次。回调具备幂等保护。
 emotionVideo.addEventListener('ended', () => onEmotionPlayComplete('ended', 'media_ended'));
+idleVideo.addEventListener('ended', () => {
+    if (!isPlayingNonDefault) playDefaultEmotion();
+});
 
-// ========== 自动随机切换 ==========
-function resetAutoSwitchTimer() {
-    // 清除旧定时器
-    if (autoSwitchTimer) {
-        clearTimeout(autoSwitchTimer);
-    }
-    
-    // 设置新定时器
-    autoSwitchTimer = setTimeout(() => {
-        console.log('[Emotion Display] ⏰ 60秒超时，触发自动随机切换');
-        triggerAutoRandom();
-    }, AUTO_SWITCH_TIMEOUT);
-}
-
-function triggerAutoRandom() {
-    if (!socket || !socket.connected) {
-        console.warn('[Emotion Display] WebSocket未连接，无法触发自动随机');
-        // 即使未连接，也重置定时器以便下次尝试
-        resetAutoSwitchTimer();
-        return;
-    }
-    
-    // 发送事件到服务器，由服务器随机选择表情
-    socket.emit('robot_emotion_auto_random');
-    console.log('[Emotion Display] 已发送自动随机请求');
-    
-    // 重置定时器等待下一轮
-    resetAutoSwitchTimer();
-}
 
 // ========== 页面加载完成后初始化 ==========
 if (document.readyState === 'loading') {

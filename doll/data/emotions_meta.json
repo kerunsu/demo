@@ -1,6 +1,9 @@
 {
   "version": 2,
-  "default": "v3_speak_excitedly_short.mp4",
+  "default": "v3_idle_sleepy2.mp4",
+  "idlePool": [
+    "v3_idle_sleepy2.mp4"
+  ],
   "styles": {
     "v3_speak_bye.mp4": {
       "speedMultiplier": 1.2,
@@ -35,7 +38,7 @@
       "opacity": 1.0
     },
     "v3_speak_hi.mp4": {
-      "speedMultiplier": 1.0,
+      "speedMultiplier": 1.2,
       "scale": 1.25,
       "hueDeg": 0.0,
       "brightness": 1.0,
@@ -43,7 +46,7 @@
       "opacity": 1.0
     },
     "v3_speak_hinext.mp4": {
-      "speedMultiplier": 1.0,
+      "speedMultiplier": 1.2,
       "scale": 1.25,
       "hueDeg": 0.0,
       "brightness": 1.0,

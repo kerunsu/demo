@@ -10,7 +10,7 @@
     <div class="emotion-container">
         <div class="emotion-filter-layer" id="emotion-global-filter-layer">
             <img id="emotion-idle" src="" alt="Robot Idle Emotion">
-            <video id="emotion-idle-video" muted playsinline preload="auto" loop hidden></video>
+            <video id="emotion-idle-video" muted playsinline preload="auto" hidden></video>
             <img id="emotion-gif" src="" alt="Robot Emotion">
             <video id="emotion-video" muted playsinline preload="auto" hidden></video>
         </div>
@@ -19,6 +19,6 @@
     <!-- Socket.IO 本机静态资源（避免局域网无法访问外网 CDN / 证书错误） -->
     <script src="/static/js/vendor/socket.io.min.js"></script>
     <!-- 表情显示逻辑 -->
-    <script src="/static/robot/js/emotion_display.js?v=20260811-prewarm-single-player-v1"></script>
+    <script src="/static/robot/js/emotion_display.js?v=20260812-idle-pool-state-machine-v1"></script>
 </body>
 </html>

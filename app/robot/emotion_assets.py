@@ -242,6 +242,47 @@ def get_default_emotion() -> str:
     return available[0]
 
 
+def get_idle_emotions() -> List[str]:
+    """Return the configured random idle pool, preserving legacy ``default``."""
+    meta = _load_meta()
+    available = set(list_emotion_files())
+    configured = meta.get('idlePool')
+    idle_pool: List[str] = []
+    if isinstance(configured, list):
+        for raw_name in configured:
+            name = os.path.basename(str(raw_name or ''))
+            if name in available and name not in idle_pool:
+                idle_pool.append(name)
+    if idle_pool:
+        return idle_pool
+    default = get_default_emotion()
+    return [default] if default else []
+
+
+def set_idle_emotions(names: Any) -> List[str]:
+    if not isinstance(names, list):
+        raise ValueError('emotions must be an array')
+    available = set(list_emotion_files())
+    normalized: List[str] = []
+    for raw_name in names:
+        name = os.path.basename(str(raw_name or ''))
+        if not SAFE_EMOTION_NAME.match(name):
+            raise ValueError(f'invalid emotion filename: {raw_name}')
+        if name not in available:
+            raise FileNotFoundError(f'Emotion not found: {name}')
+        if name not in normalized:
+            normalized.append(name)
+    if not normalized:
+        raise ValueError('idle pool must contain at least one emotion')
+    with _meta_lock:
+        meta = _load_meta()
+        meta['idlePool'] = normalized
+        # Keep the historical single-default contract useful for old clients.
+        meta['default'] = normalized[0]
+        _save_meta(meta)
+    return normalized
+
+
 def set_default_emotion(name: str) -> str:
     name = os.path.basename(name or '')
     if not SAFE_EMOTION_NAME.match(name):
@@ -251,6 +292,7 @@ def set_default_emotion(name: str) -> str:
         raise FileNotFoundError(f'表情不存在: {name}')
     meta = _load_meta()
     meta['default'] = name
+    meta['idlePool'] = [name]
     _save_meta(meta)
     return name
 
@@ -289,6 +331,7 @@ def count_emotion_references(name: str) -> int:
 def get_emotions_payload() -> Dict[str, Any]:
     files = list_emotion_files()
     default = get_default_emotion()
+    idle_pool = get_idle_emotions()
     items = []
     for name in files:
         ref_paths = find_emotion_references(name)
@@ -303,6 +346,7 @@ def get_emotions_payload() -> Dict[str, Any]:
             'refCount': len(ref_paths),
             'referencedBy': ref_paths,
             'isDefault': name == default,
+            'isIdle': name in idle_pool,
             'url': f'/static/resources/Emotions/{name}?v={asset_version}',
             'version': asset_version,
             'format': Path(name).suffix.lower().lstrip('.'),
@@ -322,6 +366,7 @@ def get_emotions_payload() -> Dict[str, Any]:
     return {
         'emotions': files,
         'default': default,
+        'idlePool': idle_pool,
         'items': items,
         'globalFilter': get_global_filter(),
     }
@@ -486,20 +531,21 @@ def delete_emotion_file(name: str, force: bool = False) -> None:
     path = os.path.join(emotions_dir(), name)
     if not os.path.isfile(path):
         raise FileNotFoundError(f'表情不存在: {name}')
-    if get_default_emotion() == name:
-        # 删默认前先切到其它文件
-        others = [f for f in list_emotion_files() if f != name]
-        if others:
-            set_default_emotion(others[0])
-        else:
-            meta = _load_meta()
-            meta['default'] = DEFAULT_EMOTION_FALLBACK
-            _save_meta(meta)
+    idle_pool_before_delete = get_idle_emotions()
     os.remove(path)
     with _meta_lock:
         meta = _load_meta()
+        idle_pool = [item for item in idle_pool_before_delete if item != name]
+        if not idle_pool:
+            idle_pool = list_emotion_files()[:1]
+        if idle_pool:
+            meta['idlePool'] = idle_pool
+            meta['default'] = idle_pool[0]
+        else:
+            meta['idlePool'] = []
+            meta['default'] = DEFAULT_EMOTION_FALLBACK
         styles = meta.get('styles') if isinstance(meta.get('styles'), dict) else {}
-        if styles.pop(name, None) is not None:
-            meta['styles'] = styles
-            _save_meta(meta)
+        styles.pop(name, None)
+        meta['styles'] = styles
+        _save_meta(meta)
     logger.info(f'已删除表情: {name} (force={force})')

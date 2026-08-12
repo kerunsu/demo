@@ -334,6 +334,14 @@
       },
       {
         "method": "GET",
+        "path": "/api/robot/emotions/idle-pool",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "tests/test_robot_asset_tuning.py"
+      },
+      {
+        "method": "GET",
         "path": "/api/robot/emotions/global-filter",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
@@ -1339,6 +1347,14 @@
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
         "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/emotions/idle-pool",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "tests/test_robot_asset_tuning.py"
       },
       {
         "method": "PUT",

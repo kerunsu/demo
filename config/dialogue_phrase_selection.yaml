@@ -1,6 +1,15 @@
 schema_version: 1
-custom: {}
+custom:
+  social_greeting_intro:
+    social:
+    - 你好，我是迈迈，很高兴认识你
 enabled:
   question:
     mimic:
     - 学一学这个动作吧。
+  social_greeting_intro:
+    social:
+    - 你好，我是迈迈，很高兴认识你
+  social_farewell_bye:
+    social:
+    - 再见啦。

@@ -540,6 +540,25 @@ def emotion_global_filter():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@robot_bp.route('/emotions/idle-pool', methods=['GET', 'PUT'])
+def emotion_idle_pool():
+    """Manage the random, interruptible idle-expression pool."""
+    try:
+        service = get_robot_service()
+        if request.method == 'GET':
+            return jsonify({'success': True, 'emotions': service.get_idle_emotions()})
+        data = request.get_json(silent=True) or {}
+        emotions = service.set_idle_emotions(data.get('emotions'))
+        return jsonify({'success': True, 'emotions': emotions, 'default': emotions[0]})
+    except FileNotFoundError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f'更新待机表情池失败: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @robot_bp.route('/emotions/<name>/style', methods=['GET', 'PUT'])
 def emotion_style(name: str):
     """读取或更新单个表情的播放与显示参数。"""

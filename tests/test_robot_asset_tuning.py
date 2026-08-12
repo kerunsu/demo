@@ -109,6 +109,36 @@ def test_emotion_speed_scales_server_duration(tmp_path, monkeypatch):
     assert emotion_assets.get_expression_duration_ms("happy.mp4") == 2000
 
 
+def test_idle_emotion_pool_is_backward_compatible_and_persists(tmp_path, monkeypatch):
+    emotion_assets, meta = _prepare_emotions(tmp_path, monkeypatch)
+
+    assert emotion_assets.get_idle_emotions() == ["happy.mp4"]
+    assert emotion_assets.set_idle_emotions(["legacy.gif", "happy.mp4", "legacy.gif"]) == [
+        "legacy.gif", "happy.mp4",
+    ]
+    payload = emotion_assets.get_emotions_payload()
+    assert payload["idlePool"] == ["legacy.gif", "happy.mp4"]
+    assert [item["name"] for item in payload["items"] if item["isIdle"]] == [
+        "happy.mp4", "legacy.gif",
+    ]
+    stored = json.loads(meta.read_text(encoding="utf-8"))
+    assert stored["default"] == "legacy.gif"
+    assert stored["idlePool"] == ["legacy.gif", "happy.mp4"]
+
+    with pytest.raises(ValueError, match="at least one"):
+        emotion_assets.set_idle_emotions([])
+    with pytest.raises(FileNotFoundError):
+        emotion_assets.set_idle_emotions(["missing.mp4"])
+
+
+def test_deleting_idle_emotion_keeps_remaining_pool(tmp_path, monkeypatch):
+    emotion_assets, _meta = _prepare_emotions(tmp_path, monkeypatch)
+    emotion_assets.set_idle_emotions(["happy.mp4", "legacy.gif"])
+    emotion_assets.delete_emotion_file("happy.mp4")
+    assert emotion_assets.get_idle_emotions() == ["legacy.gif"]
+    assert emotion_assets.get_default_emotion() == "legacy.gif"
+
+
 def test_sequence_busy_duration_uses_scaled_motion(monkeypatch):
     from app.robot import robot_service
 
@@ -156,6 +186,12 @@ def test_asset_tuning_http_contract(monkeypatch):
         def get_default_emotion(self):
             return "happy.mp4"
 
+        def get_idle_emotions(self):
+            return ["happy.mp4"]
+
+        def set_idle_emotions(self, names):
+            return names
+
         def trigger_emotion(self, *_args, **_kwargs):
             return True
 
@@ -171,6 +207,9 @@ def test_asset_tuning_http_contract(monkeypatch):
     assert client.put("/api/robot/motions/wave/playback", json={"speedMultiplier": 1, "extra": 1}).status_code == 400
     assert client.put("/api/robot/emotions/happy.mp4/style", json={"scale": 1.1}).status_code == 200
     assert client.put("/api/robot/emotions/global-filter", json={"enabled": True}).status_code == 200
+    idle = client.put("/api/robot/emotions/idle-pool", json={"emotions": ["happy.mp4"]})
+    assert idle.status_code == 200
+    assert idle.get_json()["emotions"] == ["happy.mp4"]
 
 
 def test_asset_tuning_frontend_contract():
@@ -185,3 +224,7 @@ def test_asset_tuning_frontend_contract():
     assert "data.settingsOnly === true" in display
     assert "media.style.transform" in config
     assert "/emotions/global-filter" in config
+    assert "/emotions/idle-pool" in config
+    assert "pendingEmotionEvents.push(eventData)" in display
+    assert "stopIdlePlayback();" in display
+    assert "idleVideo.addEventListener('ended'" in display
