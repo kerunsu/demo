@@ -15,6 +15,8 @@ Required automated gates:
   quality report;
 - model mock/real selection, dialogue pause/health/fallback and V2
   profile publish/deploy/resolve/fallback;
+- realtime phrase library selection, custom additions, per-course isolation,
+  non-empty slots and ordering rule variants;
 - batch files/ZIP, malformed entries, duplicates, conflicts, rollback and
   asset-reference protection.
 

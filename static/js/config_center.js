@@ -10,7 +10,7 @@
     'motions',
     'media',
     'courses',
-    'phase5',
+    'phrases',
   ]);
   const PLACEHOLDER = {};
 
@@ -64,8 +64,8 @@
       if (v === 'courses' && typeof window.loadCourseLibrary === 'function') {
         window.loadCourseLibrary();
       }
-      if (v === 'phase5' && typeof window.loadPhase5 === 'function') {
-        window.loadPhase5();
+      if (v === 'phrases' && typeof window.loadPhraseLibrary === 'function') {
+        window.loadPhraseLibrary();
       }
     } else {
       const page = document.getElementById('page-placeholder');
@@ -113,6 +113,10 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     const module = document.body.dataset.module || 'content';
+    if (module === 'content' && currentView() === 'phase5') {
+      window.location.replace('/server/config/devices');
+      return;
+    }
     if (module !== 'content') return;
     bindSubnav();
     setView(currentView(), false);

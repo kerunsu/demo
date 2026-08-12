@@ -199,6 +199,8 @@ def test_phase5_control_page_explains_device_and_recording_workflow():
     template = (root / "templates/server/config.html").read_text(encoding="utf-8")
     script = (root / "static/js/config_phase5.js").read_text(encoding="utf-8")
     assert "设备与录制总览" in template
+    assert 'href="/server/config/devices"' in template
+    assert 'data-view="phase5"' not in template
     assert "默认设备（无需添加）" in script
     assert "课程录制（按儿童）" in template
     assert "在服务器本机打开文件夹" in script

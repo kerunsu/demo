@@ -98,9 +98,9 @@ def test_phase1_runtime_url_map_matches_source_snapshot(phase1_runtime):
     expected = source_routes | {
         ("GET", "/static/<path:filename>"),
     }
-    assert len(source_routes) == snapshot["routeCount"] == 177
+    assert len(source_routes) == snapshot["routeCount"] == 181
     assert runtime_routes == expected
-    assert len(runtime_routes) == snapshot["runtimeUrlRuleCountObserved"] == 178
+    assert len(runtime_routes) == snapshot["runtimeUrlRuleCountObserved"] == 182
     assert snapshot["runtimeImplicitRoutes"] == ["GET /static/<path:filename>"]
 
 

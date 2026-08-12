@@ -1,0 +1,6 @@
+schema_version: 1
+custom: {}
+enabled:
+  question:
+    mimic:
+    - 学一学这个动作吧。

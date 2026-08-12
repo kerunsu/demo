@@ -181,8 +181,8 @@ class Config:
         }
     
     # ==================== 儿童对话 / 浏览器 TTS ====================
-    # browser=关掉预录改浏览器朗读；file=旧预录；both=两者都播（调试用）
-    DIALOGUE_TTS_MODE = (os.environ.get('DIALOGUE_TTS_MODE') or 'browser').strip().lower()
+    # 课程语音统一由儿童端浏览器实时生成；旧 MP3 字段仅保留数据兼容。
+    DIALOGUE_TTS_MODE = 'browser'
     DIALOGUE_ENABLED = os.environ.get('DIALOGUE_ENABLED', 'true').lower() == 'true'
     # Teacher-triggered wake is the production default.  Voice wake remains an
     # explicit Server-console option for environments that need it.

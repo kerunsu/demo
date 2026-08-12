@@ -1,37 +1,93 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-11",
+  "generatedAt": "2026-08-12",
   "sourceSnapshot": "docs/refactor/contracts.snapshot.json",
   "interfaces": {
     "http": [
       {
-        "method": "POST",
-        "path": "/api/v2/control/actions/stop-audio",
-        "owner": "facade",
+        "method": "DELETE",
+        "path": "/api/config/courses/<int:course_id>",
+        "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/v2/control/actions/stop-robot",
-        "owner": "facade",
+        "method": "DELETE",
+        "path": "/api/config/items/<int:item_id>",
+        "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/v2/control/devices/check",
-        "owner": "facade",
+        "method": "DELETE",
+        "path": "/api/config/media",
+        "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "GET",
-        "path": "/api/v2/control/overview",
-        "owner": "facade",
+        "method": "DELETE",
+        "path": "/api/robot/animations/<path:name>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/robot/emotions/<name>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/robot/mapping/course/<int:course_id>/<aux_type>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/robot/mapping/defaults/<aux_type>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/robot/mapping/item/<int:student_id>/<int:course_id>/<int:item_id>/<aux_type>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/robot/mapping/student/<int:student_id>/course/<int:course_id>/<aux_type>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/robot/motions/<path:name>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/v2/capture/devices/<device_id>",
+        "owner": "facade + acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
         "behaviorFixture": "partial; see 01-contract-inventory.md"
@@ -40,222 +96,6 @@
         "method": "DELETE",
         "path": "/api/v2/control/recordings/<folder_name>",
         "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/control/recordings/<folder_name>/lock",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/v2/control/recordings/active",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/control/recordings/<session_id>/force-stop",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/control/sessions/<folder_name>/reveal",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/v2/config/sync/manifest",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/v2/config/sync/export",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/v2/voice/health",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/v2/timeline/<training_session_id>",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/timeline/events",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/assets/batch-import",
-        "owner": "facade + storage",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/v2/assets/batch-import/<staging_id>",
-        "owner": "facade + storage",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/assets/batch-import/<staging_id>/commit",
-        "owner": "facade + storage",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/assets/batch-import/<staging_id>/rollback",
-        "owner": "facade + storage",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/v2/interaction/events",
-        "owner": "facade + computation",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/interaction/events",
-        "owner": "facade + computation",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/v2/interaction/profiles/<course_id>",
-        "owner": "facade + computation",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/v2/interaction/profiles/<course_id>/draft",
-        "owner": "facade + computation",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/interaction/profiles/<course_id>/publish",
-        "owner": "facade + computation",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/interaction/profiles/<course_id>/deploy",
-        "owner": "facade + computation",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/interaction/profiles/<course_id>/rollback",
-        "owner": "facade + computation",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/interaction/resolve",
-        "owner": "facade + computation",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/v2/capture/devices",
-        "owner": "facade + acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/capture/devices",
-        "owner": "facade + acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PATCH",
-        "path": "/api/v2/capture/devices/<device_id>",
-        "owner": "facade + acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "DELETE",
-        "path": "/api/v2/capture/devices/<device_id>",
-        "owner": "facade + acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/capture/devices/discover",
-        "owner": "facade + acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/capture/snapshot",
-        "owner": "facade + acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
         "behaviorFixture": "partial; see 01-contract-inventory.md"
@@ -293,23 +133,7 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "PUT",
-        "path": "/api/config/audio/course-defaults/<course_type>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
-        "path": "/api/config/audio/entries/<entry_id>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
         "path": "/api/config/audio/entries/<entry_id>",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
@@ -341,31 +165,7 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/config/courses",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "DELETE",
-        "path": "/api/config/courses/<int:course_id>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
-        "path": "/api/config/courses/<int:course_id>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PATCH",
         "path": "/api/config/courses/<int:course_id>",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
@@ -381,38 +181,6 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/config/courses/<int:course_id>/items",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "DELETE",
-        "path": "/api/config/items/<int:item_id>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PATCH",
-        "path": "/api/config/items/<int:item_id>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "DELETE",
-        "path": "/api/config/media",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
         "path": "/api/config/media",
         "owner": "facade + storage/computation/acquisition",
@@ -421,8 +189,8 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/config/media/upload",
+        "method": "GET",
+        "path": "/api/config/phrases",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
@@ -453,41 +221,9 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/media/<session_id>/audio-chunks",
-        "owner": "facade + acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/media/<session_id>/frames",
-        "owner": "facade + acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
         "path": "/api/media/<session_id>/status",
         "owner": "facade + acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/media/<session_id>/upload",
-        "owner": "facade + acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/monitor/ambient/control",
-        "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
         "behaviorFixture": "partial; see 01-contract-inventory.md"
@@ -525,56 +261,8 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/monitor/teacher-connections/disconnect",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
         "path": "/api/report/<training_session_id>",
-        "owner": "facade + computation/storage",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/report/<training_session_id>/generate",
-        "owner": "facade + computation/storage",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/report/<training_session_id>/manual",
-        "owner": "facade + computation/storage",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/report/<training_session_id>/publish",
-        "owner": "facade + computation/storage",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/report/<training_session_id>/refresh",
-        "owner": "facade + computation/storage",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/report/<training_session_id>/revert",
         "owner": "facade + computation/storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
@@ -597,8 +285,8 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/robot/course-event",
+        "method": "GET",
+        "path": "/api/robot/animations",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
@@ -622,38 +310,6 @@
       },
       {
         "method": "GET",
-        "path": "/api/robot/animations",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "DELETE",
-        "path": "/api/robot/animations/<path:name>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/robot/animations/upload",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/robot/animations/<path:name>/rename",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
         "path": "/api/robot/emotions",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
@@ -661,23 +317,7 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "DELETE",
-        "path": "/api/robot/emotions/<name>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
-        "path": "/api/robot/emotions/<name>/style",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
         "path": "/api/robot/emotions/<name>/style",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
@@ -693,72 +333,8 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "PUT",
-        "path": "/api/robot/emotions/default",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
         "path": "/api/robot/emotions/global-filter",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/robot/emotions/global-filter",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/robot/emotions/trigger",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/robot/emotions/upload",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "DELETE",
-        "path": "/api/robot/mapping/course/<int:course_id>/<aux_type>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/robot/mapping/course/<int:course_id>/<aux_type>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "DELETE",
-        "path": "/api/robot/mapping/defaults/<aux_type>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/robot/mapping/defaults/<aux_type>",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
@@ -773,64 +349,8 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "PUT",
-        "path": "/api/robot/mapping/idle",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "DELETE",
-        "path": "/api/robot/mapping/item/<int:student_id>/<int:course_id>/<int:item_id>/<aux_type>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/robot/mapping/item/<int:student_id>/<int:course_id>/<int:item_id>/<aux_type>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "DELETE",
-        "path": "/api/robot/mapping/student/<int:student_id>/course/<int:course_id>/<aux_type>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/robot/mapping/student/<int:student_id>/course/<int:course_id>/<aux_type>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
         "path": "/api/robot/motions",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/robot/motions",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "DELETE",
-        "path": "/api/robot/motions/<path:name>",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
@@ -847,30 +367,6 @@
       {
         "method": "GET",
         "path": "/api/robot/motions/<path:name>/playback",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/robot/motions/<path:name>/playback",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/robot/motions/import",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/robot/play/<path:name>",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
@@ -879,30 +375,6 @@
       {
         "method": "GET",
         "path": "/api/robot/runtime/download",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/robot/runtime/behavior/event",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/robot/runtime/heartbeat",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/robot/runtime/register",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
@@ -925,24 +397,8 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/robot/sequence/preview",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
         "path": "/api/robot/sequence/status/<command_id>",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/robot/stop",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
@@ -957,23 +413,7 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/saveResult",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
-        "path": "/api/server/child-media-mode",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
         "path": "/api/server/child-media-mode",
         "owner": "facade",
         "sourceSnapshot": true,
@@ -983,54 +423,6 @@
       {
         "method": "GET",
         "path": "/api/server/config",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/server/config",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/server/config/camera-analysis",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/server/config/camera-analysis",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/server/config/report-scoring",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/server/config/report-scoring",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/server/config/apply",
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
@@ -1046,6 +438,14 @@
       },
       {
         "method": "GET",
+        "path": "/api/server/config/camera-analysis",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "GET",
         "path": "/api/server/config/history",
         "owner": "facade",
         "sourceSnapshot": true,
@@ -1053,24 +453,8 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/server/config/reset-defaults",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/server/config/rollback",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/server/config/save",
+        "method": "GET",
+        "path": "/api/server/config/report-scoring",
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
@@ -1093,14 +477,6 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/server/presets/apply",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
         "path": "/api/server/robot/control-mode",
         "owner": "facade",
@@ -1109,23 +485,7 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "PUT",
-        "path": "/api/server/robot/control-mode",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
-        "path": "/api/server/runtime-modes",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
         "path": "/api/server/runtime-modes",
         "owner": "facade",
         "sourceSnapshot": true,
@@ -1142,14 +502,6 @@
       },
       {
         "method": "GET",
-        "path": "/api/students",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
         "path": "/api/students",
         "owner": "facade",
         "sourceSnapshot": true,
@@ -1205,30 +557,6 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/teacher/login",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/teacher/logout",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "POST",
-        "path": "/api/teacher/register",
-        "owner": "facade",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
         "method": "GET",
         "path": "/api/teacher/session",
         "owner": "facade",
@@ -1237,8 +565,80 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
-        "method": "POST",
-        "path": "/api/training/finalize-beacon",
+        "method": "GET",
+        "path": "/api/v2/assets/batch-import/<staging_id>",
+        "owner": "facade + storage",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v2/capture/devices",
+        "owner": "facade + acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v2/config/sync/export",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v2/config/sync/manifest",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v2/control/overview",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v2/control/recordings/active",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v2/interaction/events",
+        "owner": "facade + computation",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v2/interaction/profiles/<course_id>",
+        "owner": "facade + computation",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v2/timeline/<training_session_id>",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v2/voice/health",
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
@@ -1334,6 +734,14 @@
       },
       {
         "method": "GET",
+        "path": "/server/config/devices",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "GET",
         "path": "/server/config/overview",
         "owner": "facade",
         "sourceSnapshot": true,
@@ -1416,6 +824,630 @@
         "method": "GET",
         "path": "/therapist",
         "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/config/courses/<int:course_id>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/config/items/<int:item_id>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/v2/capture/devices/<device_id>",
+        "owner": "facade + acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/config/courses",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/config/courses/<int:course_id>/items",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/config/media/upload",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/config/phrases/<intent>/<course_type>/custom",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/media/<session_id>/audio-chunks",
+        "owner": "facade + acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/media/<session_id>/frames",
+        "owner": "facade + acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/media/<session_id>/upload",
+        "owner": "facade + acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/monitor/ambient/control",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/monitor/teacher-connections/disconnect",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/report/<training_session_id>/generate",
+        "owner": "facade + computation/storage",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/report/<training_session_id>/publish",
+        "owner": "facade + computation/storage",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/report/<training_session_id>/refresh",
+        "owner": "facade + computation/storage",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/report/<training_session_id>/revert",
+        "owner": "facade + computation/storage",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/robot/animations/upload",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/robot/course-event",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/robot/emotions/trigger",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/robot/emotions/upload",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/robot/motions",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/robot/motions/import",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/robot/play/<path:name>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/robot/runtime/behavior/event",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/robot/runtime/heartbeat",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/robot/runtime/register",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/robot/sequence/preview",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/robot/stop",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/saveResult",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/server/config/apply",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/server/config/reset-defaults",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/server/config/rollback",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/server/config/save",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/server/presets/apply",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/students",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/teacher/login",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/teacher/logout",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/teacher/register",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/training/finalize-beacon",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/assets/batch-import",
+        "owner": "facade + storage",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/assets/batch-import/<staging_id>/commit",
+        "owner": "facade + storage",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/assets/batch-import/<staging_id>/rollback",
+        "owner": "facade + storage",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/capture/devices",
+        "owner": "facade + acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/capture/devices/discover",
+        "owner": "facade + acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/capture/snapshot",
+        "owner": "facade + acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/control/actions/stop-audio",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/control/actions/stop-robot",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/control/devices/check",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/control/recordings/<folder_name>/lock",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/control/recordings/<session_id>/force-stop",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/control/sessions/<folder_name>/reveal",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/interaction/events",
+        "owner": "facade + computation",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/interaction/profiles/<course_id>/deploy",
+        "owner": "facade + computation",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/interaction/profiles/<course_id>/publish",
+        "owner": "facade + computation",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/interaction/profiles/<course_id>/rollback",
+        "owner": "facade + computation",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/interaction/resolve",
+        "owner": "facade + computation",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/timeline/events",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/config/audio/course-defaults/<course_type>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/config/audio/entries/<entry_id>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/config/phrases/<intent>/<course_type>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/report/<training_session_id>/manual",
+        "owner": "facade + computation/storage",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/animations/<path:name>/rename",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/emotions/<name>/style",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/emotions/default",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/emotions/global-filter",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/mapping/course/<int:course_id>/<aux_type>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/mapping/defaults/<aux_type>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/mapping/idle",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/mapping/item/<int:student_id>/<int:course_id>/<int:item_id>/<aux_type>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/mapping/student/<int:student_id>/course/<int:course_id>/<aux_type>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/motions/<path:name>/playback",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/server/child-media-mode",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/server/config",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/server/config/camera-analysis",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/server/config/report-scoring",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/server/robot/control-mode",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/server/runtime-modes",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/v2/interaction/profiles/<course_id>/draft",
+        "owner": "facade + computation",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
         "behaviorFixture": "partial; see 01-contract-inventory.md"

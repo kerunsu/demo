@@ -28,6 +28,29 @@ Deployment stages are `legacy_only`, `shadow`, `draft_preview`,
 valid published profile is explicitly eligible. Invalid/unmatched V2 always
 falls back to the old MappingResolver/course_map path.
 
+## Realtime course phrases
+
+Course prompts, hints, praise and social utterances are realtime browser TTS.
+The reviewed base corpus is `config/dialogue_phrases.yaml`. Server-side choices
+and locally added phrases are stored separately in
+`config/dialogue_phrase_selection.yaml`, using atomic replacement. This overlay
+contains `custom` candidate lines and the per-intent/per-course `enabled` set;
+when a slot has no explicit selection, all reviewed base lines remain enabled.
+
+Use Configuration Center -> Interaction Content -> Realtime Phrases to select
+one or more lines for each course type. Adding a line stores it locally and
+enables it immediately. A slot cannot be saved empty. Ordering keeps its eight
+rule-specific question slots in addition to general hint and praise. Legacy
+course/item audio paths remain readable for database compatibility but are no
+longer editable in the course page and are not runtime inputs.
+
+Phrase selection is keyed by course type, not by an individual course row.
+Creating a course under an existing type therefore makes it use that type's
+enabled phrases immediately; the Realtime Phrases page queries and displays the
+currently linked course rows on every refresh. Device and recording operations
+are a top-level Configuration Center area at `/server/config/devices`, not an
+Interaction Content subview.
+
 ## Collaboration sync
 
 The configuration center exposes `GET /api/v2/config/sync/manifest` and

@@ -478,3 +478,21 @@ a { color: inherit; text-decoration: none; }
   .cc-expr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cc-tuning-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.cc-phrase-select {
+  width: 100%;
+  min-height: 110px;
+  margin-top: 10px;
+  padding: 6px;
+}
+
+.cc-phrase-select option {
+  padding: 7px 9px;
+  border-radius: 6px;
+}
+
+.cc-phrase-courses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}

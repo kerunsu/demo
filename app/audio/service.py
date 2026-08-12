@@ -2,7 +2,6 @@
 语音播放服务
 处理 play_resource 事件中的语音触发逻辑
 """
-import os
 import time
 from typing import Dict, Any, Optional
 from app.utils.logger import setup_logger
@@ -31,7 +30,9 @@ class AudioService:
 
     @staticmethod
     def _tts_mode() -> str:
-        return (os.environ.get("DIALOGUE_TTS_MODE") or "browser").strip().lower()
+        # Product mode is browser TTS only. Legacy file fields remain readable
+        # for database compatibility, but course playback never selects them.
+        return "browser"
 
     @staticmethod
     def _room_has_participants(

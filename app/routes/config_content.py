@@ -608,6 +608,86 @@ def delete_media():
 
 # ========== 课型 / 社交语音（audio_manifest） ==========
 
+@config_content_bp.route('/phrases', methods=['GET'])
+def get_dialogue_phrases():
+    """实时 TTS 话术库及各课型当前启用集。"""
+    from app.audio.manifest_io import ORDERING_QUESTION_SLOTS
+    from app.dialogue.phrase_library import get_slot
+    from app.dialogue.phrases import base_lines_for
+
+    course_types = []
+    for type_key, label in TYPE_EN_TO_CN.items():
+        db_type = CourseType.query.filter_by(name=label).first()
+        linked_courses = []
+        if db_type:
+            linked_courses = [
+                {'id': course.id, 'title': course.title}
+                for course in Course.query.filter_by(course_type_id=db_type.id)
+                .order_by(Course.id)
+                .all()
+            ]
+        slots = []
+        for intent in ('question', 'hint', 'praise'):
+            slots.append(get_slot(base_lines_for(intent, type_key), intent, type_key))
+        if type_key == 'social':
+            for intent, slot_label in (
+                ('social_greeting_intro', '打招呼 · 自我介绍'),
+                ('social_greeting_play', '打招呼 · 邀请玩耍'),
+                ('social_farewell_bye', '再见 · 主动告别'),
+                ('social_farewell_reply', '再见 · 回应儿童'),
+            ):
+                slot = get_slot(base_lines_for(intent, type_key), intent, type_key)
+                slot['label'] = slot_label
+                slots.append(slot)
+        if type_key == 'ordering':
+            for _audio_key, slot_label, category, rule in ORDERING_QUESTION_SLOTS:
+                variant = f'{category}_{rule}'
+                slot = get_slot(base_lines_for('question', variant), 'question', variant)
+                slot['label'] = f'提问 · {slot_label}'
+                slots.append(slot)
+        course_types.append({
+            'type': type_key,
+            'label': label,
+            'courses': linked_courses,
+            'courseCount': len(linked_courses),
+            'slots': slots,
+        })
+    return jsonify({
+        'success': True,
+        'mode': 'browser',
+        'courseTypes': course_types,
+    })
+
+
+@config_content_bp.route('/phrases/<intent>/<course_type>', methods=['PUT'])
+def put_dialogue_phrase_selection(intent: str, course_type: str):
+    from app.dialogue.phrase_library import set_enabled
+
+    data = request.get_json(silent=True) or {}
+    try:
+        slot = set_enabled(intent, course_type, data.get('selected'))
+        return jsonify({'success': True, 'slot': slot})
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        logger.error('put_dialogue_phrase_selection: %s', exc, exc_info=True)
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@config_content_bp.route('/phrases/<intent>/<course_type>/custom', methods=['POST'])
+def post_dialogue_custom_phrase(intent: str, course_type: str):
+    from app.dialogue.phrase_library import add_custom
+
+    data = request.get_json(silent=True) or {}
+    try:
+        slot = add_custom(intent, course_type, data.get('text'))
+        return jsonify({'success': True, 'slot': slot}), 201
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        logger.error('post_dialogue_custom_phrase: %s', exc, exc_info=True)
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
 @config_content_bp.route('/audio/course-defaults/<course_type>', methods=['GET'])
 def get_audio_course_defaults(course_type: str):
     from app.audio.manifest_io import get_course_type_defaults

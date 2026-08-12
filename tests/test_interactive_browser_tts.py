@@ -228,27 +228,30 @@ def test_play_interactive_ordering_question_maps_to_rule_phrase(monkeypatch):
     assert emitted[0]["text"] == "选出更高的那张。"
 
 
-def test_play_interactive_file_mode_uses_emit_for_course(monkeypatch):
+def test_legacy_file_env_cannot_disable_realtime_tts(monkeypatch):
     monkeypatch.setenv("DIALOGUE_TTS_MODE", "file")
 
     from app.audio.service import AudioService
 
     calls = []
 
+    class FakeSocketio:
+        def emit(self, event, payload, room=None, broadcast=False):
+            calls.append((event, payload, room))
+
     class FakeEmitter:
-        socketio = None
+        socketio = FakeSocketio()
 
         def emit_for_course(self, **kwargs):
-            calls.append(kwargs)
-            return True
+            raise AssertionError("旧 file 环境值不应再播放预录音频")
 
     svc = AudioService()
     svc._emitter = FakeEmitter()
     ok = svc.play_interactive_course_audio("s3", "ordering", "praise")
     assert ok is True
     assert len(calls) == 1
-    assert calls[0]["course_type"] == "ordering"
-    assert calls[0]["audio_type"] == "praise"
+    assert calls[0][0] == "robot_speak_text"
+    assert calls[0][1]["intent"] == "praise"
 
 
 def test_social_browser_aux_emits_robot_speak_text(monkeypatch):
@@ -297,19 +300,22 @@ def test_social_browser_aux_emits_robot_speak_text(monkeypatch):
         assert sample in pool
 
 
-def test_social_file_mode_uses_emit_for_course(monkeypatch):
+def test_social_legacy_file_env_still_uses_realtime_tts(monkeypatch):
     monkeypatch.setenv("DIALOGUE_TTS_MODE", "file")
 
     from app.audio.service import AudioService
 
     calls = []
 
+    class FakeSocketio:
+        def emit(self, event, payload, room=None, broadcast=False):
+            calls.append((event, payload, room))
+
     class FakeEmitter:
-        socketio = None
+        socketio = FakeSocketio()
 
         def emit_for_course(self, **kwargs):
-            calls.append(kwargs)
-            return True
+            raise AssertionError("社交课不应再播放预录音频")
 
     svc = AudioService()
     svc._emitter = FakeEmitter()
@@ -319,12 +325,12 @@ def test_social_file_mode_uses_emit_for_course(monkeypatch):
     )
     assert ok is True
     assert len(calls) == 1
-    assert calls[0]["audio_type"] == "social_greeting_intro"
-    assert calls[0]["course_type"] == "social"
+    assert calls[0][0] == "robot_speak_text"
+    assert calls[0][1]["intent"] == "social_greeting_intro"
 
 
-def test_both_mode_reports_one_effective_utterance(monkeypatch):
-    """browser/file are duplicate transports for one behavior, not two waits."""
+def test_legacy_both_env_reports_one_realtime_utterance(monkeypatch):
+    """A stale both setting cannot re-enable duplicate file playback."""
     monkeypatch.setenv("DIALOGUE_TTS_MODE", "both")
 
     from app.audio.service import AudioService
@@ -339,8 +345,7 @@ def test_both_mode_reports_one_effective_utterance(monkeypatch):
         socketio = FakeSocketio()
 
         def emit_for_course(self, **kwargs):
-            emitted.append(("play_audio", kwargs, kwargs.get("room")))
-            return True
+            raise AssertionError("both 已废弃，不应再播放预录音频")
 
     svc = AudioService()
     svc._emitter = FakeEmitter()
@@ -353,9 +358,10 @@ def test_both_mode_reports_one_effective_utterance(monkeypatch):
     )
 
     assert details["triggered"] is True
-    assert details["transportDispatchCount"] == 2
+    assert details["transportDispatchCount"] == 1
     assert details["dispatchCount"] == 1
     assert details["behaviorId"] == "behavior-both"
+    assert [event for event, _payload, _room in emitted] == ["robot_speak_text"]
 
 
 def test_social_aux_reuses_session_without_resolved_file():

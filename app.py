@@ -414,6 +414,12 @@ def server_config_content():
     return render_template("server/config.html", active_module="content")
 
 
+@app.route("/server/config/devices")
+def server_config_devices():
+    """配置中心 · 设备与录制。"""
+    return render_template("server/config.html", active_module="devices")
+
+
 @app.route("/robot")
 def robot_page():
     """机械臂控制面板页面"""

@@ -35,6 +35,18 @@ the legacy `/therapist` entry redirect there by default. API, session cookie
 and Socket.IO therefore share the 8080 origin. Port 5173 is only an explicit
 Vite development surface and is not part of production startup.
 
+Course prompts, hints, praise and social utterances use child-browser realtime
+TTS only. Legacy course/item MP3 fields remain readable for stored-data
+compatibility but are not selected by normal playback, even if an old
+`DIALOGUE_TTS_MODE=file|both` environment value remains. The Server content
+console manages a per-course-type enabled phrase set through
+`GET /api/config/phrases`, `PUT /api/config/phrases/<intent>/<courseType>` and
+`POST /api/config/phrases/<intent>/<courseType>/custom`. Every slot must retain
+at least one enabled phrase; ordering rule questions keep separate variants.
+The Server configuration console exposes device and recording operations as a
+top-level page at `GET /server/config/devices`; the historical
+`/server/config/content?view=phase5` browser URL redirects there.
+
 ## Versioned additive APIs
 
 - `/api/v2/capture/devices` — configure/discover 0..N device profiles and freeze

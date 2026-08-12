@@ -326,7 +326,6 @@
         if (target.dataset.deleteFolder) await deleteRecording(target.dataset.deleteFolder);
       } catch (error) { text('phase5-device-warning', `操作失败：${error.message}`); }
     });
-    if (document.body.dataset.module === 'content'
-      && new URLSearchParams(window.location.search).get('view') === 'phase5') window.loadPhase5();
+    if (document.body.dataset.module === 'devices') window.loadPhase5();
   });
 })();

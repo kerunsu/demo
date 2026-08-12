@@ -211,7 +211,8 @@ def normalize_ordering_question_key(audio_or_rule_key: Optional[str]) -> Optiona
     return text_aliases.get(raw)
 
 
-def _lines_for(intent: str, course_type: Optional[str]) -> List[str]:
+def base_lines_for(intent: str, course_type: Optional[str]) -> List[str]:
+    """Return reviewed base lines without applying the Server selection overlay."""
     bank = get_phrase_bank()
     section = bank.get(intent) or {}
     if not isinstance(section, dict):
@@ -223,6 +224,20 @@ def _lines_for(intent: str, course_type: Optional[str]) -> List[str]:
     if isinstance(lines, str):
         return [lines]
     return [str(x).strip() for x in lines if str(x).strip()]
+
+
+def _lines_for(intent: str, course_type: Optional[str]) -> List[str]:
+    course_key = (course_type or "").strip().lower()
+    base = base_lines_for(intent, course_type)
+    if not course_key:
+        return base
+    try:
+        from app.dialogue.phrase_library import effective_lines
+
+        return effective_lines(base, intent, course_key)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("读取实时话术选择失败，使用基础语料: %s", exc)
+        return base
 
 
 def pick_phrase(

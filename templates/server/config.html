@@ -29,11 +29,14 @@
   <aside class="cc-sidebar">
     <div class="cc-side-title">配置中心</div>
     <div class="cc-nav-list">
+      <a class="cc-nav-item{% if active_module == 'overview' %} active{% endif %}" href="/server/config/overview" data-module="overview">
+        配置概览
+      </a>
       <a class="cc-nav-item{% if active_module|default('content') == 'content' %} active{% endif %}" href="/server/config/content" data-module="content">
         交互内容
       </a>
-      <a class="cc-nav-item{% if active_module == 'overview' %} active{% endif %}" href="/server/config/overview" data-module="overview">
-        配置概览
+      <a class="cc-nav-item{% if active_module == 'devices' %} active{% endif %}" href="/server/config/devices" data-module="devices">
+        设备与录制
       </a>
       <a class="cc-nav-item{% if active_module == 'camera' %} active{% endif %}" href="/server/config/camera" data-module="camera">
         摄像头与注意力
@@ -55,14 +58,14 @@
     <!-- ========== 交互内容模块 ========== -->
     <div id="module-content" class="cc-module"{% if active_module|default('content') != 'content' %} hidden{% endif %}>
     <div class="cc-subnav" id="cc-subnav">
+      <button type="button" data-view="binding">行为绑定</button>
+      <button type="button" data-view="courses">课程库</button>
+      <button type="button" data-view="phrases">实时话术</button>
       <button type="button" data-view="workbench" class="active">工作台</button>
+      <button type="button" data-view="media">媒资库</button>
       <button type="button" data-view="expressions">表情库</button>
       <button type="button" data-view="animations">鼓励动画库</button>
-      <button type="button" data-view="binding">行为绑定</button>
       <button type="button" data-view="motions">动作库</button>
-      <button type="button" data-view="media">媒资库</button>
-      <button type="button" data-view="courses">课程库</button>
-      <button type="button" data-view="phase5">设备与录制</button>
       <span class="cc-subnav-hint">交互内容</span>
     </div>
 
@@ -442,16 +445,8 @@
             <label>标题 <input id="cd-title" class="cc-inp" style="min-width:240px;" /></label>
             <span>课型：<b id="cd-type"></b>（只读）</span>
           </div>
-          <p class="cc-tiny" id="cd-type-audio-hint" style="margin:0 0 8px;"></p>
-          <div class="cc-form-row" data-qp-row data-generic-question>
-            <label>提问音频（课型共享） <input id="cd-question" class="cc-inp" style="min-width:280px;" /></label>
-            <button type="button" class="cc-btn soft small" id="btn-pick-question">选择</button>
-          </div>
-          <div id="cd-ordering-questions" hidden style="margin-bottom:10px;"></div>
-          <div class="cc-form-row" data-qp-row>
-            <label>表扬音频（课型共享） <input id="cd-praise" class="cc-inp" style="min-width:280px;" /></label>
-            <button type="button" class="cc-btn soft small" id="btn-pick-praise">选择</button>
-          </div>
+          <p class="cc-tiny" style="margin:0 0 8px;">提问、提示和表扬统一使用实时 TTS，请到「实时话术」按课程大类调配。</p>
+          <a class="cc-btn soft small" href="?view=phrases">配置实时话术</a>
           <div class="cc-form-row">
             <label>交互入口 entry <input id="cd-entry" class="cc-inp" style="min-width:280px;" placeholder="可选" /></label>
           </div>
@@ -464,8 +459,45 @@
       </div>
     </section>
 
-    <!-- ========== 设备与录制总览（保留 phase5 view 名以兼容旧链接） ========== -->
-    <section class="cc-page" id="page-phase5" data-page="phase5" hidden>
+    <!-- 实时 TTS 话术 -->
+    <section class="cc-page" id="page-phrases" data-page="phrases" hidden>
+      <div class="cc-page-head">
+        <div>
+          <div class="cc-breadcrumb">交互内容 / 实时话术</div>
+          <h1 class="cc-page-title">实时话术</h1>
+          <p class="cc-page-subtitle">按课程大类控制提问、提示和表扬；儿童端通过浏览器实时生成语音。</p>
+        </div>
+        <div class="cc-head-actions">
+          <button type="button" class="cc-btn soft" id="btn-refresh-phrases">刷新</button>
+        </div>
+      </div>
+      <div class="cc-notice info">每组至少保留一句。可以多选，开课时只会在选中的语句中随机并尽量避重；“＋新增”会写入本地语料库并自动选中。</div>
+      <div class="cc-card" style="margin-top:14px;">
+        <div class="cc-form-row">
+          <label>课程大类
+            <select id="phrase-course-type" class="cc-inp" style="min-width:220px;"></select>
+          </label>
+          <span class="cc-badge">实时 TTS</span>
+        </div>
+      </div>
+      <div id="phrase-slots" class="cc-grid" style="margin-top:14px;"></div>
+    </section>
+
+    <!-- 规划中占位（保留兜底） -->
+    <section class="cc-page" id="page-placeholder" data-page="placeholder" hidden>
+      <div class="cc-page-head">
+        <div>
+          <div class="cc-breadcrumb">交互内容</div>
+          <h1 class="cc-page-title" id="placeholder-title">规划中</h1>
+          <p class="cc-page-subtitle" id="placeholder-desc">该视图将在后续子阶段接通。</p>
+        </div>
+      </div>
+    </section>
+    </div><!-- /module-content -->
+
+    <!-- ========== 设备与录制 ========== -->
+    <div id="module-devices" class="cc-module"{% if active_module != 'devices' %} hidden{% endif %}>
+    <section class="cc-page" id="page-phase5">
       <div class="cc-page-head">
         <div>
           <div class="cc-breadcrumb">配置中心 / 设备与录制</div>
@@ -548,18 +580,7 @@
       </div>
       </details>
     </section>
-
-    <!-- 规划中占位（保留兜底） -->
-    <section class="cc-page" id="page-placeholder" data-page="placeholder" hidden>
-      <div class="cc-page-head">
-        <div>
-          <div class="cc-breadcrumb">交互内容</div>
-          <h1 class="cc-page-title" id="placeholder-title">规划中</h1>
-          <p class="cc-page-subtitle" id="placeholder-desc">该视图将在后续子阶段接通。</p>
-        </div>
-      </div>
-    </section>
-    </div><!-- /module-content -->
+    </div><!-- /module-devices -->
 
     <!-- ========== F-Algo：配置概览 ========== -->
     <div id="module-overview" class="cc-module"{% if active_module != 'overview' %} hidden{% endif %}>
@@ -783,6 +804,7 @@
   <script src="/static/js/config_content_motions.js"></script>
   <script src="/static/js/config_content_media.js"></script>
   <script src="/static/js/config_content_courses.js"></script>
+  <script src="/static/js/config_content_phrases.js"></script>
   <script src="/static/js/config_content_workbench.js"></script>
   <script src="/static/js/config_algo.js"></script>
   <script src="/static/robot/js/robot_mapping.js"></script>
