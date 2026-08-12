@@ -3,9 +3,9 @@
   "generatedAt": "2026-08-12",
   "sourceCommit": "working-tree: realtime phrase configuration and config navigation",
   "generation": "Python AST scan of app.py and app/**/*.py; methods omitted by decorators default to GET; blueprint prefixes applied.",
-  "routeCount": 183,
+  "routeCount": 185,
   "runtimeImplicitRouteCount": 1,
-  "runtimeUrlRuleCountObserved": 184,
+  "runtimeUrlRuleCountObserved": 186,
   "runtimeImplicitRoutes": [
     "GET /static/<path:filename>"
   ],
@@ -98,6 +98,7 @@
     "GET /api/teacher/session",
     "GET /api/v2/assets/batch-import/<staging_id>",
     "GET /api/v2/capture/devices",
+    "GET /api/v2/capture/devices/candidates",
     "GET /api/v2/config/sync/export",
     "GET /api/v2/config/sync/manifest",
     "GET /api/v2/control/overview",
@@ -172,6 +173,7 @@
     "POST /api/v2/assets/batch-import/<staging_id>/commit",
     "POST /api/v2/assets/batch-import/<staging_id>/rollback",
     "POST /api/v2/capture/devices",
+    "POST /api/v2/capture/devices/candidates",
     "POST /api/v2/capture/devices/discover",
     "POST /api/v2/capture/snapshot",
     "POST /api/v2/control/actions/stop-audio",
@@ -391,6 +393,6 @@
     "HTTP response fields and error branches are not represented by a universal envelope; use source and fixture tests.",
     "Runtime/device and external voice provider behavior require hardware or service environment validation.",
     "The current snapshot records source-level route/event presence, not a new public API.",
-    "The legacy ambient service remains single-instance; the versioned capture registry now provides 0..N configuration without changing the legacy routes."
+    "Monitor camera preview now derives 0..N Server cameras from the persistent capture registry; hardware discovery is candidate-only until explicit operator confirmation."
   ]
 }

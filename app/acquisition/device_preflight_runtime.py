@@ -7,6 +7,7 @@ import os
 from typing import Any
 
 from app.acquisition.local_device_probe import probe_local_device
+from app.monitor.configured_cameras import get_configured_camera_manager
 ROBOT_RUNTIME_KEY = os.environ.get(
     "ROBOT_RUNTIME_KEY",
     os.environ.get("CHILD_MEDIA_AGENT_KEY", os.environ.get("ROBOT_AGENT_KEY", "")),
@@ -28,15 +29,20 @@ def perform_device_preflight(registry, runtime_status: dict[str, Any]) -> dict[s
                 "required": device.required,
             })
         elif device.owner == "server":
-            observed = probe_local_device(device.kind, device.selector)
+            if device.kind == "video":
+                observed = get_configured_camera_manager().wait_for_frame(device)
+            else:
+                observed = probe_local_device(device.kind, device.selector)
+                observed["captureReady"] = False
+                observed["error"] = observed.get("error") or "server_multitrack_capture_not_available"
             checks.append({
                 "deviceId": device.device_id,
                 "trackId": device.track_id,
                 "kind": device.kind,
                 "required": device.required,
-                "captureReady": False,
                 **observed,
-                "error": observed.get("error") or "server_multitrack_capture_not_available",
+                "captureReady": bool(observed.get("captureReady", observed.get("connected"))),
+                "error": observed.get("error"),
             })
 
     runtime = runtime_status.get("primary")

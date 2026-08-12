@@ -76,3 +76,27 @@ def test_phase3_device_control_api_rejects_invalid_boolean(phase3_app):
     })
     assert response.status_code == 400
     assert response.get_json()["error"] == "required_must_be_boolean"
+
+
+def test_local_camera_discovery_requires_explicit_add(monkeypatch, phase3_app):
+    from app.routes import capture_devices
+
+    app, _ = phase3_app
+    monkeypatch.setattr(capture_devices, "discover_local_cameras", lambda: [
+        {"candidateId": "server-camera-3", "index": 3, "kind": "video", "name": "摄像头 3"}
+    ])
+    client = app.test_client()
+
+    discovered = client.get("/api/v2/capture/devices/candidates")
+    assert discovered.status_code == 200
+    assert discovered.get_json()["candidates"][0]["configuredDeviceId"] is None
+    assert client.get("/api/v2/capture/devices").get_json()["devices"] == []
+
+    added = client.post("/api/v2/capture/devices/candidates", json={"index": 3})
+    assert added.status_code == 201
+    device = added.get_json()["device"]
+    assert device["deviceId"] == "server.camera.3"
+    assert device["owner"] == "server"
+    assert device["selector"] == {"index": 3}
+
+    client.delete("/api/v2/capture/devices/server.camera.3")

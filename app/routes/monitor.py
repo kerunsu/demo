@@ -6,12 +6,20 @@ import base64
 from flask import Blueprint, Response, jsonify, request
 
 from app.monitor import get_monitor_snapshot
-from app.monitor.ambient_camera import get_ambient_camera
+from app.acquisition.device_registry import get_device_registry
+from app.monitor.configured_cameras import get_configured_camera_manager
 from app.utils.logger import setup_logger
 
 logger = setup_logger("monitor_routes")
 
 monitor_bp = Blueprint("monitor", __name__, url_prefix="/api/monitor")
+
+
+def _configured_server_cameras():
+    return [
+        device for device in get_device_registry().list_devices()
+        if device.enabled and device.kind == "video" and device.owner == "server"
+    ]
 
 
 @monitor_bp.route("/snapshot", methods=["GET"])
@@ -23,13 +31,9 @@ def monitor_snapshot():
     try:
         ts_id = request.args.get("trainingSessionId") or request.args.get("training_session_id")
         data = get_monitor_snapshot(ts_id)
-        # 活跃训练时强制开启环境摄像头
-        ambient = get_ambient_camera()
-        if data.get("active"):
-            ambient.set_forced(True)
-        else:
-            ambient.set_forced(False)
-        data["ambient"] = ambient.status()
+        # 设备注册表是唯一事实源；监控只启动其中已启用的 Server 摄像头。
+        cameras = get_configured_camera_manager().sync(_configured_server_cameras())
+        data["ambient"] = {"configuredCount": len(cameras), "cameras": cameras}
         return jsonify({"success": True, "data": data})
     except Exception as e:
         logger.error("MonitorSnapshot 失败: %s", e, exc_info=True)
@@ -80,8 +84,12 @@ def remote_preview_jpg():
 @monitor_bp.route("/ambient/devices", methods=["GET"])
 def ambient_devices():
     try:
-        devices = get_ambient_camera().list_devices()
-        return jsonify({"success": True, "devices": devices, "status": get_ambient_camera().status()})
+        cameras = get_configured_camera_manager().sync(_configured_server_cameras())
+        devices = [
+            {"id": item["deviceId"], "name": item["name"], "index": item["selectorIndex"]}
+            for item in cameras
+        ]
+        return jsonify({"success": True, "devices": devices, "status": {"cameras": cameras}})
     except Exception as e:
         logger.error("枚举环境摄像头失败: %s", e, exc_info=True)
         return jsonify({"success": False, "error": str(e), "devices": []}), 500
@@ -91,10 +99,18 @@ def ambient_devices():
 def ambient_control():
     try:
         body = request.get_json(silent=True) or {}
-        enabled = bool(body.get("enabled"))
-        device_id = body.get("deviceId", body.get("device_id"))
-        status = get_ambient_camera().control(enabled=enabled, device_id=device_id)
-        return jsonify({"success": True, "status": status})
+        if "enabled" in body:
+            return jsonify({
+                "success": False,
+                "error": "camera_configuration_moved",
+                "detail": "请在配置中心启用、停用或移除摄像头",
+            }), 409
+        device_id = str(body.get("deviceId", body.get("device_id")) or "")
+        configured = {device.device_id for device in _configured_server_cameras()}
+        if device_id and device_id not in configured:
+            return jsonify({"success": False, "error": "camera_not_configured"}), 404
+        cameras = get_configured_camera_manager().sync(_configured_server_cameras())
+        return jsonify({"success": True, "status": {"configuredCount": len(cameras), "cameras": cameras}})
     except Exception as e:
         logger.error("环境摄像头控制失败: %s", e, exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
@@ -102,8 +118,15 @@ def ambient_control():
 
 @monitor_bp.route("/ambient/preview.jpg", methods=["GET"])
 def ambient_preview_jpg():
-    cam = get_ambient_camera()
-    jpeg = cam.get_jpeg()
+    device_id = str(request.args.get("deviceId") or request.args.get("device_id") or "")
+    configured = _configured_server_cameras()
+    if not device_id and len(configured) == 1:
+        device_id = configured[0].device_id
+    if not any(device.device_id == device_id for device in configured):
+        return Response(status=404)
+    manager = get_configured_camera_manager()
+    manager.sync(configured)
+    jpeg = manager.get_jpeg(device_id)
     if not jpeg:
         return Response(status=204)
     return Response(

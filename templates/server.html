@@ -52,11 +52,6 @@
         </div>
       </div>
 
-      <div id="mon-empty" class="mon-empty card hidden">
-        <strong>当前无活跃训练</strong>
-        <p>请先在教师端选课 / prepare_training。断 Socket 时仍可依赖 1s 轮询。</p>
-      </div>
-
       <div id="mon-grid" class="mon-grid">
         <section class="mon-panel mon-live-video">
           <div class="mon-panel-head">
@@ -94,25 +89,14 @@
           <div class="mon-live-block mon-ambient-block">
             <div class="mon-live-subhead">
               <strong>环境摄像头</strong>
-              <span class="mon-muted">服务端本机</span>
+              <span class="mon-muted">仅显示配置中心已添加的 Server 摄像头</span>
             </div>
-            <div class="mon-ambient-controls">
-              <label class="mon-ambient-toggle">
-                <input type="checkbox" id="mon-ambient-enabled" />
-                <span>开启</span>
-              </label>
-              <select id="mon-ambient-device" class="mon-ambient-select" disabled>
-                <option value="">检测摄像头…</option>
-              </select>
+            <div id="mon-ambient-grid" class="mon-ambient-grid"></div>
+            <div class="mon-preview-placeholder mon-ambient-empty" id="mon-ambient-empty">
+              <strong>当前没有已配置的环境摄像头</strong>
+              <span>请到配置中心点击“发现可用设备”，选择摄像头后添加。</span>
+              <a class="cc-btn soft small" href="/server/config/devices">去配置中心</a>
             </div>
-            <div class="mon-preview mon-ambient-preview" id="mon-ambient-preview">
-              <div class="mon-preview-placeholder" id="mon-ambient-placeholder">
-                <strong>环境摄像头已关闭</strong>
-                <span>无训练时可手动开启；训练进行中将强制保持开启</span>
-              </div>
-              <img id="mon-ambient-img" class="mon-preview-img hidden" alt="环境摄像头预览" />
-            </div>
-            <p class="mon-ambient-hint" id="mon-ambient-hint"></p>
           </div>
         </section>
 

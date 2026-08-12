@@ -514,7 +514,7 @@
       <div class="cc-grid" style="margin-top:14px;">
         <section class="cc-card">
           <div class="cc-card-title">本次课程会使用的设备</div>
-          <p class="cc-tiny">默认儿童摄像头和定向麦克风无需手动添加。这里只添加额外环境摄像头/麦克风；修改配置只影响下一场课程。</p>
+          <p class="cc-tiny">默认儿童摄像头和定向麦克风无需手动添加。连接到 Server 电脑的环境摄像头请先“发现”，再明确点击添加；只有已添加设备才进入课前检查和实时监控。</p>
           <div class="cc-toolbar">
             <button type="button" class="cc-btn soft" id="phase5-device-refresh">重新检查</button>
             <button type="button" class="cc-btn soft" id="phase5-device-discover">发现可用设备</button>
@@ -522,15 +522,19 @@
           </div>
           <div id="phase5-default-device-list" style="margin-top:10px;"></div>
           <div id="phase5-device-list" style="margin-top:10px;">加载中…</div>
+          <div id="phase5-device-candidates" style="margin-top:10px;"></div>
+          <details style="margin-top:10px;">
+            <summary class="cc-tiny"><b>高级：手动添加设备</b></summary>
           <div class="cc-form-row" style="margin-top:10px;">
             <input id="phase5-device-id" class="cc-inp" placeholder="设备编号，例如 env-camera-2" />
             <input id="phase5-device-index" class="cc-inp" type="number" min="0" value="1" placeholder="系统设备序号" title="操作系统中的摄像头或麦克风设备序号" />
             <select id="phase5-device-kind" class="cc-inp"><option value="video">环境摄像头</option><option value="audio">环境麦克风</option></select>
             <select id="phase5-device-role" class="cc-inp"><option value="primary_environment">主环境轨（兼容文件名）</option><option value="environment_secondary">附加环境轨</option></select>
-            <select id="phase5-device-owner" class="cc-inp"><option value="runtime">连接在 Robot Runtime（可多轨录制）</option><option value="server">连接在 Server（当前仅检查）</option></select>
+            <select id="phase5-device-owner" class="cc-inp"><option value="server">连接在 Server（课前检查与实时监控）</option><option value="runtime">连接在 Robot Runtime（可多轨录制）</option></select>
             <label><input id="phase5-device-required" type="checkbox" /> 缺失时禁止开课</label>
             <button type="button" class="cc-btn primary small" id="phase5-device-add">添加设备</button>
           </div>
+          </details>
           <div class="cc-notice warning" id="phase5-device-warning" style="margin-top:10px;">设备序号必须与设备所在电脑识别到的 index 一致；每台额外设备使用不同序号。required 未通过会阻止正式录制。</div>
         </section>
         <section class="cc-card">

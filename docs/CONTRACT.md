@@ -50,8 +50,12 @@ top-level page at `GET /server/config/devices`; the historical
 ## Versioned additive APIs
 
 - `/api/v2/capture/devices` — configure/discover 0..N device profiles and freeze
-  a snapshot. The current registry is configuration-only; it does not claim to
-  be a physical capture broker.
+  a snapshot. `GET /api/v2/capture/devices/candidates` probes Server cameras
+  without changing configuration; `POST` to that path explicitly persists one
+  candidate. Only enabled, configured Server cameras are exposed as 0..N
+  `ambient.cameras[]` by the monitor snapshot and accepted by the per-device
+  preview endpoint. A Server camera passes preflight only after this shared
+  preview broker obtains its first frame.
 - `/api/v2/assets/batch-import` — stage, preview, commit or roll back motions
   and emotions. Multipart files and bounded ZIP archives are supported.
 - `/api/v2/interaction` — event catalog, draft/publish/deploy/rollback and

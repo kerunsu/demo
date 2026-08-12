@@ -1,8 +1,8 @@
 """Versioned control-plane API for the 0..N capture device registry.
 
-The existing ``/api/monitor/ambient/*`` routes are intentionally untouched.
-This API changes configuration only; it never opens hardware and a frozen
-session snapshot remains unchanged when the registry is edited.
+Hardware discovery returns candidates only. A device is persisted only after
+the operator explicitly adds it, and a frozen session snapshot remains
+unchanged when the registry is edited.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from flask import Blueprint, jsonify, request
 
 from app.acquisition.device_registry import get_device_registry, stable_track_id
 from app.contracts.models import DeploymentProfile, DeviceProfile
+from app.monitor.configured_cameras import discover_local_cameras
 
 
 capture_devices_bp = Blueprint("capture_devices", __name__, url_prefix="/api/v2/capture")
@@ -155,6 +156,82 @@ def discover_capture_devices():
     except OSError as exc:
         return jsonify({"success": False, "error": "device_registry_save_failed", "detail": str(exc)}), 503
     return jsonify({"success": True, "devices": [_json_device(device) for device in devices]})
+
+
+@capture_devices_bp.route("/devices/candidates", methods=["GET"])
+def capture_device_candidates():
+    """Probe local cameras without silently registering any of them."""
+    try:
+        candidates = discover_local_cameras()
+        configured_devices = [
+            device for device in get_device_registry().list_devices()
+            if device.kind == "video" and device.owner == "server" and "index" in device.selector
+        ]
+        configured = {
+            int(device.selector.get("index")): device.device_id
+            for device in configured_devices
+        }
+    except Exception as exc:
+        return jsonify({"success": False, "error": "camera_discovery_failed", "detail": str(exc)}), 500
+    for candidate in candidates:
+        candidate["configuredDeviceId"] = configured.get(candidate["index"])
+    discovered_indexes = {candidate["index"] for candidate in candidates}
+    for device in configured_devices:
+        index = int(device.selector["index"])
+        if index not in discovered_indexes:
+            candidates.append({
+                "candidateId": f"server-camera-{index}",
+                "index": index,
+                "kind": "video",
+                "name": str(device.capabilities.get("displayName") or f"摄像头 {index}"),
+                "configuredDeviceId": device.device_id,
+                "available": False,
+            })
+    return jsonify({"success": True, "candidates": candidates})
+
+
+@capture_devices_bp.route("/devices/candidates", methods=["POST"])
+def add_capture_device_candidate():
+    """Explicitly add one discovered Server camera to the persistent registry."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        index = int(payload.get("index"))
+        if index < 0:
+            raise ValueError("camera_index_must_be_non_negative")
+        registry = get_device_registry()
+        existing = next((
+            item for item in registry.list_devices()
+            if item.kind == "video" and item.owner == "server" and item.selector.get("index") == index
+        ), None)
+        if existing:
+            return jsonify({"success": True, "created": False, "device": _json_device(existing)})
+        candidates = {item["index"]: item for item in discover_local_cameras()}
+        if index not in candidates:
+            return jsonify({"success": False, "error": "camera_not_available"}), 404
+        server_videos = [
+            item for item in registry.list_devices()
+            if item.kind == "video" and item.owner == "server"
+        ]
+        role = "primary_environment" if not server_videos else "environment_secondary"
+        device_id = f"server.camera.{index}"
+        device = DeviceProfile(
+            device_id=device_id,
+            track_id=stable_track_id(device_id, "video", role),
+            kind="video",
+            role=role,
+            location="server",
+            owner="server",
+            selector={"index": index},
+            enabled=True,
+            required=_bool_value(payload.get("required", False), field="required"),
+            capabilities={"displayName": candidates[index]["name"]},
+        )
+        registry.register(device)
+    except (TypeError, ValueError) as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except (RuntimeError, OSError) as exc:
+        return jsonify({"success": False, "error": "device_registry_save_failed", "detail": str(exc)}), 503
+    return jsonify({"success": True, "created": True, "device": _json_device(device)}), 201
 
 
 @capture_devices_bp.route("/snapshot", methods=["POST"])

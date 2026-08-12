@@ -109,23 +109,28 @@ def test_phase1_http_server_status_error_snapshot(monkeypatch, phase1_root_runti
 
 
 def test_phase1_http_monitor_snapshot_field_snapshot(monkeypatch):
-    class Ambient:
-        def set_forced(self, value):
-            self.forced = value
+    class Manager:
+        def sync(self, devices):
+            assert devices == ["configured-camera"]
+            return [{"deviceId": "configured-camera", "hasFrame": True}]
 
-        def status(self):
-            return {"active": True, "forced": self.forced}
-
-    ambient = Ambient()
     monkeypatch.setattr(monitor, "get_monitor_snapshot", lambda _id: {"active": True, "id": "t1"})
-    monkeypatch.setattr(monitor, "get_ambient_camera", lambda: ambient)
+    monkeypatch.setattr(monitor, "_configured_server_cameras", lambda: ["configured-camera"])
+    monkeypatch.setattr(monitor, "get_configured_camera_manager", lambda: Manager())
     response = _blueprint_app(monitor.monitor_bp).get(
         "/api/monitor/snapshot?trainingSessionId=t1"
     )
     assert response.status_code == 200
     assert response.get_json() == {
         "success": True,
-        "data": {"active": True, "id": "t1", "ambient": {"active": True, "forced": True}},
+        "data": {
+            "active": True,
+            "id": "t1",
+            "ambient": {
+                "configuredCount": 1,
+                "cameras": [{"deviceId": "configured-camera", "hasFrame": True}],
+            },
+        },
     }
 
 

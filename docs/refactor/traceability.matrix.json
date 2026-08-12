@@ -1189,6 +1189,22 @@
         "behaviorFixture": "partial; see 01-contract-inventory.md"
       },
       {
+        "method": "GET",
+        "path": "/api/v2/capture/devices/candidates",
+        "owner": "facade + acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "tests/test_phase3_device_control_api.py"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/capture/devices/candidates",
+        "owner": "facade + acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "tests/test_phase3_device_control_api.py"
+      },
+      {
         "method": "POST",
         "path": "/api/v2/capture/snapshot",
         "owner": "facade + acquisition",

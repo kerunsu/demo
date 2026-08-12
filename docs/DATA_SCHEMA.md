@@ -110,3 +110,14 @@ only on the robot emotion page and cannot affect child-screen animations.
 Both metadata files use a same-directory temporary file, `fsync` and atomic
 replacement. Commit these JSON files together with assets so a Git pull or
 process restart restores the same effective appearance.
+
+## Server camera registry
+
+Local camera discovery is candidate-only and does not write configuration.
+After explicit operator confirmation, an automatically added camera is stored
+in `config/capture_devices.json` with `deviceId=server.camera.<index>`,
+`owner=server`, and `selector.index=<operating-system index>`. The first local
+camera receives role `primary_environment`; later cameras receive
+`environment_secondary`. Removing or disabling the profile removes it from
+future preflight checks and monitor preview without changing historical
+session manifests.

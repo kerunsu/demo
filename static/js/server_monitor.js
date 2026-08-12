@@ -7,7 +7,6 @@
   const REMOTE_PREVIEW_MS = 250;
   const AMBIENT_PREVIEW_MS = 100;
   const VIEW_KEY = "server.view";
-  const AMBIENT_DEVICE_KEY = "server.ambientDeviceId";
 
   const els = {
     tabs: document.querySelectorAll(".view-tab"),
@@ -15,7 +14,6 @@
     viewMonitor: document.getElementById("view-monitor"),
     configActions: document.getElementById("config-header-actions"),
     monitorActions: document.getElementById("monitor-header-actions"),
-    empty: document.getElementById("mon-empty"),
     grid: document.getElementById("mon-grid"),
     badgeSocket: document.getElementById("mon-badge-socket"),
     badgeRefresh: document.getElementById("mon-badge-refresh"),
@@ -30,11 +28,8 @@
     previewPlaceholder: document.getElementById("mon-preview-placeholder"),
     previewImg: document.getElementById("mon-preview-img"),
     previewStale: document.getElementById("mon-preview-stale"),
-    ambientEnabled: document.getElementById("mon-ambient-enabled"),
-    ambientDevice: document.getElementById("mon-ambient-device"),
-    ambientPlaceholder: document.getElementById("mon-ambient-placeholder"),
-    ambientImg: document.getElementById("mon-ambient-img"),
-    ambientHint: document.getElementById("mon-ambient-hint"),
+    ambientGrid: document.getElementById("mon-ambient-grid"),
+    ambientEmpty: document.getElementById("mon-ambient-empty"),
     pendingBtn: document.getElementById("mon-pending-btn"),
     pendingCount: document.getElementById("mon-pending-count"),
     pendingPanel: document.getElementById("mon-pending-panel"),
@@ -97,8 +92,7 @@
     trainingSessionId: null,
     active: false,
     previewEnabled: true,
-    ambientForced: false,
-    ambientEnabled: false,
+    ambientCameras: [],
     pendingReviews: [],
     reviewDismissed: {},
     currentReviewId: null,
@@ -173,7 +167,7 @@
   }
 
   function startAmbientPreviewLoop() {
-    stopAmbientPreviewLoop();
+    if (state.ambientPreviewTimer) return;
     state.ambientPreviewTimer = setInterval(() => {
       if (document.hidden || state.view !== "monitor") return;
       pollAmbientPreview();
@@ -222,23 +216,33 @@
   }
 
   async function pollAmbientPreview() {
-    if (!state.ambientEnabled) return;
-    try {
-      const res = await fetch("/api/monitor/ambient/preview.jpg?t=" + Date.now(), { cache: "no-store" });
-      if (!res.ok || res.status === 204) return;
-      const blob = await res.blob();
-      if (!blob || !blob.size) return;
-      const url = URL.createObjectURL(blob);
-      if (els.ambientImg) {
-        const old = els.ambientImg.src;
-        els.ambientImg.src = url;
-        els.ambientImg.classList.remove("hidden");
+    await Promise.all(state.ambientCameras.map(async (camera) => {
+      const deviceId = String(camera.deviceId || "");
+      if (!deviceId) return;
+      try {
+        const urlPath = "/api/monitor/ambient/preview.jpg?deviceId=" +
+          encodeURIComponent(deviceId) + "&t=" + Date.now();
+        const res = await fetch(urlPath, { cache: "no-store" });
+        if (!res.ok || res.status === 204) return;
+        const blob = await res.blob();
+        if (!blob || !blob.size) return;
+        const img = els.ambientGrid && els.ambientGrid.querySelector(
+          '[data-camera-img="' + CSS.escape(deviceId) + '"]'
+        );
+        const placeholder = els.ambientGrid && els.ambientGrid.querySelector(
+          '[data-camera-placeholder="' + CSS.escape(deviceId) + '"]'
+        );
+        if (!img) return;
+        const objectUrl = URL.createObjectURL(blob);
+        const old = img.src;
+        img.src = objectUrl;
+        img.classList.remove("hidden");
+        if (placeholder) placeholder.classList.add("hidden");
         if (old && old.indexOf("blob:") === 0) {
           try { URL.revokeObjectURL(old); } catch (_) {}
         }
-      }
-      if (els.ambientPlaceholder) els.ambientPlaceholder.classList.add("hidden");
-    } catch (_) {}
+      } catch (_) {}
+    }));
   }
 
   async function fetchSnapshot(source) {
@@ -424,19 +428,9 @@
       els.badgeAgent.classList.toggle("warn", !online);
     }
 
-    if (!data.active) {
-      if (els.empty) {
-        els.empty.classList.remove("hidden");
-        els.empty.querySelector("strong").textContent = "当前无活跃训练";
-        els.empty.querySelector("p").textContent =
-          "请先在教师端选课 / prepare_training。断 Socket 时仍可依赖 1s 轮询。";
-      }
-      // Connection diagnostics remain readable even before a class starts.
-      if (els.grid) els.grid.classList.remove("dimmed");
-    } else {
-      if (els.empty) els.empty.classList.add("hidden");
-      if (els.grid) els.grid.classList.remove("dimmed");
-    }
+    // Connection diagnostics and configured camera previews remain useful
+    // before a class starts, so the monitor no longer has an inactive overlay.
+    if (els.grid) els.grid.classList.remove("dimmed");
 
     const session = data.session || {};
     const course = data.course || {};
@@ -605,48 +599,59 @@
   }
 
   function renderAmbient(ambient) {
-    state.ambientForced = !!ambient.forcedByTraining;
-    state.ambientEnabled = !!ambient.enabled;
-    if (els.ambientEnabled) {
-      els.ambientEnabled.checked = !!ambient.enabled;
-      els.ambientEnabled.disabled = !!ambient.forcedByTraining;
-      els.ambientEnabled.title = ambient.forcedByTraining
-        ? "训练进行中，环境摄像头需保持开启"
-        : "";
+    const cameras = Array.isArray(ambient.cameras) ? ambient.cameras : [];
+    const previousIds = state.ambientCameras.map((item) => String(item.deviceId)).join("|");
+    const nextIds = cameras.map((item) => String(item.deviceId)).join("|");
+    state.ambientCameras = cameras;
+    if (els.ambientEmpty) els.ambientEmpty.classList.toggle("hidden", cameras.length > 0);
+    if (els.ambientGrid && previousIds !== nextIds) {
+      els.ambientGrid.innerHTML = "";
+      cameras.forEach((camera) => {
+        const card = document.createElement("div");
+        card.className = "mon-camera-card";
+        const head = document.createElement("div");
+        head.className = "mon-camera-card-head";
+        const title = document.createElement("strong");
+        title.textContent = camera.name || camera.deviceId;
+        const status = document.createElement("span");
+        status.className = "mon-tag " + (camera.hasFrame ? "ok" : "warn");
+        status.textContent = camera.hasFrame ? "有画面" : "等待首帧";
+        status.dataset.cameraStatus = camera.deviceId;
+        head.append(title, status);
+        const preview = document.createElement("div");
+        preview.className = "mon-preview mon-ambient-preview";
+        const placeholder = document.createElement("div");
+        placeholder.className = "mon-preview-placeholder";
+        placeholder.dataset.cameraPlaceholder = camera.deviceId;
+        const placeholderTitle = document.createElement("strong");
+        placeholderTitle.textContent = camera.error ? "摄像头暂不可用" : "正在读取摄像头…";
+        const placeholderHint = document.createElement("span");
+        placeholderHint.textContent = camera.error || `设备序号 ${camera.selectorIndex}`;
+        placeholder.append(placeholderTitle, placeholderHint);
+        const img = document.createElement("img");
+        img.className = "mon-preview-img hidden";
+        img.alt = (camera.name || camera.deviceId) + "预览";
+        img.dataset.cameraImg = camera.deviceId;
+        preview.append(placeholder, img);
+        card.append(head, preview);
+        els.ambientGrid.appendChild(card);
+      });
     }
-    if (els.ambientDevice) {
-      els.ambientDevice.disabled = false;
-      if (ambient.deviceId != null && String(els.ambientDevice.value) !== String(ambient.deviceId)) {
-        const opt = Array.from(els.ambientDevice.options || []).find(
-          (o) => String(o.value) === String(ambient.deviceId)
-        );
-        if (opt) els.ambientDevice.value = String(ambient.deviceId);
+    if (els.ambientGrid) cameras.forEach((camera) => {
+      const status = els.ambientGrid.querySelector(
+        '[data-camera-status="' + CSS.escape(String(camera.deviceId)) + '"]'
+      );
+      if (status) {
+        status.className = "mon-tag " + (camera.hasFrame ? "ok" : "warn");
+        status.textContent = camera.hasFrame ? "有画面" : "等待首帧";
       }
-    }
-    if (els.ambientHint) {
-      if (ambient.error) {
-        els.ambientHint.textContent = "环境摄像头：" + ambient.error;
-      } else if (ambient.forcedByTraining) {
-        els.ambientHint.textContent = "训练进行中：环境摄像头已强制开启，仍可切换设备";
-      } else if (!ambient.enabled) {
-        els.ambientHint.textContent = "已关闭（不占用本机摄像头）";
-      } else {
-        els.ambientHint.textContent = "";
-      }
-    }
-    if (!ambient.enabled) {
-      stopAmbientPreviewLoop();
-      if (els.ambientImg) {
-        els.ambientImg.classList.add("hidden");
-        els.ambientImg.removeAttribute("src");
-      }
-      if (els.ambientPlaceholder) {
-        els.ambientPlaceholder.classList.remove("hidden");
-        const strong = els.ambientPlaceholder.querySelector("strong");
-        if (strong) strong.textContent = "环境摄像头已关闭";
-      }
-    } else {
+    });
+    if (cameras.length) {
       startAmbientPreviewLoop();
+      pollAmbientPreview();
+    } else {
+      stopAmbientPreviewLoop();
+      if (els.ambientGrid) els.ambientGrid.innerHTML = "";
     }
   }
 
@@ -849,83 +854,9 @@
       if (!document.hidden) {
         fetchSnapshot("poll");
         startPolling();
-        if (state.ambientEnabled) startAmbientPreviewLoop();
+        if (state.ambientCameras.length) startAmbientPreviewLoop();
       }
     });
-  }
-
-  async function loadAmbientDevices() {
-    if (!els.ambientDevice) return;
-    try {
-      const res = await fetch("/api/monitor/ambient/devices", { cache: "no-store" });
-      const json = await res.json();
-      const devices = (json && json.devices) || [];
-      let preferred = null;
-      try {
-        preferred = localStorage.getItem(AMBIENT_DEVICE_KEY);
-      } catch (_) {}
-      els.ambientDevice.innerHTML = "";
-      if (!devices.length) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "未检测到摄像头";
-        els.ambientDevice.appendChild(opt);
-        els.ambientDevice.disabled = true;
-        return;
-      }
-      devices.forEach((d) => {
-        const opt = document.createElement("option");
-        opt.value = String(d.id);
-        opt.textContent = d.name || ("摄像头 " + d.id);
-        els.ambientDevice.appendChild(opt);
-      });
-      if (preferred != null && devices.some((d) => String(d.id) === String(preferred))) {
-        els.ambientDevice.value = String(preferred);
-      }
-    } catch (err) {
-      if (els.ambientHint) els.ambientHint.textContent = "枚举摄像头失败：" + err;
-    }
-  }
-
-  async function applyAmbientControl() {
-    if (!els.ambientEnabled) return;
-    const enabled = !!els.ambientEnabled.checked;
-    const deviceId = els.ambientDevice ? els.ambientDevice.value : "";
-    try {
-      if (deviceId !== "") {
-        try {
-          localStorage.setItem(AMBIENT_DEVICE_KEY, String(deviceId));
-        } catch (_) {}
-      }
-      const res = await fetch("/api/monitor/ambient/control", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          enabled: enabled,
-          deviceId: deviceId === "" ? null : Number(deviceId),
-        }),
-      });
-      const json = await res.json();
-      renderAmbient((json && json.status) || {});
-    } catch (err) {
-      if (els.ambientHint) els.ambientHint.textContent = "控制失败：" + err;
-    }
-  }
-
-  function bindAmbientControls() {
-    if (els.ambientEnabled) {
-      els.ambientEnabled.addEventListener("change", applyAmbientControl);
-    }
-    if (els.ambientDevice) {
-      els.ambientDevice.addEventListener("change", () => {
-        if (els.ambientEnabled && els.ambientEnabled.checked) applyAmbientControl();
-        else {
-          try {
-            localStorage.setItem(AMBIENT_DEVICE_KEY, els.ambientDevice.value);
-          } catch (_) {}
-        }
-      });
-    }
   }
 
   function updateReviewBadge() {
@@ -1066,9 +997,7 @@
     bindOperationalControls();
     bindSocket();
     bindVisibility();
-    bindAmbientControls();
     bindReviewModal();
-    loadAmbientDevices();
     const params = new URLSearchParams(location.search);
     const q = params.get("view");
     const hash = (location.hash || "").replace("#", "");

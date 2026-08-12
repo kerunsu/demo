@@ -59,15 +59,6 @@ body.mon-shell {
   color: #a87117;
 }
 
-/* ---- 监控台布局（浅色运营风） ---- */
-.mon-empty {
-  text-align: center;
-  padding: 28px 16px;
-  color: #52677d;
-  margin-bottom: 14px;
-}
-
-
 .page-header p {
   margin: 4px 0 0;
   color: #6b7280;
@@ -408,19 +399,6 @@ input[type="number"] {
 }
 
 /* ---- 监控台布局（浅色运营风） ---- */
-.mon-empty {
-  text-align: center;
-  padding: 28px 16px;
-  color: #52677d;
-}
-
-.mon-empty strong {
-  display: block;
-  font-size: 16px;
-  color: #1e2d3d;
-  margin-bottom: 6px;
-}
-
 .mon-grid {
   display: grid;
   grid-template-columns: 1.05fr 1.4fr 1.05fr;
@@ -580,6 +558,41 @@ input[type="number"] {
 
 .mon-ambient-preview {
   min-height: 120px;
+}
+
+.mon-ambient-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+
+.mon-camera-card {
+  min-width: 0;
+  border: 1px solid #dce6ef;
+  border-radius: 12px;
+  background: #f8fbfd;
+  overflow: hidden;
+}
+
+.mon-camera-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 0;
+  font-size: 12px;
+}
+
+.mon-camera-card .mon-preview {
+  margin: 10px;
+}
+
+.mon-ambient-empty {
+  margin: 12px;
+  min-height: 120px;
+  border: 1px dashed #bdccda;
+  border-radius: 12px;
 }
 
 .mon-ambient-hint {

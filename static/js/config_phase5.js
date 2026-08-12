@@ -227,8 +227,31 @@
   }
 
   async function discoverDevices() {
-    try { await api.json('/api/v2/capture/devices/discover', 'POST', {}); await loadOverview(); }
-    catch (error) { text('phase5-device-warning', `设备发现失败：${error.message}`); }
+    text('phase5-device-warning', '正在扫描 Server 电脑上的摄像头，请稍候…');
+    try {
+      const body = await api.request('/api/v2/capture/devices/candidates');
+      const candidates = body.candidates || [];
+      html('phase5-device-candidates', `
+        <div class="cc-tiny"><b>本机发现的摄像头（点击后才会加入配置）</b></div>
+        ${candidates.map((item) => `<div style="border:1px solid #e2e7f0;border-radius:10px;padding:10px;margin:8px 0;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div><b>${escapeHtml(item.name)}</b><div class="cc-tiny">系统设备序号 ${item.index}</div></div>
+          ${item.configuredDeviceId
+            ? `<span class="cc-badge primary">已添加</span>`
+            : `<button type="button" class="cc-btn primary small" data-device-candidate-add="${item.index}">添加到配置</button>`}
+        </div>`).join('') || '<div class="cc-notice warning">没有发现可用摄像头，请确认摄像头已连接且未被其他程序独占。</div>'}`);
+      text('phase5-device-warning', candidates.length
+        ? '扫描完成。只有点击“添加到配置”的摄像头，才会进入课前检查和实时监控。'
+        : '未发现可用摄像头。请检查连接后重试。');
+    } catch (error) { text('phase5-device-warning', `设备发现失败：${error.message}`); }
+  }
+
+  async function addCandidate(index) {
+    try {
+      await api.json('/api/v2/capture/devices/candidates', 'POST', { index, required: false });
+      text('phase5-device-warning', `摄像头 ${index} 已加入配置，正在执行课前首帧检查…`);
+      await checkDevices();
+      await discoverDevices();
+    } catch (error) { text('phase5-device-warning', `摄像头添加失败：${error.message}`); }
   }
 
   async function checkDevices() {
@@ -308,6 +331,10 @@
     byId('phase5-device-add')?.addEventListener('click', addDevice);
     byId('phase5-device-discover')?.addEventListener('click', discoverDevices);
     byId('phase5-device-freeze')?.addEventListener('click', freezeDevices);
+    byId('phase5-device-candidates')?.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-device-candidate-add]');
+      if (button) addCandidate(Number(button.dataset.deviceCandidateAdd));
+    });
     byId('phase5-session-check')?.addEventListener('click', inspectSession);
     byId('phase5-asset-stage')?.addEventListener('click', stageAssets);
     byId('phase5-asset-commit')?.addEventListener('click', commitAssets);
