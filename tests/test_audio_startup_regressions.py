@@ -35,6 +35,28 @@ def test_short_pcm_chunks_are_accumulated_before_asr(monkeypatch):
     assert calls == [32768]
 
 
+def test_initialize_falls_back_to_voice_service_when_torch_missing(monkeypatch):
+    """主 venv 无 torch 时，连续 ASR 应回退到已就绪的 voice-service。"""
+    import builtins
+
+    analyzer = RealSpeechAnalyzer(config={"sample_rate_audio": 16000, "device": "cpu"})
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "torch" or name.startswith("torch."):
+            raise ModuleNotFoundError("No module named 'torch'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setattr(
+        "app.dialogue.stt.voice_service_ready",
+        lambda timeout=2.0: True,
+    )
+    assert analyzer.initialize() is True
+    assert analyzer._backend == "voice-service"
+    assert analyzer.is_ready is True
+
+
 def test_real_matcher_compares_recognized_text_not_generic_confidence():
     matcher = RealSpeechMatcher(threshold=60)
     matcher.set_target("苹果")

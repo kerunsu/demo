@@ -436,10 +436,10 @@ class AnalysisService:
             self._trigger_system.register_trigger(trigger, session_id)
         
         if course_type in ['naming', 'speech', 'onomatopoeia']:
-            # 语音匹配成功触发器（以 matcher.passed 为准，阈值仅作说明）
-            threshold = course_config.get('speech_threshold', 0.80) if course_config else 0.80
-            trigger = TriggerFactory.speech_match_success(threshold=threshold)
-            self._trigger_system.register_trigger(trigger, session_id)
+            # 答对自动表扬改由 keyword_listen（提问 TTS 结束后武装，
+            # 命中走教师同路 multimodal praise）。不再注册旧
+            # speech_match_success → 预录 MP3 / 双通路触发。
+            pass
         
         # 注意力低触发器（暂时禁用，因为注意力分析器尚未完善）
         # TODO: 当注意力分析器完善后，重新启用此功能
@@ -575,6 +575,10 @@ class AnalysisService:
             'finished': 'ended',
             'complete': 'ended',
             'completed': 'ended',
+            'cancelled': 'ended',
+            'canceled': 'ended',
+            'interrupted': 'ended',
+            'dropped': 'ended',
         }.get(str(status or '').lower(), str(status or '').lower())
         state = self._sessions[session_id]
         if normalized == 'playing':
@@ -808,6 +812,30 @@ class AnalysisService:
             except Exception as e:
                 logger.warning("写入语言观测失败: %s", e)
             
+            # 命名/拟声：提问结束后关键词命中 → 教师同路表扬（非对话唤醒）
+            try:
+                from app.services.keyword_listen import get_keyword_listen_service
+
+                transcript = ''
+                for result in analysis_results:
+                    if getattr(result, 'analyzer_type', None) != 'speech':
+                        continue
+                    data = result.data or {}
+                    transcript = str(
+                        data.get('transcript')
+                        or (data.get('asr') or {}).get('text')
+                        or ''
+                    ).strip()
+                    if transcript:
+                        break
+                if transcript:
+                    get_keyword_listen_service().try_auto_praise_from_transcript(
+                        session_id,
+                        transcript,
+                    )
+            except Exception as kw_err:  # noqa: BLE001
+                logger.debug('keyword_listen evaluate failed: %s', kw_err)
+
             # 检查触发器
             if state.enable_triggers:
                 self._check_triggers(session_id, match_results, analysis_results)
@@ -1087,6 +1115,13 @@ class AnalysisService:
         
         # 清理触发器
         self._trigger_system.clear_session_triggers(session_id)
+
+        try:
+            from app.services.keyword_listen import get_keyword_listen_service
+
+            get_keyword_listen_service().clear(session_id)
+        except Exception:
+            pass
         
         # 移除会话状态
         if session_id in self._sessions:

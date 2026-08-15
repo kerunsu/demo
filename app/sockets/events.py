@@ -52,8 +52,17 @@ _TEACHER_RATING_CACHE_LIMIT = 512
 _teacher_rating_lock = threading.RLock()
 _teacher_rating_cache = OrderedDict()
 _DEFERRED_QUESTION_TTL_SECONDS = 60.0
+_PENDING_ITEM_QUESTION_TTL_SECONDS = 45.0
+# Hard rule: pairing/ordering item switch must ask. Busy-reservation retries
+# for questions (0.1s * N); keep high enough to outlast greetings/praise.
+_INTERACTIVE_QUESTION_BUSY_RETRIES = 80
+_INTERACTIVE_QUESTION_BUSY_RETRY_SEC = 0.1
+# Cap multimodal lead-in so item-switch asks feel immediate.
+_INTERACTIVE_QUESTION_AUDIO_DELAY_CAP_MS = 80
 _deferred_question_lock = threading.RLock()
 _deferred_ordering_questions: Dict[str, Dict[str, Any]] = {}
+# Latest-wins pending ask per runtime session (pairing/ordering item switch).
+_pending_interactive_questions: Dict[str, Dict[str, Any]] = {}
 _interactive_input_state: Dict[str, Dict[str, Any]] = {}
 
 
@@ -442,6 +451,7 @@ def _purge_runtime_delivery_state(
     with _deferred_question_lock:
         for session_id in sessions:
             _deferred_ordering_questions.pop(session_id, None)
+            _pending_interactive_questions.pop(session_id, None)
     with _presence_lock:
         for session_id in sessions:
             _child_session_owners.pop(session_id, None)
@@ -854,6 +864,230 @@ def _consume_deferred_ordering_question(
             _deferred_ordering_questions.pop(str(session_id), None)
 
 
+def _remember_pending_item_question(
+    session_id: str,
+    *,
+    kind: str,
+    payload: Dict[str, Any],
+) -> str:
+    """Latest-wins hard queue: item switch ask cannot be permanently dropped."""
+    sid = str(session_id or '').strip()
+    generation = uuid.uuid4().hex
+    if not sid:
+        return generation
+    with _deferred_question_lock:
+        now = time.monotonic()
+        expired = [
+            key
+            for key, item in _pending_interactive_questions.items()
+            if float(item.get('expiresAt') or 0) <= now
+        ]
+        for key in expired:
+            _pending_interactive_questions.pop(key, None)
+        _pending_interactive_questions[sid] = {
+            'kind': str(kind or '').strip().lower(),
+            'payload': dict(payload or {}),
+            'generation': generation,
+            'expiresAt': now + _PENDING_ITEM_QUESTION_TTL_SECONDS,
+        }
+    return generation
+
+
+def _pending_item_question_generation(session_id: Optional[str]) -> Optional[str]:
+    sid = str(session_id or '').strip()
+    if not sid:
+        return None
+    with _deferred_question_lock:
+        pending = _pending_interactive_questions.get(sid)
+        if not pending:
+            return None
+        if float(pending.get('expiresAt') or 0) <= time.monotonic():
+            _pending_interactive_questions.pop(sid, None)
+            return None
+        return str(pending.get('generation') or '') or None
+
+
+def _clear_pending_item_question(
+    session_id: Optional[str],
+    *,
+    generation: Optional[str] = None,
+) -> None:
+    sid = str(session_id or '').strip()
+    if not sid:
+        return
+    with _deferred_question_lock:
+        pending = _pending_interactive_questions.get(sid)
+        if not pending:
+            return
+        if generation and str(pending.get('generation') or '') != str(generation):
+            return
+        _pending_interactive_questions.pop(sid, None)
+
+
+def _item_question_still_current(
+    session_id: Optional[str],
+    question_data: Optional[Dict[str, Any]],
+) -> bool:
+    """True while this ask generation is still the latest pending item switch."""
+    if not isinstance(question_data, dict):
+        return True
+    generation = question_data.get('_askGeneration')
+    if not generation:
+        return _interactive_question_is_current(session_id, question_data)
+    pending_gen = _pending_item_question_generation(session_id)
+    # Pending cleared => ask already landed, expired, or was replaced.
+    if not pending_gen or pending_gen != str(generation):
+        return False
+    return _interactive_question_is_current(session_id, question_data)
+
+
+def _preempt_busy_behavior_for_item_question(
+    session_id: Optional[str],
+    robot_service=None,
+) -> bool:
+    """Abort non-matching chatter so pairing/ordering questions can start now."""
+    sid = str(session_id or '').strip()
+    try:
+        if robot_service is None:
+            from app.robot import get_robot_service
+
+            robot_service = get_robot_service()
+        state = robot_service.get_behavior_busy_state() or {}
+        active_id = state.get('activeBehaviorId') or state.get('eventId')
+        if not active_id:
+            return False
+        aborted = bool(robot_service.abort_behavior(str(active_id)))
+        if aborted:
+            logger.info(
+                '题切换提问抢占忙碌行为: session=%s aborted=%s',
+                sid,
+                active_id,
+            )
+        return aborted
+    except Exception:
+        logger.debug(
+            '题切换提问抢占失败 session=%s', sid, exc_info=True
+        )
+        return False
+
+
+def _flush_pending_item_question(session_id: Optional[str]) -> bool:
+    """Replay latest pending pairing/ordering ask after other speech frees."""
+    sid = str(session_id or '').strip()
+    if not sid:
+        return False
+    with _deferred_question_lock:
+        pending = _pending_interactive_questions.get(sid)
+        if not pending:
+            return False
+        if float(pending.get('expiresAt') or 0) <= time.monotonic():
+            _pending_interactive_questions.pop(sid, None)
+            return False
+        kind = str(pending.get('kind') or '')
+        payload = dict(pending.get('payload') or {})
+        generation = str(pending.get('generation') or '')
+    if not payload:
+        return False
+    logger.info(
+        '补发题切换提问: session=%s kind=%s gen=%s',
+        sid,
+        kind,
+        generation[:8],
+    )
+    if kind in ('ordering', 'sequencing'):
+        return _play_atomic_ordering_question(
+            sid,
+            str(payload.get('audio_type') or 'question'),
+            category=payload.get('category'),
+            rule=payload.get('rule'),
+            text=payload.get('text'),
+            event_data=payload.get('event_data'),
+            _retry_count=0,
+        )
+    return _play_interactive_course_audio(
+        sid,
+        str(payload.get('course_type') or 'pairing'),
+        'question',
+        category=payload.get('category'),
+        rule=payload.get('rule'),
+        text=payload.get('text'),
+        question_data=payload.get('question_data'),
+        _retry_count=0,
+    )
+
+
+def _schedule_pairing_item_question(
+    session_id: Optional[str],
+    data: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Hard rule: every pairing item switch asks immediately and is never dropped."""
+    sid = str(session_id or '').strip()
+    if not sid:
+        return False
+    event_data = dict(data or {})
+    generation = _remember_pending_item_question(
+        sid,
+        kind='pairing',
+        payload={
+            'course_type': 'pairing',
+            'audio_type': 'question',
+            'question_data': event_data,
+        },
+    )
+    event_data = {**event_data, '_askGeneration': generation}
+    with _deferred_question_lock:
+        pending = _pending_interactive_questions.get(sid)
+        if pending and pending.get('generation') == generation:
+            pending['payload']['question_data'] = event_data
+    return _play_interactive_course_audio(
+        sid,
+        'pairing',
+        'question',
+        question_data=event_data,
+    )
+
+
+def _schedule_ordering_item_question(
+    session_id: Optional[str],
+    *,
+    audio_type: str,
+    category: str = None,
+    rule: str = None,
+    text: str = None,
+    event_data: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Hard rule: every ordering item switch asks immediately and is never dropped."""
+    sid = str(session_id or '').strip()
+    if not sid:
+        return False
+    payload_event = dict(event_data or {})
+    generation = _remember_pending_item_question(
+        sid,
+        kind='ordering',
+        payload={
+            'course_type': 'ordering',
+            'audio_type': audio_type,
+            'category': category,
+            'rule': rule,
+            'text': text,
+            'event_data': payload_event,
+        },
+    )
+    payload_event = {**payload_event, '_askGeneration': generation}
+    with _deferred_question_lock:
+        pending = _pending_interactive_questions.get(sid)
+        if pending and pending.get('generation') == generation:
+            pending['payload']['event_data'] = payload_event
+    return _play_atomic_ordering_question(
+        sid,
+        audio_type,
+        category=category,
+        rule=rule,
+        text=text,
+        event_data=payload_event,
+    )
+
+
 def _play_interactive_course_audio(
     session_id: str,
     course_type: str,
@@ -898,16 +1132,57 @@ def _play_interactive_course_audio(
                 reservation.get('activeBehaviorId'),
                 _retry_count,
             )
-            # Child scoring can arrive a few hundred ms before the previous
-            # behavior's terminal ACK. Retry the same idempotent feedback
-            # briefly instead of dropping the praise/question forever.
-            if _retry_count < (8 if audio_type == 'question' else 15):
-                if audio_type == 'question' and not _interactive_question_is_current(
+            # Hard rule for questions: preempt chatter, then keep retrying
+            # until the ask lands or a newer item supersedes it.
+            if audio_type == 'question' and (
+                _retry_count == 0 or _retry_count % 3 == 0
+            ):
+                if _preempt_busy_behavior_for_item_question(
+                    session_id, robot_service=robot_service
+                ):
+                    return _play_interactive_course_audio(
+                        session_id=session_id,
+                        course_type=course_type,
+                        audio_type=audio_type,
+                        category=category,
+                        rule=rule,
+                        text=text,
+                        behavior_id=resolved_behavior_id,
+                        request_id=resolved_request_id,
+                        robot_service=robot_service,
+                        audio_service=audio_service,
+                        _retry_count=_retry_count + 1,
+                        question_data=question_data,
+                    )
+            max_retries = (
+                _INTERACTIVE_QUESTION_BUSY_RETRIES
+                if audio_type == 'question'
+                else 15
+            )
+            if _retry_count < max_retries:
+                if audio_type == 'question' and not _item_question_still_current(
                     session_id, question_data
                 ):
                     return False
+                if audio_type == 'question' and isinstance(question_data, dict):
+                    generation = question_data.get('_askGeneration')
+                    if generation:
+                        with _deferred_question_lock:
+                            pending = _pending_interactive_questions.get(
+                                str(session_id)
+                            )
+                            if (
+                                pending
+                                and pending.get('generation') == generation
+                            ):
+                                pending['payload']['_retry_count'] = _retry_count + 1
+                retry_delay = (
+                    _INTERACTIVE_QUESTION_BUSY_RETRY_SEC
+                    if audio_type == 'question'
+                    else 0.25
+                )
                 retry_timer = threading.Timer(
-                    0.25,
+                    retry_delay,
                     _play_interactive_course_audio,
                     kwargs={
                         'session_id': session_id,
@@ -1013,6 +1288,11 @@ def _play_interactive_course_audio(
             audio_delay_ms += int(robot_service.resolve_audio_offset_ms(behavior_payload) or 0)
         except Exception:
             pass
+        if audio_type == 'question':
+            audio_delay_ms = min(
+                max(0, int(audio_delay_ms)),
+                _INTERACTIVE_QUESTION_AUDIO_DELAY_CAP_MS,
+            )
         if audio_service is None:
             from app.audio import get_audio_service
 
@@ -1038,6 +1318,11 @@ def _play_interactive_course_audio(
         ):
             robot_service.abort_behavior(resolved_behavior_id)
             return False
+        if audio_type == 'question':
+            generation = None
+            if isinstance(question_data, dict):
+                generation = question_data.get('_askGeneration')
+            _clear_pending_item_question(session_id, generation=generation)
         logger.info(
             '互动课语音: session=%s type=%s audio=%s behavior=%s '
             'cat=%s rule=%s text=%s',
@@ -1168,9 +1453,40 @@ def _play_atomic_ordering_question(
             reservation.get('activeBehaviorId'),
             _retry_count,
         )
-        if _retry_count < 8 and _interactive_question_is_current(session_id, event_data):
+        if _retry_count == 0 or _retry_count % 3 == 0:
+            if _preempt_busy_behavior_for_item_question(
+                session_id, robot_service=robot_service
+            ):
+                return _play_atomic_ordering_question(
+                    session_id,
+                    audio_type,
+                    category=category,
+                    rule=rule,
+                    text=text,
+                    event_data=event_data,
+                    robot_service=robot_service,
+                    audio_service=audio_service,
+                    runtime_session=runtime_session,
+                    _retry_count=_retry_count + 1,
+                )
+        if (
+            _retry_count < _INTERACTIVE_QUESTION_BUSY_RETRIES
+            and _item_question_still_current(session_id, event_data)
+        ):
+            if isinstance(event_data, dict):
+                generation = event_data.get('_askGeneration')
+                if generation:
+                    with _deferred_question_lock:
+                        pending = _pending_interactive_questions.get(
+                            str(session_id)
+                        )
+                        if (
+                            pending
+                            and pending.get('generation') == generation
+                        ):
+                            pending['payload']['_retry_count'] = _retry_count + 1
             retry_timer = threading.Timer(
-                0.25,
+                _INTERACTIVE_QUESTION_BUSY_RETRY_SEC,
                 _play_atomic_ordering_question,
                 kwargs={
                     'session_id': session_id,
@@ -1235,6 +1551,10 @@ def _play_atomic_ordering_question(
         )
     except Exception:
         pass
+    delay_ms = min(
+        max(0, int(delay_ms)),
+        _INTERACTIVE_QUESTION_AUDIO_DELAY_CAP_MS,
+    )
     emitted = audio_service.play_interactive_course_audio(
         session_id=str(session_id),
         course_type='ordering',
@@ -1257,6 +1577,10 @@ def _play_atomic_ordering_question(
         robot_service.abort_behavior(behavior_id)
         return False
     _consume_deferred_ordering_question(str(session_id), behavior_id)
+    generation = None
+    if isinstance(event_data, dict):
+        generation = event_data.get('_askGeneration')
+    _clear_pending_item_question(session_id, generation=generation)
     return True
 
 
@@ -4415,14 +4739,16 @@ def register_socket_events(socketio):
 
     @socketio.on('matching_question_ready')
     def handle_matching_question_ready(data):
-        """配对新题展示后播「选和上面一样的」（教师端不再自动发裸 aux.question）。"""
+        """配对新题展示后播「选和上面一样的」（教师端不再自动发裸 aux.question）。
+
+        Hard rule: every item switch asks immediately. Child input may abort a
+        still-playing prompt, but must never permanently skip the new ask.
+        """
         session_id = data.get('sessionId')
         _store_interactive_page_context(session_id, data, course_type='pairing')
         logger.info('配对新题提问语音: session=%s', session_id)
-        if not _interactive_input_recent(session_id, data):
-            _play_interactive_course_audio(
-                session_id, 'pairing', 'question', question_data=dict(data or {})
-            )
+        # Always schedule; input-recent must not drop item-switch asks.
+        _schedule_pairing_item_question(session_id, data)
         try:
             from app.dialogue.phrases import pick_phrase
 
@@ -4440,7 +4766,11 @@ def register_socket_events(socketio):
 
     @socketio.on('sequencing_question_ready')
     def handle_sequencing_question_ready(data):
-        """排序新题展示后，按 category+rule 播对应提问语音。"""
+        """排序新题展示后，按 category+rule 播对应提问语音。
+
+        Hard rule: every item switch asks immediately and cannot be dropped by
+        greetings/praise/dialogue busy-reservation races.
+        """
         session_id = data.get('sessionId')
         category = data.get('category') or ''
         rule = data.get('rule') or ''
@@ -4486,15 +4816,14 @@ def register_socket_events(socketio):
             '排序新题提问语音: session=%s cat=%s rule=%s audio=%s spoken=%s',
             session_id, category, rule, audio_type, spoken,
         )
-        if not _interactive_input_recent(session_id, data):
-            _play_atomic_ordering_question(
-                session_id,
-                audio_type,
-                category=category,
-                rule=rule,
-                text=spoken,
-                event_data=data,
-            )
+        _schedule_ordering_item_question(
+            session_id,
+            audio_type=audio_type,
+            category=category,
+            rule=rule,
+            text=spoken,
+            event_data=data,
+        )
         # 写入孩子实际听到的规则提问句，供 LLM pageContext 使用
         try:
             enrich = dict(data) if isinstance(data, dict) else {}
@@ -4569,6 +4898,67 @@ def register_socket_events(socketio):
                 session_id,
                 coordination_error,
             )
+        # After other speech frees the mutex, land any latest item-switch ask.
+        try:
+            if session_id:
+                _flush_pending_item_question(session_id)
+        except Exception as flush_error:
+            logger.debug(
+                '补发题切换提问失败 session=%s: %s',
+                session_id,
+                flush_error,
+            )
+        intent = str(data.get('intent') or '').strip().lower()
+        # browser TTS ↔ 连续 ASR 门控（对齐预录 audio_status）
+        if session_id and intent:
+            gate_entry = {
+                'question': 'question',
+                'praise': 'praise',
+                'hint': 'hint',
+                'encourage': 'praise',
+            }.get(intent)
+            if gate_entry:
+                try:
+                    from app.services import get_analysis_service
+
+                    get_analysis_service().update_system_audio_state(
+                        str(session_id),
+                        gate_entry,
+                        data.get('status') or 'ended',
+                    )
+                except Exception as gate_error:
+                    logger.debug(
+                        'browser TTS ASR 门控结束失败 session=%s: %s',
+                        session_id,
+                        gate_error,
+                    )
+        # 命名/拟声：提问播完后武装关键词监听（不经对话唤醒）
+        if session_id and intent == 'question':
+            try:
+                from app.services.keyword_listen import get_keyword_listen_service
+
+                item_id = data.get('itemId') or data.get('item_id')
+                if item_id is None:
+                    try:
+                        from app.dialogue.page_context_store import (
+                            get_interactive_page_context,
+                        )
+
+                        page_ctx = get_interactive_page_context(str(session_id)) or {}
+                        item_id = page_ctx.get('itemId') or page_ctx.get('item_id')
+                    except Exception:
+                        item_id = None
+                get_keyword_listen_service().arm_after_question(
+                    str(session_id),
+                    intent=intent,
+                    item_id=item_id,
+                )
+            except Exception as kw_err:
+                logger.warning(
+                    'keyword_listen arm failed session=%s: %s',
+                    session_id,
+                    kw_err,
+                )
         logger.debug(
             'robot_speak_ended session=%s behavior=%s intent=%s',
             session_id, data.get('behaviorId'), data.get('intent'),

@@ -6,23 +6,23 @@ Werkzeug>=2.3.0
 requests>=2.31.0
 python-dotenv>=1.0.0
 
-# 录制相关依赖
+# Recording deps
 opencv-python>=4.8.0,<5
 numpy>=1.24.0,<2
 pyaudio>=0.2.14
 Pillow>=10.0.0
 av>=17.0.0,<18
 
-# 姿态分析依赖
+# Pose analysis deps
 mediapipe>=0.10.0,<0.10.30
 
-# 配置管理依赖
+# Config deps
 pyyaml>=6.0
 
-# 机械臂 OSC 通信依赖
+# Robot arm OSC deps
 python-osc>=1.8.0
 
-# 语音真实分析器模块加载所需（app/core/audio/real_speech_analyzer.py 顶层 import，与是否启用 real 模式无关）
+# Real speech analyzer module load (app/core/audio/real_speech_analyzer.py top-level import)
 soundfile>=0.12.0
 
-# 以下为「可选 / 仅在启用 Real ASR 等重型能力」时的依赖，见 requirements-optional-analyzers.txt 与 docs/ENVIRONMENT.md
+# Optional / heavy Real ASR deps: see requirements-optional-analyzers.txt and docs/ENVIRONMENT.md

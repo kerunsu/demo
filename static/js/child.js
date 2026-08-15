@@ -426,6 +426,11 @@ function notifyInteractiveSpeakEnded(payload) {
     type: "robot_speak_ended",
     intent: payload && payload.intent,
     sessionId: (payload && payload.sessionId) || currentSessionId || window.currentSessionId,
+    itemId: firstDefined(
+      payload && payload.itemId,
+      payload && payload.item_id,
+      window.currentItemId
+    ),
     text: payload && payload.text,
     status: (payload && payload.status) || "ended",
     terminalStatus: (payload && payload.status) || "ended",

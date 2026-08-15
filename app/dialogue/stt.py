@@ -197,6 +197,47 @@ def _transcribe_voice_service(
         return {"ok": False, "transcript": "", "error": f"voice_service_unreachable:{exc}"}
 
 
+def transcribe_wav_bytes(wav_bytes: bytes) -> Dict[str, Any]:
+    """识别已是 WAV 的 PCM 字节。返回 {ok, transcript, provider, error}。"""
+    if not wav_bytes or len(wav_bytes) < 64:
+        return {"ok": False, "transcript": "", "provider": None, "error": "audio_too_short"}
+
+    text = _transcribe_local(wav_bytes)
+    if text:
+        return {"ok": True, "transcript": text, "provider": "local-funasr", "error": None}
+
+    remote = _transcribe_voice_service(wav_bytes, mime_type="audio/wav")
+    if remote.get("ok") and remote.get("transcript"):
+        return {
+            "ok": True,
+            "transcript": remote["transcript"],
+            "provider": "voice-service-funasr",
+            "error": None,
+        }
+
+    err = remote.get("error") or _model_error or "funasr_unavailable"
+    return {"ok": False, "transcript": "", "provider": None, "error": err}
+
+
+def voice_service_ready(timeout: float = 2.0) -> bool:
+    """本地 voice-service /health 是否 READY（连续 ASR 回退用）。"""
+    base = (os.environ.get("VOICE_PYTHON_SERVICE_URL") or "http://127.0.0.1:8765").rstrip("/")
+    try:
+        resp = requests.get(f"{base}/health", timeout=timeout)
+        if not resp.ok:
+            return False
+        data = resp.json() if resp.content else {}
+        status = str(
+            data.get("sttProviderStatus")
+            or data.get("providerStatus")
+            or data.get("status")
+            or ""
+        ).upper()
+        return status in {"READY", "OK", "AVAILABLE"}
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def transcribe_audio_base64(
     audio_base64: str,
     *,
@@ -212,21 +253,4 @@ def transcribe_audio_base64(
         return {"ok": False, "transcript": "", "provider": None, "error": "audio_too_short"}
 
     wav_bytes = _ensure_wav_bytes(audio_bytes, mime_type)
-
-    # 优先本机 FunASR；失败则走 DemoRobot voice-service（同样可配 FunASR）
-    text = _transcribe_local(wav_bytes)
-    if text:
-        return {"ok": True, "transcript": text, "provider": "local-funasr", "error": None}
-
-    remote = _transcribe_voice_service(wav_bytes, mime_type="audio/wav")
-    if remote.get("ok") and remote.get("transcript"):
-        return {
-            "ok": True,
-            "transcript": remote["transcript"],
-            "provider": "voice-service-funasr",
-            "error": None,
-        }
-
-    # 本进程无 FunASR 时，以 voice-service 错误为准，避免掩盖「服务未开」
-    err = remote.get("error") or _model_error or "funasr_unavailable"
-    return {"ok": False, "transcript": "", "provider": None, "error": err}
+    return transcribe_wav_bytes(wav_bytes)

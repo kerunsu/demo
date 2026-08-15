@@ -246,6 +246,66 @@ def _child_room(session_id: Any) -> Optional[str]:
 
 
 
+
+def _try_keyword_auto_praise_from_dialogue(
+    *,
+    session_id: str,
+    text: str,
+    page_context: Dict[str, Any],
+    stt_provider: Optional[str] = None,
+) -> bool:
+    """Armed keyword hit -> teacher-same praise; skip LLM for this turn."""
+    transcript = (text or "").strip()
+    if not transcript:
+        return False
+    try:
+        from app.services.keyword_listen import get_keyword_listen_service
+
+        praised = get_keyword_listen_service().try_auto_praise_from_transcript(
+            str(session_id),
+            transcript,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("keyword_listen dialogue eval failed: %s", exc)
+        return False
+    if not praised:
+        return False
+
+    awake = False
+    try:
+        awake = bool(
+            get_dialogue_service().is_session_awake(session_id, page_context)
+        )
+    except Exception:
+        awake = False
+
+    payload: Dict[str, Any] = {
+        "ok": True,
+        "awake": awake,
+        "transcript": transcript,
+        "keywordHit": True,
+        "reply": None,
+    }
+    if stt_provider:
+        payload["sttProvider"] = stt_provider
+    emit("child_dialogue_result", payload)
+    _audit_dialogue(
+        "dialogue_keyword_hit",
+        {"sessionId": session_id},
+        actor="child",
+        source="child_ui",
+        phase="completed",
+        status="keyword_hit",
+        details={"transcript": transcript, "sttProvider": stt_provider},
+    )
+    logger.info(
+        "对话关键词命中，跳过LLM sid=%s text=%s",
+        session_id,
+        transcript[:40],
+    )
+    return True
+
+
 def _handle_dialogue_utterance(
 
     *,
@@ -285,7 +345,14 @@ def _handle_dialogue_utterance(
         details={"transcript": transcript, "sttProvider": stt_provider},
     )
 
-
+    # 命名/拟声关键词：对话 STT 与连续分析双通路；命中只表扬，不走 LLM
+    if _try_keyword_auto_praise_from_dialogue(
+        session_id=str(session_id),
+        text=transcript,
+        page_context=page_context,
+        stt_provider=stt_provider,
+    ):
+        return
 
     if not svc.is_session_awake(session_id, page_context):
 
@@ -426,7 +493,13 @@ def _handle_dialogue_utterance(
 
         llm_text = remainder
 
-
+        if _try_keyword_auto_praise_from_dialogue(
+            session_id=str(session_id),
+            text=remainder,
+            page_context=page_context,
+            stt_provider=stt_provider,
+        ):
+            return
 
     reply = svc.generate_reply(
 

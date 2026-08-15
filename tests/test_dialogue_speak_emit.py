@@ -180,3 +180,54 @@ def test_handle_utterance_wake_ack_emits_speak(monkeypatch):
         assert speak_calls
         assert speak_calls[0].args[1]["text"] == WAKE_ACK_REPLY
         assert speak_calls[0].args[1]["intent"] == "wake_ack"
+
+
+def test_handle_utterance_keyword_hit_skips_llm(monkeypatch):
+    """对话 STT 命中武装关键词 → 表扬且不走 LLM。"""
+    _install_robot(monkeypatch)
+
+    class FakeSvc:
+        def is_session_awake(self, *_a, **_k):
+            return True
+
+        def _sync_history_for_context(self, *_a, **_k):
+            return None
+
+        def generate_reply(self, *_a, **_k):
+            raise AssertionError("keyword hit must not call LLM")
+
+    class FakeKw:
+        def try_auto_praise_from_transcript(self, session_id, transcript):
+            assert session_id == "sid-kw"
+            assert "老虎" in transcript
+            return True
+
+    monkeypatch.setattr(
+        "app.dialogue.sockets.get_dialogue_service", lambda: FakeSvc()
+    )
+    monkeypatch.setattr(
+        "app.services.keyword_listen.get_keyword_listen_service",
+        lambda: FakeKw(),
+    )
+    with patch("app.dialogue.sockets.emit") as emit:
+        _handle_dialogue_utterance(
+            session_id="sid-kw",
+            child_text="这是老虎呀",
+            page_context={"courseType": "naming", "target": "老虎"},
+            room="session_sid-kw_child",
+        )
+        result_calls = [
+            c
+            for c in emit.call_args_list
+            if c.args and c.args[0] == "child_dialogue_result"
+        ]
+        assert result_calls
+        payload = result_calls[0].args[1]
+        assert payload["ok"] is True
+        assert payload["keywordHit"] is True
+        assert payload["transcript"] == "这是老虎呀"
+        assert payload.get("reply") is None
+        speak_calls = [
+            c for c in emit.call_args_list if c.args and c.args[0] == "robot_speak_text"
+        ]
+        assert not speak_calls

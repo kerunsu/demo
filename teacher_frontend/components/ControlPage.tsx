@@ -430,6 +430,12 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
     itemIndex: number;
     sessionId: string | null;
   } | null>(null);
+  /** Dedup keyword_auto_praise before play_resource_ack sets praiseRequestContextRef. */
+  const keywordAutoPraiseInFlightRef = useRef<{
+    requestId: string | null;
+    itemId: string | null;
+    atMs: number;
+  } | null>(null);
   const pendingPraiseAdvanceRef = useRef<{
     requestId: string;
     courseIndex: number;
@@ -1982,6 +1988,65 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
         }, 2000);
       });
       
+      // 关键词自动表扬：与教师点「表扬」完全同路（play_resource → 动画/表情/动作 → 打分 → 切题）
+      socket.on('keyword_auto_praise', (data: {
+        sessionId?: string;
+        requestId?: string;
+        courseType?: string;
+        itemId?: string | number;
+        keyword?: string;
+      }) => {
+        if (!eventMatchesCurrentSession(data)) return;
+        const courseIdx = currentCourseIndexRef.current;
+        const itemIdx = currentItemIndexRef.current;
+        const selected = selectedCourseItemsRef.current[courseIdx];
+        const currentType = selected?.course?.type;
+        if (currentType === 'pairing' || currentType === 'ordering') {
+          return;
+        }
+        // 课点已切走则忽略（避免迟到事件误表扬）
+        const currentItem = selected?.items?.[itemIdx];
+        const eventItemId = data?.itemId != null ? String(data.itemId) : null;
+        if (
+          eventItemId != null &&
+          currentItem?.id != null &&
+          eventItemId !== String(currentItem.id)
+        ) {
+          console.log('🏅 忽略 keyword_auto_praise（课点已切换）:', data);
+          return;
+        }
+        // 已在打分/切题流程中则不再重复触发表扬
+        if (advanceLockRef.current || praiseRequestContextRef.current) {
+          console.log('🏅 忽略 keyword_auto_praise（已在表扬/打分流程）:', data);
+          return;
+        }
+        // Socket 若仍投递到多个房间，ack 前会连收两次；用 requestId/课点立即占坑
+        const eventRequestId = data?.requestId != null ? String(data.requestId) : null;
+        const inflight = keywordAutoPraiseInFlightRef.current;
+        const nowMs = Date.now();
+        if (
+          inflight &&
+          (
+            (eventRequestId && inflight.requestId === eventRequestId) ||
+            (eventItemId &&
+              inflight.itemId === eventItemId &&
+              nowMs - inflight.atMs < 8000)
+          )
+        ) {
+          console.log('🏅 忽略重复 keyword_auto_praise:', data);
+          return;
+        }
+        keywordAutoPraiseInFlightRef.current = {
+          requestId: eventRequestId,
+          itemId: eventItemId || (currentItem?.id != null ? String(currentItem.id) : null),
+          atMs: nowMs,
+        };
+        console.log('🏅 收到 keyword_auto_praise，等同教师点击表扬:', data);
+        // 与 handlePraise 一致：先记完成时刻，再走 playCurrentItem({ praise: true })
+        completionAtRef.current = nowMs;
+        playCurrentItemRef.current({ praise: true });
+      });
+
       // 表扬视频结束事件监听
       socket.on('behavior_animation_ended', (data: {
         sessionId: string;
@@ -2747,6 +2812,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
     const selected = selectedCourseItemsRef.current;
     const current = selected[snapshot.courseIndex];
     if (!current) return;
+    keywordAutoPraiseInFlightRef.current = null;
     if (current.items.length > 0 && snapshot.itemIndex < current.items.length - 1) {
       const nextItemIndex = snapshot.itemIndex + 1;
       currentCourseIndexRef.current = snapshot.courseIndex;

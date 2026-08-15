@@ -18,6 +18,11 @@ from app.services.readiness_service import (
     ReadinessService,
     get_readiness_service,
 )
+from app.services.keyword_listen import (
+    KeywordListenService,
+    get_keyword_listen_service,
+    KEYWORD_LISTEN_COURSE_TYPES,
+)
 from app.services import recording_timeline as recording_timeline_mod
 
 __all__ = [
@@ -36,6 +41,10 @@ __all__ = [
     # 开课就绪门
     'ReadinessService',
     'get_readiness_service',
+    # 命名/拟声关键词自动表扬
+    'KeywordListenService',
+    'get_keyword_listen_service',
+    'KEYWORD_LISTEN_COURSE_TYPES',
     # 连续录制时间轴
     'recording_timeline_mod',
 ]

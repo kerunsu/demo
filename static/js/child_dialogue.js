@@ -33,6 +33,9 @@
   let cooldownUntil = 0;
   /** 打字发送时已写入儿童气泡，结果回调里勿再记一遍 transcript */
   let childBubbleLoggedForPending = false;
+  /** 连续 ASR 关键词命中与对话 STT 可能同句双发，短窗去重 */
+  let lastChildTranscriptKey = "";
+  let lastChildTranscriptAt = 0;
   /** 本地唤醒状态（与服务端 session+题目指纹绑定；题目切换后清除） */
   let dialogueAwake = false;
   let dialoguePanelVisible = true;
@@ -295,6 +298,23 @@
     log.scrollTop = log.scrollHeight;
   }
 
+  /** 儿童识别文本入对话气泡（短窗去重，避免双通路重复）。 */
+  function appendChildTranscript(text) {
+    const trimmed = String(text || "").trim();
+    if (!trimmed) return false;
+    const now = Date.now();
+    if (
+      trimmed === lastChildTranscriptKey &&
+      now - lastChildTranscriptAt < 2800
+    ) {
+      return false;
+    }
+    lastChildTranscriptKey = trimmed;
+    lastChildTranscriptAt = now;
+    appendDialogueLog("child", trimmed);
+    return true;
+  }
+
   function isLocalhostHost() {
     const host = String(location.hostname || "").toLowerCase();
     return (
@@ -502,7 +522,7 @@
     syncAwakeForPageContext();
     dialogueBusy = true;
     childBubbleLoggedForPending = true;
-    appendDialogueLog("child", trimmed);
+    appendChildTranscript(trimmed);
     setListenButtonState();
     setStatus(dialogueAwake ? "思考中…" : "识别唤醒中…");
     socket.emit("child_dialogue_text", {
@@ -1009,8 +1029,9 @@
         if (err === "not_awake") {
           setDialogueAwake(false, { updateStatus: false });
           const transcript = String((data && data.transcript) || "").trim();
+          // 未唤醒也展示儿童识别文本（关键词表扬常走此路径之外，仍须可见）
           if (transcript && !childBubbleLoggedForPending) {
-            appendDialogueLog("child", transcript);
+            appendChildTranscript(transcript);
           }
           childBubbleLoggedForPending = false;
           setStatus("请说：麦麦，麦麦");
@@ -1036,7 +1057,7 @@
       ).trim();
       // 语音识别：结果里才有 transcript；打字发送已记过儿童气泡
       if (transcript && !childBubbleLoggedForPending) {
-        appendDialogueLog("child", transcript);
+        appendChildTranscript(transcript);
       }
       if (replyText) {
         appendDialogueLog("maimai", replyText);
@@ -1081,6 +1102,16 @@
       wakeWordEnabled = data.wakeWordEnabled === true;
       applyDialoguePanelVisibility(data.visible !== false);
       setStatus(listenIdleStatus());
+    });
+    // 连续 ASR 识别文本（含错答/未命中）；与 child_dialogue_result 短窗去重
+    socket.on("child_speech_recognized", (data) => {
+      if (!data) return;
+      const sid = String(data.sessionId || data.session_id || "").trim();
+      const mine = String(getSessionId() || "").trim();
+      if (sid && mine && sid !== mine) return;
+      const transcript = String(data.transcript || "").trim();
+      if (!transcript) return;
+      appendChildTranscript(transcript);
     });
     requestDialogueControlState();
     resultHandlerBound = true;

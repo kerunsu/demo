@@ -80,6 +80,13 @@ def _sync_dialogue_page_context_for_play(
         if ct in _SPEECH_COURSE_TYPES:
             # 先清再写：丢掉配对/排序 options/rule 等残留
             clear_interactive_page_context(session_id)
+            cue = ""
+            try:
+                from app.dialogue.image_semantics import item_cue_from_label
+
+                cue = item_cue_from_label(label) or item_cue_from_label(display_name)
+            except Exception:  # noqa: BLE001
+                cue = ""
             clean = {
                 k: v
                 for k, v in {
@@ -93,6 +100,7 @@ def _sync_dialogue_page_context_for_play(
                     'speechTarget': label,
                     'name': item_name or label,
                     'label': label,
+                    'targetDescription': cue or None,
                     'prompt': _default_prompt_for_course(ct, item_name=display_name),
                 }.items()
                 if v is not None and v != ''
@@ -548,6 +556,14 @@ class PlayResourceHandler:
                             )
                     except Exception as e:
                         logger.error("Failed to resolve encouragement animation: %s", e, exc_info=True)
+                    try:
+                        from app.services.keyword_listen import get_keyword_listen_service
+
+                        get_keyword_listen_service().note_teacher_praise(
+                            existing_session.session_id
+                        )
+                    except Exception as kw_err:
+                        logger.debug('keyword_listen teacher praise note failed: %s', kw_err)
 
                 return {
                     'session_id': existing_session.session_id,
@@ -773,6 +789,32 @@ class PlayResourceHandler:
                     resolved_file=resolved_file,
                     aux_data=aux_for_targets,
                 )
+                try:
+                    from app.services.keyword_listen import get_keyword_listen_service
+
+                    kw_state = get_keyword_listen_service().prepare(
+                        session.session_id,
+                        course_type=course_type,
+                        item_id=item_id,
+                        speech_target=speech_target,
+                        name=item_name,
+                    )
+                    # 拟声：优先用更短的拟声词作 ASR 比对目标（metrics），表扬仍走 keyword_listen
+                    if kw_state.keywords and course_type in (
+                        'naming',
+                        'speech',
+                        'onomatopoeia',
+                    ):
+                        asr_target = kw_state.primary_target
+                        if course_type == 'onomatopoeia' and len(kw_state.keywords) > 1:
+                            asr_target = min(kw_state.keywords, key=len)
+                        if asr_target:
+                            analysis_service.set_speech_target(
+                                session.session_id,
+                                asr_target,
+                            )
+                except Exception as kw_err:
+                    logger.warning('keyword_listen prepare failed: %s', kw_err)
             except Exception as e:
                 logger.error("启动/重配置分析会话失败: %s", e)
 

@@ -102,6 +102,7 @@ class AudioPipeline(BasePipeline):
 
         self._chunk_count = 0
         self._analysis_results: List[AnalysisResult] = []
+        self._uninit_warn_at = 0.0
 
         logger.info("音频流水线已创建")
 
@@ -133,7 +134,10 @@ class AudioPipeline(BasePipeline):
         context: AnalysisContext
     ) -> Tuple[List[AnalysisResult], List[MatchResult]]:
         if not self._is_initialized:
-            logger.warning("流水线未初始化")
+            now = time.time()
+            if now - float(getattr(self, '_uninit_warn_at', 0.0) or 0.0) >= 5.0:
+                self._uninit_warn_at = now
+                logger.warning("流水线未初始化（连续音频分析跳过；检查 FunASR/torch 或 voice-service）")
             return [], []
 
         analysis_results = []

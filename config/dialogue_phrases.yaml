@@ -82,6 +82,25 @@ question:
     - "我们开始吧。"
 
 praise:
+  # 命名：夸认对/说对名字（勿用配对「选对了」）
+  naming:
+    - "说对了，真棒！"
+    - "认得真好！"
+    - "名字说对了，真棒！！"
+    - "说得真棒！"
+    - "你会叫它的名字了，真棒！"
+  speech:
+    - "说对了，真棒！"
+    - "认得真好！"
+    - "名字说对了，真棒！！"
+    - "说得真棒！"
+    - "你会叫它的名字了，真棒！"
+  # 拟声：夸叫声学得像/好听
+  onomatopoeia:
+    - "学得真像，很好！"
+    - "叫声学对了，真棒！"
+    - "学得真棒！"
+    - "声音学得真像，真不错！"
   # DemoRobot MATCHING_CORRECT_FEEDBACK_LINES（配对 / matching）
   pairing:
     - "回答正确，真棒！"
@@ -174,9 +193,9 @@ encourage:
 # 社交课打招呼 / 再见（browser TTS；可按课型覆盖，缺省走 default）
 social_greeting_intro:
   social:
-    - "你好，我是麦麦。"
+    - "你好，我是麦麦。很高兴认识你。"
   default:
-    - "你好，我是麦麦。"
+    - "你好，我是麦麦。很高兴认识你。"
 
 social_greeting_play:
   social:

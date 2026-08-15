@@ -669,6 +669,10 @@
           socket.emit('join_session', { sessionId: sessionId, role: 'child' });
           debugLog(`加入会话房间: ${sessionId}`);
         }
+        // 首题 ready 可能早于 connect：连通后补发 pending
+        if (window.matchingGame && typeof window.matchingGame.flushQuestionReady === 'function') {
+          window.matchingGame.flushQuestionReady();
+        }
       });
       
       socket.on('disconnect', () => {
@@ -680,6 +684,13 @@
         debugLog('收到启动游戏指令');
         if (window.matchingGame && !window.matchingGame.isGameActive) {
           window.matchingGame.startGame();
+        } else if (
+          window.matchingGame &&
+          window.matchingGame.isGameActive &&
+          typeof window.matchingGame.emitQuestionReady === 'function'
+        ) {
+          // Hard rule: already on an item → force-ask (not only pending flush)
+          window.matchingGame.emitQuestionReady();
         }
       });
       
@@ -907,7 +918,7 @@
        * 等表扬/鼓励 browser TTS 结束再切题（与 sequencing 一致）。
        * minMs：最短停留，避免动画过早被清掉；maxMs：TTS 失败时兜底，不永久卡住。
        */
-      waitForFeedbackSpeech(intent, { minMs = 2800, maxMs = 4200 } = {}) {
+      waitForFeedbackSpeech(intent, { minMs = 900, maxMs = 2800 } = {}) {
         return new Promise((resolve) => {
           const start = Date.now();
           let settled = false;
@@ -1054,15 +1065,35 @@
       }
 
       emitQuestionReady() {
-        if (!socket || !socket.connected || !sessionId) return;
+        // Hard rule: every item display schedules an ask; reconnect/start re-asks.
+        this._pendingQuestionReady = true;
+        this._questionReadySeq = (this._questionReadySeq || 0) + 1;
+        this.flushQuestionReady();
+      }
+
+      flushQuestionReady() {
+        if (!this._pendingQuestionReady) return;
+        if (!sessionId) {
+          debugLog('提问就绪等待 sessionId');
+          return;
+        }
+        if (!socket || !socket.connected) {
+          debugLog('提问就绪等待 socket 连接');
+          return;
+        }
         const pageContext = this.buildPageContext();
+        const askSeq = this._questionReadySeq || 0;
         socket.emit('matching_question_ready', {
           sessionId,
           courseType: 'pairing',
+          questionId: pageContext.questionId,
+          questionIndex: pageContext.questionIndex,
+          askSeq,
           pageContext,
           prompt: pageContext.prompt,
         });
-        debugLog('提问语音: pairing');
+        this._pendingQuestionReady = false;
+        debugLog(`提问语音: pairing q=${pageContext.questionIndex} seq=${askSeq}`);
       }
 
       labelFromSrc(src, fallbackIndex) {
@@ -1102,7 +1133,8 @@
           wrongAttempts: this.wrongAttemptsThisQuestion || 0,
           questionIndex: this.currentQuestion,
           totalQuestions: this.maxQuestions,
-          questionId: questionId || `${courseId || 'pairing'}_${this.currentQuestion}`,
+          // Per-item id so server hard-ask identity never collapses across items
+          questionId: `${questionId || courseId || 'pairing'}_q${this.currentQuestion}`,
           itemId: itemId || null,
           correctPosition: correctIndex >= 0 ? correctIndex + 1 : null,
           correctLabel: correctIndex >= 0 ? options[correctIndex].label : null,
@@ -1217,8 +1249,8 @@
           // 先挂 wait 再上报，避免 praise TTS ended 早于监听
           const token = (this._advanceToken = (this._advanceToken || 0) + 1);
           const waitSpeech = this.waitForFeedbackSpeech('praise', {
-            minMs: 2800,
-            maxMs: 4200,
+            minMs: 900,
+            maxMs: 2800,
           });
           // 发送状态更新给教师端（isCorrect=计分正确；triggerPraise=点对即表扬）
           this.emitStatusUpdate(isCorrect && !this.hasAnsweredWrong, true);
