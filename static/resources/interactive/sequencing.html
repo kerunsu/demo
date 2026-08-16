@@ -535,7 +535,7 @@
         // 首题 ready 可能早于 connect：连通后补发 pending
         if (window.game && typeof window.game.flushQuestionReady === 'function') {
           window.game.flushQuestionReady();
-        } 
+        }
         debugLog('Socket连接断开');
       });
       
