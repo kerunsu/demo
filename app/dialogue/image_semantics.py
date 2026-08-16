@@ -51,6 +51,29 @@ BUILTIN_ORDERING_PREFIXES: Dict[str, str] = {
     "cup": "杯子",
 }
 
+# 命名等：短特征线索（颜色自然用颜色；大型哺乳用性情/体型/可爱）
+BUILTIN_ITEM_CUES: Dict[str, str] = {
+    "草莓": "红红的草莓",
+    "苹果": "红红的苹果",
+    "香蕉": "黄黄的香蕉",
+    "西瓜": "绿绿的西瓜",
+    "葡萄": "紫紫的葡萄",
+    "青蛙": "可爱的青蛙",
+    "瓢虫": "红红的瓢虫",
+    "狮子": "凶猛的狮子",
+    "老虎": "凶猛的老虎",
+    "羊": "可爱的小羊",
+    "小羊": "可爱的小羊",
+    "猫": "可爱的小猫",
+    "狗": "可爱的小狗",
+    "熊猫": "胖胖的熊猫",
+    "斑马": "条纹的斑马",
+    "大象": "大大的大象",
+    "长颈鹿": "高高的长颈鹿",
+    "兔": "可爱的小兔",
+    "兔子": "可爱的小兔",
+}
+
 
 def get_semantics(force_reload: bool = False) -> Dict[str, Any]:
     global _cache
@@ -59,6 +82,7 @@ def get_semantics(force_reload: bool = False) -> Dict[str, Any]:
             return _cache
         matching = dict(BUILTIN_MATCHING)
         prefixes = dict(BUILTIN_ORDERING_PREFIXES)
+        item_cues = dict(BUILTIN_ITEM_CUES)
         path = Path(_DEFAULT_PATH)
         if path.exists():
             try:
@@ -75,10 +99,34 @@ def get_semantics(force_reload: bool = False) -> Dict[str, Any]:
                 for k, v in (data.get("ordering_prefixes") or {}).items():
                     if v:
                         prefixes[str(k)] = str(v)
+                for k, v in (data.get("item_cues") or {}).items():
+                    if k and v:
+                        item_cues[str(k).strip()] = str(v).strip()
             except Exception as e:
                 logger.warning("加载 interactive_image_semantics 失败: %s", e)
-        _cache = {"matching": matching, "ordering_prefixes": prefixes}
+        _cache = {
+            "matching": matching,
+            "ordering_prefixes": prefixes,
+            "item_cues": item_cues,
+        }
         return _cache
+
+
+def item_cue_from_label(label: str) -> str:
+    """物品名 → 孩子能听懂的短特征说法；未命中返回空串。"""
+    name = str(label or "").strip()
+    if not name:
+        return ""
+    bank = get_semantics().get("item_cues") or {}
+    hit = bank.get(name)
+    if hit:
+        return str(hit)
+    # 「小狮子」等：去掉前缀「小」再查
+    if name.startswith("小") and len(name) > 1:
+        hit = bank.get(name[1:])
+        if hit:
+            return str(hit)
+    return ""
 
 
 def _matching_rel_candidates(src: str) -> list:

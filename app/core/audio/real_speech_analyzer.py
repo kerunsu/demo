@@ -41,7 +41,8 @@ from app.core.models import (
     AnalysisMode, 
     AnalyzerType, 
     AnalysisResult, 
-    AnalysisContext
+    AnalysisContext,
+    AnalyzerStatus,
 )
 from app.utils.logger import setup_logger
 
@@ -90,6 +91,10 @@ class RealSpeechAnalyzer(ParentClass):
         self._audio_buffer = []
         self._buffered_samples = 0
         self._model = None
+        # local = 本进程 FunASR；voice-service = HTTP 回退（主 venv 无 torch 时）
+        self._backend = None
+        self._last_error = None
+        self._unready_log_at = 0.0
         
         logger.info(
             "真实语音分析器 (ASR模式) 已创建: model=%s sample_rate=%sHz accumulation=%.1fs",
@@ -101,6 +106,7 @@ class RealSpeechAnalyzer(ParentClass):
     def initialize(self) -> bool:
         if self._is_initialized:
             return True
+        local_error = None
         try:
             import torch
             from funasr import AutoModel
@@ -118,21 +124,56 @@ class RealSpeechAnalyzer(ParentClass):
                 disable_update=True
             )
             
+            self._backend = 'local'
             self._is_initialized = True
+            self._status = AnalyzerStatus.READY
             self._last_error = None
             logger.info(f"模型加载成功: {self._model_name}")
             return True
             
         except Exception as e:
-            self._last_error = str(e)
-            logger.error(f"语音分析器初始化失败: {e}")
+            local_error = str(e)
+            self._last_error = local_error
+            logger.warning(
+                "本进程 FunASR 不可用，尝试 voice-service 回退: %s",
+                local_error,
+            )
+
+        # 与对话 STT 对齐：主进程缺 torch/funasr 时走本地 voice-service
+        try:
+            from app.dialogue.stt import voice_service_ready
+
+            if voice_service_ready():
+                self._backend = 'voice-service'
+                self._model = None
+                self._is_initialized = True
+                self._status = AnalyzerStatus.READY
+                self._last_error = None
+                logger.info(
+                    "语音分析器已回退到 voice-service STT（本进程缺少 FunASR 依赖）"
+                )
+                return True
+            self._last_error = (
+                f"local_funasr_failed:{local_error}; voice_service_not_ready"
+            )
+            self._status = AnalyzerStatus.ERROR
+            logger.error(
+                "语音分析器初始化失败: 本进程 FunASR=%s，且 voice-service 未 READY",
+                local_error,
+            )
+            return False
+        except Exception as vs_err:  # noqa: BLE001
+            self._last_error = (
+                f"local_funasr_failed:{local_error}; voice_service_probe:{vs_err}"
+            )
+            self._status = AnalyzerStatus.ERROR
+            logger.error("语音分析器 voice-service 探测失败: %s", vs_err)
             return False
 
     def _preprocess_audio(self, audio_data):
         """音频预处理"""
         try:
             import soundfile as sf
-            import librosa
             
             if isinstance(audio_data, bytes):
                 audio, sr = sf.read(io.BytesIO(audio_data))
@@ -146,8 +187,19 @@ class RealSpeechAnalyzer(ParentClass):
                 audio = np.mean(audio, axis=1)
 
             if sr != self._target_sample_rate:
+                try:
+                    import librosa
+                except ImportError:
+                    logger.error(
+                        "音频采样率 %s≠%s 且未安装 librosa，无法重采样",
+                        sr,
+                        self._target_sample_rate,
+                    )
+                    return None
                 audio = audio.astype(np.float32)
-                audio = librosa.resample(audio, orig_sr=sr, target_sr=self._target_sample_rate)
+                audio = librosa.resample(
+                    audio, orig_sr=sr, target_sr=self._target_sample_rate
+                )
             
             # 音量标准化 (ASR 模型对音量不敏感，但放大一点更稳)
             max_val = np.abs(audio).max()
@@ -160,6 +212,54 @@ class RealSpeechAnalyzer(ParentClass):
             logger.error(f"音频预处理失败: {e}")
             return None
 
+    def _recognize_text(self, audio_int16: np.ndarray) -> tuple:
+        """返回 (text, provider)。优先本进程模型，否则 WAV → voice-service。"""
+        if self._backend == 'local' and self._model is not None:
+            temp_filename = f"temp_asr_{int(time.time()*1000)}.wav"
+            try:
+                sf.write(
+                    temp_filename,
+                    audio_int16,
+                    self._target_sample_rate,
+                    subtype='PCM_16',
+                )
+                logger.info("正在识别音频(local): %s", temp_filename)
+                res = self._model.generate(
+                    input=temp_filename,
+                    batch_size=1,
+                    disable_pbar=True,
+                )
+                result_data = res[0] if isinstance(res, list) else res
+                rec_text = str(result_data.get('text', '') or '').replace(" ", "")
+                return rec_text, 'local-funasr'
+            finally:
+                if os.path.exists(temp_filename):
+                    try:
+                        os.remove(temp_filename)
+                    except Exception:
+                        pass
+
+        wav_buf = io.BytesIO()
+        sf.write(
+            wav_buf,
+            audio_int16,
+            self._target_sample_rate,
+            format='WAV',
+            subtype='PCM_16',
+        )
+        from app.dialogue.stt import transcribe_wav_bytes
+
+        result = transcribe_wav_bytes(wav_buf.getvalue())
+        if result.get('ok') and result.get('transcript'):
+            return str(result['transcript']).replace(" ", ""), str(
+                result.get('provider') or 'voice-service'
+            )
+        # 空结果 / EMPTY_RESULT：无有效语音，不当成硬失败
+        err = result.get('error') or ''
+        if err and 'empty' not in str(err).lower():
+            logger.debug("ASR 无文本: %s", err)
+        return '', str(result.get('provider') or self._backend or 'none')
+
     def analyze_audio(self, audio_data, context):
         """全量分析接口；无 target_text 时仍产出 transcript + 表达性语言特征。"""
         if not self.is_ready:
@@ -170,8 +270,6 @@ class RealSpeechAnalyzer(ParentClass):
             aux = {}
         target_text = aux.get('target_text')
 
-        temp_filename = f"temp_asr_{int(time.time()*1000)}.wav"
-        
         try:
             start_time = time.time()
             audio_input = self._preprocess_audio(audio_data)
@@ -181,26 +279,52 @@ class RealSpeechAnalyzer(ParentClass):
             rms = float(np.sqrt(np.mean(np.square(audio_input.astype(np.float32))))) if len(audio_input) else 0.0
             is_speech = rms > 0.01
             chunk_duration = len(audio_input) / float(self._target_sample_rate or 16000)
-            
-            # 转为 Int16 保存
-            audio_int16 = (audio_input * 32767).astype(np.int16)
-            sf.write(temp_filename, audio_int16, self._target_sample_rate, subtype='PCM_16')
-            
-            logger.info(f"正在识别音频: {temp_filename}")
 
-            res = self._model.generate(
-                input=temp_filename,
-                batch_size=1,
-                disable_pbar=True
-            )
+            # 明显静音块不打 ASR，降低 voice-service 压力
+            if not is_speech:
+                return AnalysisResult(
+                    session_id=getattr(context, 'session_id', None),
+                    analyzer_type="speech",
+                    mode=self._mode,
+                    timestamp=time.time(),
+                    data={
+                        'transcript': '',
+                        'tokens': [],
+                        'scores': [],
+                        'timestamps': [],
+                        'latency_ms': 0,
+                        'detection_time_ms': 0,
+                        'vad': {'is_speech': False, 'energy': rms, 'confidence': 0.0},
+                        'asr': {
+                            'text': '',
+                            'confidence': 0.0,
+                            'word_count': 0,
+                            'is_final': True,
+                            'provider': self._backend,
+                        },
+                        'speech_ratio': 0.0,
+                        'word_count': 0,
+                        'speech_duration': 0.0,
+                        'clarity_proxy': 0.0,
+                        'is_speech': False,
+                        'data_quality': 'DEGRADED',
+                        'speaker_assumption': 'child',
+                    },
+                    confidence=0.0,
+                    frame_index=getattr(context, 'frame_index', None),
+                )
             
+            audio_int16 = (audio_input * 32767).astype(np.int16)
+            rec_text, provider = self._recognize_text(audio_int16)
             detection_time = (time.time() - start_time) * 1000
-            
-            result_data = res[0] if isinstance(res, list) else res
-            rec_text = result_data.get('text', '').replace(" ", "")
             word_count = len(rec_text)
             
-            logger.info(f"🗣️ 模型识别结果: '{rec_text}' (目标: '{target_text}')")
+            logger.info(
+                "🗣️ ASR[%s] 识别结果: '%s' (目标: '%s')",
+                provider,
+                rec_text,
+                target_text,
+            )
 
             final_score = 0.0
             scores = []
@@ -232,6 +356,7 @@ class RealSpeechAnalyzer(ParentClass):
                     'confidence': final_score / 100.0,
                     'word_count': word_count,
                     'is_final': True,
+                    'provider': provider,
                 },
                 'speech_ratio': 1.0 if is_speech else 0.0,
                 'word_count': word_count,
@@ -265,13 +390,6 @@ class RealSpeechAnalyzer(ParentClass):
         except Exception as e:
             logger.exception(f"语音分析失败: {e}")
             return None
-            
-        finally:
-            if os.path.exists(temp_filename):
-                try:
-                    os.remove(temp_filename)
-                except Exception:
-                    pass
 
     def analyze_chunk(self, chunk_data, context):
         """累积短 PCM 块并串行执行 ASR，避免每 4096 样本启动一次重模型。"""

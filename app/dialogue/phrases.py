@@ -17,7 +17,31 @@ logger = setup_logger("dialogue.phrases")
 _DEFAULT_PATH = BASE_DIR / "config" / "dialogue_phrases.yaml"
 _lock = Lock()
 _bank: Optional[Dict[str, Any]] = None
+_bank_mtime: Optional[float] = None
 _recent: Dict[str, List[str]] = {}
+
+# 文件缺失时的内置兜底（与 dialogue_phrases.yaml 对齐）
+_BUILTIN_FALLBACK_BANK: Dict[str, Any] = {
+    "question": {"default": ["看一看屏幕。"]},
+    "praise": {"default": ["真棒！"]},
+    "encourage": {"default": ["没关系，再试一次。"]},
+    "hint": {"default": ["再看一看。"]},
+    "social_greeting_intro": {"default": ["你好，我是麦麦。很高兴认识你。"]},
+    "social_greeting_play": {"default": ["我们一起玩吧。"]},
+    "social_farewell_bye": {"default": ["再见啦。"]},
+    "social_farewell_reply": {"default": ["再见，下次见。"]},
+}
+
+_PICK_FALLBACK: Dict[str, str] = {
+    "question": "看一看屏幕。",
+    "praise": "真棒！",
+    "encourage": "没关系，再试一次。",
+    "hint": "再看一看。",
+    "social_greeting_intro": "你好，我是麦麦。很高兴认识你。",
+    "social_greeting_play": "我们一起玩吧。",
+    "social_farewell_bye": "再见啦。",
+    "social_farewell_reply": "再见，下次见。",
+}
 
 # 排序 category+rule → question 话术键（对齐 DemoRobot ORDERING_RULES / sequencing）
 ORDERING_RULE_PHRASE_KEYS: Dict[Tuple[str, str], str] = {
@@ -141,28 +165,32 @@ def resolve_item_display_name(
 
 
 def get_phrase_bank(force_reload: bool = False) -> Dict[str, Any]:
-    global _bank
+    """加载话术库；yaml mtime 变化时自动失效缓存（无需重启进程）。"""
+    global _bank, _bank_mtime
     with _lock:
-        if _bank is not None and not force_reload:
-            return _bank
         path = Path(_DEFAULT_PATH)
+        mtime: Optional[float] = None
+        if path.exists():
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                mtime = None
+        if (
+            _bank is not None
+            and not force_reload
+            and mtime == _bank_mtime
+        ):
+            return _bank
         if not path.exists():
             logger.warning("话术文件不存在: %s，使用内置兜底", path)
-            _bank = {
-                "question": {"default": ["看一看屏幕。"]},
-                "praise": {"default": ["真棒！"]},
-                "encourage": {"default": ["没关系，再试一次。"]},
-                "hint": {"default": ["再看一看。"]},
-                "social_greeting_intro": {"default": ["你好，我是麦麦。"]},
-                "social_greeting_play": {"default": ["我们一起玩吧。"]},
-                "social_farewell_bye": {"default": ["再见啦。"]},
-                "social_farewell_reply": {"default": ["再见，下次见。"]},
-            }
+            _bank = dict(_BUILTIN_FALLBACK_BANK)
+            _bank_mtime = None
             return _bank
         with path.open("r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
         _bank = data if isinstance(data, dict) else {}
-        logger.info("已加载对话话术: %s", path)
+        _bank_mtime = mtime
+        logger.info("已加载对话话术: %s mtime=%s", path, mtime)
         return _bank
 
 
@@ -268,17 +296,7 @@ def pick_phrase(
     if not lines:
         lines = _lines_for(intent, None)
     if not lines:
-        fallback = {
-            "question": "看一看屏幕。",
-            "praise": "真棒！",
-            "encourage": "没关系，再试一次。",
-            "hint": "再看一看。",
-            "social_greeting_intro": "你好，我是麦麦。",
-            "social_greeting_play": "我们一起玩吧。",
-            "social_farewell_bye": "再见啦。",
-            "social_farewell_reply": "再见，下次见。",
-        }
-        return fallback.get(intent, "我们继续吧。")
+        return _PICK_FALLBACK.get(intent, "我们继续吧。")
 
     key = recent_key or f"{intent}:{preferred or course_type or 'default'}"
     recent = _recent.get(key) or []

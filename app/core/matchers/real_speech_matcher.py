@@ -118,9 +118,8 @@ class RealSpeechMatcher(BaseSpeechMatcher):
 
         self._total_count += 1
         
-        # 必须用识别文本与当前目标做实际比较。旧实现直接使用 ASR 的通用
-        # confidence；当 context 未携带 target_text 时，任意较长语句都可能超过
-        # 阈值，从而在刚进入课程时误触发表扬。
+        # Prefer contain match; SequenceMatcher only for near-equal length phrases
+        # to avoid loose fuzzy auto-praise style false positives.
         recognized_text = str(
             analysis_result.data.get('transcript')
             or (analysis_result.data.get('asr') or {}).get('text')
@@ -131,8 +130,13 @@ class RealSpeechMatcher(BaseSpeechMatcher):
             final_score = 0.0
         elif target_text in recognized_text:
             final_score = 100.0
-        else:
+        elif (
+            len(target_text) >= 2
+            and abs(len(recognized_text) - len(target_text)) <= max(2, len(target_text) // 2)
+        ):
             final_score = difflib.SequenceMatcher(None, recognized_text, target_text).ratio() * 100.0
+        else:
+            final_score = 0.0
         
         passed = final_score >= self._threshold
         

@@ -10,6 +10,8 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location -LiteralPath $projectRoot
 
+# Windows GBK locale + old pip mis-reads UTF-8 requirements.txt; force UTF-8 mode.
+$env:PYTHONUTF8 = '1'
 # 由本脚本调起的 app.py 若命中单实例锁，不需要等待按键（脚本自会提示）
 $env:SERVER_NO_WAIT = '1'
 

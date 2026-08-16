@@ -122,6 +122,46 @@ class AudioService:
                 spoken,
                 room,
             )
+            # browser TTS 播放期间暂停连续 ASR 匹配，避免回采误表扬
+            intent_l = str(intent or "").strip().lower()
+            gate_entry = {
+                "question": "question",
+                "praise": "praise",
+                "hint": "hint",
+                "encourage": "praise",
+            }.get(intent_l)
+            if session_id and gate_entry:
+                try:
+                    from app.services import get_analysis_service
+
+                    get_analysis_service().update_system_audio_state(
+                        str(session_id),
+                        gate_entry,
+                        "playing",
+                    )
+                except Exception as gate_error:  # noqa: BLE001
+                    logger.debug(
+                        "[AudioService] browser TTS ASR 门控开始失败: %s",
+                        gate_error,
+                    )
+                if intent_l in ("praise", "hint", "encourage"):
+                    try:
+                        from app.services.keyword_listen import get_keyword_listen_service
+
+                        if intent_l == "praise":
+                            get_keyword_listen_service().note_teacher_praise(
+                                str(session_id)
+                            )
+                        else:
+                            get_keyword_listen_service().disarm(
+                                str(session_id),
+                                reason=f"system_speak:{intent_l}",
+                            )
+                    except Exception as kw_err:  # noqa: BLE001
+                        logger.debug(
+                            "[AudioService] keyword_listen disarm failed: %s",
+                            kw_err,
+                        )
             return True
         except Exception as exc:  # noqa: BLE001
             logger.error("[AudioService] 发送 browser 话术失败: %s", exc, exc_info=True)

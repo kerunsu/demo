@@ -97,3 +97,7 @@ teacher_frontend/dist/
 
 
 
+
+# Local Python virtualenv
+.venv/
+
