@@ -3,7 +3,7 @@
 // API路径已更新为 /api/robot/...
 // V3.2 新增：表情映射支持
 
-// 标准四槽 + 社交课点四槽（全局通用配置）
+// 机器人行为的唯一事件分类；服务端使用同一规则做最终校验。
 const STANDARD_AUX_TYPES = ['praise', 'question', 'hint', 'silent'];
 const SOCIAL_AUX_TYPES = [
   'social_greeting_intro',
@@ -16,36 +16,60 @@ window.ALL_AUX_TYPES = ALL_AUX_TYPES;
 
 // 全局状态（暴露到 window 供其他模块访问）
 let mappingData = null;
-let studentsData = [];
 let coursesData = [];
 let motionsData = [];
 let motionMetadata = {};
 let emotionsData = []; // NEW: 表情列表
-let currentProfile = 'default'; // 'default' 或 studentId
 let currentScope = { type: 'default', courseId: null, itemId: null }; // 当前选中的配置范围
+let dirtyAuxTypes = new Set();
+let idleDirty = false;
+let currentEditingConfig = null;
 
 // 暴露关键变量到 window（供 robot_emotion_mapping.js 访问）
 window.mappingData = null;
 window.currentScope = currentScope;
-window.currentProfile = currentProfile;
+window.currentProfile = 'default';
+window.markBehaviorDirty = (auxType) => dirtyAuxTypes.add(auxType);
 
 // ===== 初始化入口 =====
+async function fetchJsonOrThrow(url) {
+    const response = await fetch(url, { cache: 'no-store' });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body.success === false) {
+        throw new Error(body.error || `${url}: HTTP ${response.status}`);
+    }
+    return body;
+}
+
+async function fetchWithLegacyFallback(primaryUrl, legacyUrl, field) {
+    try {
+        const primary = await fetchJsonOrThrow(primaryUrl);
+        if (Array.isArray(primary[field])) return primary[field];
+        throw new Error(`${primaryUrl}: ${field} missing`);
+    } catch (primaryError) {
+        console.warn(`⚠️ ${primaryUrl} unavailable, falling back to ${legacyUrl}`, primaryError);
+        const legacy = await fetchJsonOrThrow(legacyUrl);
+        return Array.isArray(legacy[field]) ? legacy[field] : [];
+    }
+}
+
 async function initMappingView() {
     console.log('🎯 Initializing Mapping View V3.1...');
     
     try {
         // 并行加载所有数据
-        const [mappingRes, studentsRes, coursesRes, motionsRes] = await Promise.all([
-            fetch('/api/robot/mapping/full').then(r => r.json()),
-            fetch('/api/robot/students').then(r => r.json()),
-            fetch('/api/robot/courses').then(r => r.json()),
-            fetch('/api/robot/motions').then(r => r.json())
+        const [mappingRes, courses, motionsRes] = await Promise.all([
+            fetchJsonOrThrow('/api/robot/mapping/full'),
+            fetchWithLegacyFallback('/api/config/courses', '/api/robot/courses', 'courses'),
+            fetchJsonOrThrow('/api/robot/motions')
         ]);
 
         mappingData = mappingRes.mapping || {}; // 提取 mapping 字段
+        mappingData.defaults = mappingData.defaults || {};
+        mappingData.courses = mappingData.courses || {};
+        mappingData.students = mappingData.students || {};
         window.mappingData = mappingData; // 同步到 window
-        studentsData = studentsRes.students || [];
-        coursesData = coursesRes.courses || [];
+        coursesData = courses;
         motionsData = motionsRes.motions ? motionsRes.motions.map(m => m.name) : [];
         motionMetadata = Object.fromEntries(
             (motionsRes.motions || []).map((m) => [m.name, m.metadata || {}])
@@ -53,21 +77,23 @@ async function initMappingView() {
         window.motionMetadata = motionMetadata;
 
         console.log('✓ Data loaded:', { 
-            students: studentsData.length, 
             courses: coursesData.length, 
             motions: motionsData.length,
             hasDefaults: !!mappingData.defaults,
             mappingKeys: Object.keys(mappingData)
         });
 
-        // 初始化学生选择器
-        initProfileSelector();
-        
         // 构建配置树
         buildConfigTree();
         
         // 填充静态姿势下拉框
         populateIdleSelect();
+        document.getElementById('slot-idle')?.addEventListener('change', () => { idleDirty = true; });
+        document.getElementById('binding-root')?.addEventListener('input', (event) => {
+            const slot = event.target.closest?.('.action-slot');
+            const aux = slot?.querySelector?.('[id^="slot-"]')?.id?.replace('slot-', '');
+            if (aux && aux !== 'idle') dirtyAuxTypes.add(aux);
+        });
         
         // 加载默认配置（全局通用）
         loadScope({ type: 'default' });
@@ -78,7 +104,7 @@ async function initMappingView() {
     }
 }
 
-// ===== 学生/档案选择器 =====
+// 旧版学生档案配置已退出执行链。保留函数仅兼容缓存中的旧页面调用。
 function initProfileSelector() {
     const select = document.getElementById('profile-select');
     if (!select) {
@@ -86,32 +112,12 @@ function initProfileSelector() {
         return;
     }
     
-    select.innerHTML = '<option value="default">通用档案</option>';
-    
-    console.log('👥 Populating student selector with', studentsData.length, 'students');
-    
-    studentsData.forEach(student => {
-        const option = document.createElement('option');
-        option.value = student.id;
-        option.textContent = `${student.name} (ID: ${student.id})`;
-        select.appendChild(option);
-    });
-    
-    console.log('✅ Student selector populated');
+    select.innerHTML = '<option value="default">三级课程配置</option>';
+    select.disabled = true;
 }
 
 function switchProfile() {
-    const select = document.getElementById('profile-select');
-    currentProfile = select.value;
-    window.currentProfile = currentProfile; // 同步到 window
-    
-    console.log('📂 Switched profile to:', currentProfile);
-    
-    // 重建树（因为配置状态指示器会变化）
-    buildConfigTree();
-    
-    // 重新加载当前范围的配置
-    loadScope(currentScope);
+    window.currentProfile = 'default';
 }
 
 // ===== 配置树构建 =====
@@ -230,8 +236,6 @@ function createTreeNode({ label, scope, hasConfig, indent = false }) {
 function hasConfigAt(type, courseId = null, itemId = null) {
     if (!mappingData) return false;
 
-    if (currentProfile === 'default') {
-        // 检查通用档案
         if (type === 'default') {
             // 检查defaults中是否有非空配置
             const d = mappingData.defaults || {};
@@ -243,44 +247,19 @@ function hasConfigAt(type, courseId = null, itemId = null) {
             });
         } else if (type === 'course') {
             const c = mappingData.courses[courseId];
-            return c && STANDARD_AUX_TYPES.some((k) => {
+            return c && ALL_AUX_TYPES.some((k) => {
                 const v = c[k];
                 if (Array.isArray(v)) return v.length > 0;
                 if (v && typeof v === 'object' && Array.isArray(v.motions)) return v.motions.length > 0;
                 return false;
             });
         } else if (type === 'item') {
-            // 在通用档案下，item级配置不存在
-            return false;
-        }
-    } else {
-        // 检查学生档案
-        const studentConfig = mappingData.students[currentProfile];
-        if (!studentConfig) return false;
-
-        if (type === 'default') {
-            // 学生级别：检查是否有任何课程配置
-            return Object.keys(studentConfig).length > 0;
-        } else if (type === 'course') {
-            const c = studentConfig[courseId];
-            return c && STANDARD_AUX_TYPES.some((k) => {
-                const v = c[k];
-                if (Array.isArray(v)) return v.length > 0;
-                if (v && typeof v === 'object' && Array.isArray(v.motions)) return v.motions.length > 0;
-                return false;
-            });
-        } else if (type === 'item') {
-            const c = studentConfig[courseId];
-            if (!c || !c.items) return false;
-            const i = c.items[itemId];
-            return i && STANDARD_AUX_TYPES.some((k) => {
+            const i = mappingData.courses?.[courseId]?.items?.[itemId];
+            return i && ALL_AUX_TYPES.some((k) => {
                 const v = i[k];
-                if (Array.isArray(v)) return v.length > 0;
-                if (v && typeof v === 'object' && Array.isArray(v.motions)) return v.motions.length > 0;
-                return false;
+                return Array.isArray(v) ? v.length > 0 : !!(v && typeof v === 'object' && (v.motions?.length || v.emotion || v.animation));
             });
         }
-    }
     
     return false;
 }
@@ -288,14 +267,18 @@ function hasConfigAt(type, courseId = null, itemId = null) {
 // ===== 加载指定范围的配置 =====
 function loadScope(scope) {
     currentScope = scope;
+    dirtyAuxTypes = new Set();
+    idleDirty = false;
     window.currentScope = currentScope; // 同步到 window
-    console.log('📖 Loading scope:', scope, 'Profile:', currentProfile);
+    console.log('📖 Loading behavior scope:', scope);
 
     // 更新标题
     updateScopeTitle(scope);
+    updateVisibleBehaviorSlots(scope);
 
     // 获取配置数据
     const config = getConfigForScope(scope);
+    currentEditingConfig = config;
 
     // 渲染到动作插槽
     renderActionSlots(config);
@@ -304,7 +287,6 @@ function loadScope(scope) {
 function updateScopeTitle(scope) {
     const titleEl = document.getElementById('current-scope-title');
     
-    if (currentProfile === 'default') {
         if (scope.type === 'default') {
             titleEl.textContent = '全局通用配置';
         } else if (scope.type === 'course') {
@@ -315,21 +297,45 @@ function updateScopeTitle(scope) {
             const item = course?.items?.find(i => i.id == scope.itemId);
             titleEl.textContent = `${course?.title || '课程'} - Item ${scope.itemId}: ${item?.name || ''}`;
         }
-    } else {
-        const student = studentsData.find(s => s.id == currentProfile);
-        const prefix = `[${student?.name || '学生'}] `;
-        
-        if (scope.type === 'default') {
-            titleEl.textContent = prefix + '个人档案';
-        } else if (scope.type === 'course') {
-            const course = coursesData.find(c => c.id == scope.courseId);
-            titleEl.textContent = prefix + `${course?.title || '课程'} - 课程通用`;
-        } else if (scope.type === 'item') {
-            const course = coursesData.find(c => c.id == scope.courseId);
-            const item = course?.items?.find(i => i.id == scope.itemId);
-            titleEl.textContent = prefix + `${course?.title || '课程'} - Item ${scope.itemId}`;
-        }
+}
+
+function allowedAuxTypesForScope(scope) {
+    if (scope.type === 'default') return ALL_AUX_TYPES;
+    const course = coursesData.find((c) => String(c.id) === String(scope.courseId));
+    if (String(course?.type || '').toLowerCase() !== 'social') return STANDARD_AUX_TYPES;
+    if (scope.type === 'item') {
+        const item = course?.items?.find((i) => String(i.id) === String(scope.itemId));
+        const role = String(item?.socialRole || item?.config?.socialRole || '').toLowerCase();
+        if (role === 'greeting') return SOCIAL_AUX_TYPES.slice(0, 2);
+        if (role === 'farewell') return SOCIAL_AUX_TYPES.slice(2);
     }
+    return SOCIAL_AUX_TYPES;
+}
+
+function updateVisibleBehaviorSlots(scope) {
+    const allowed = new Set(allowedAuxTypesForScope(scope));
+    ALL_AUX_TYPES.forEach((auxType) => {
+        const slot = document.getElementById(`slot-${auxType}`)?.closest('.action-slot');
+        if (slot) {
+            slot.hidden = !allowed.has(auxType);
+            let reset = slot.querySelector('.btn-reset-parent');
+            if (scope.type !== 'default') {
+                if (!reset) {
+                    reset = document.createElement('button');
+                    reset.type = 'button';
+                    reset.className = 'btn-add-tag btn-reset-parent';
+                    reset.textContent = '↩ 恢复上一级';
+                    reset.addEventListener('click', () => resetBehaviorToParent(auxType).catch((error) => alert(`恢复失败: ${error.message}`)));
+                    slot.appendChild(reset);
+                }
+                reset.hidden = !allowed.has(auxType);
+            } else if (reset) {
+                reset.remove();
+            }
+        }
+    });
+    const idle = document.getElementById('slot-idle')?.closest('.action-slot');
+    if (idle) idle.hidden = scope.type !== 'default';
 }
 
 function getConfigForScope(scope) {
@@ -360,34 +366,17 @@ function getConfigForScope(scope) {
         return out;
     }
     
-    if (currentProfile === 'default') {
         if (scope.type === 'default') {
             const out = pickAux(mappingData.defaults, true);
             out.idle = mappingData.defaults?.idle || null;
             return out;
         } else if (scope.type === 'course') {
             const c = mappingData.courses?.[scope.courseId];
-            return pickAux(c, false);
+            return pickAux(c, true);
         } else if (scope.type === 'item') {
-            // 通用档案下没有item级配置
-            return empty;
+            const i = mappingData.courses?.[scope.courseId]?.items?.[scope.itemId];
+            return pickAux(i, true);
         }
-    } else {
-        // 学生档案
-        const studentConfig = mappingData.students?.[currentProfile] || {};
-        
-        if (scope.type === 'default') {
-            // 学生根级别没有配置，显示为空
-            return empty;
-        } else if (scope.type === 'course') {
-            const c = studentConfig[scope.courseId];
-            return pickAux(c, false);
-        } else if (scope.type === 'item') {
-            const c = studentConfig[scope.courseId];
-            const i = c?.items?.[scope.itemId];
-            return pickAux(i, false);
-        }
-    }
     
     return empty;
 }
@@ -396,21 +385,17 @@ function onAnimationChange() {
     const select = document.getElementById('animation-praise');
     if (!select || !currentScope) return;
     const value = String(select.value || '');
+    dirtyAuxTypes.add('praise');
     let parent = null;
-    if (currentProfile === 'default' && currentScope.type === 'default') {
+    if (currentScope.type === 'default') {
         mappingData.defaults = mappingData.defaults || {};
         parent = mappingData.defaults;
-    } else if (currentProfile === 'default' && currentScope.type === 'course') {
+    } else if (currentScope.type === 'course') {
         mappingData.courses = mappingData.courses || {};
         parent = mappingData.courses[currentScope.courseId] = mappingData.courses[currentScope.courseId] || {};
-    } else if (currentProfile !== 'default' && currentScope.type === 'course') {
-        mappingData.students = mappingData.students || {};
-        mappingData.students[currentProfile] = mappingData.students[currentProfile] || {};
-        parent = mappingData.students[currentProfile][currentScope.courseId] = mappingData.students[currentProfile][currentScope.courseId] || {};
-    } else if (currentProfile !== 'default' && currentScope.type === 'item') {
-        mappingData.students = mappingData.students || {};
-        mappingData.students[currentProfile] = mappingData.students[currentProfile] || {};
-        const course = mappingData.students[currentProfile][currentScope.courseId] = mappingData.students[currentProfile][currentScope.courseId] || {};
+    } else if (currentScope.type === 'item') {
+        mappingData.courses = mappingData.courses || {};
+        const course = mappingData.courses[currentScope.courseId] = mappingData.courses[currentScope.courseId] || {};
         course.items = course.items || {};
         parent = course.items[currentScope.itemId] = course.items[currentScope.itemId] || {};
     }
@@ -506,9 +491,10 @@ function confirmMotionPick() {
     if (!pendingMotionAdd) return;
     
     const { auxType } = pendingMotionAdd;
+    dirtyAuxTypes.add(auxType);
     
     // 添加到当前配置
-    const config = getConfigForScope(currentScope);
+    const config = currentEditingConfig || getConfigForScope(currentScope);
     if (!config[auxType]) config[auxType] = [];
     config[auxType].push(selectedMotion);
     if (typeof window.applyImportedTimingDefaults === 'function') {
@@ -524,7 +510,8 @@ function confirmMotionPick() {
 }
 
 function removeMotionFromSlot(auxType, index) {
-    const config = getConfigForScope(currentScope);
+    dirtyAuxTypes.add(auxType);
+    const config = currentEditingConfig || getConfigForScope(currentScope);
     config[auxType].splice(index, 1);
     renderActionSlots(config);
     
@@ -533,7 +520,7 @@ function removeMotionFromSlot(auxType, index) {
 
 // ===== 测试动作 =====
 function testAction(auxType, triggerButton = null) {
-    const config = getConfigForScope(currentScope);
+    const config = currentEditingConfig || getConfigForScope(currentScope);
 
     if (typeof window.testBehaviorSequence === 'function') {
         window.testBehaviorSequence(auxType, config, triggerButton);
@@ -578,7 +565,7 @@ function testAction(auxType, triggerButton = null) {
 
 // ===== 保存配置 =====
 async function saveCurrentMapping() {
-    const config = getConfigForScope(currentScope);
+    const config = currentEditingConfig || getConfigForScope(currentScope);
     
     // 获取当前静态姿势选择
     const idleValue = document.getElementById('slot-idle').value;
@@ -593,39 +580,28 @@ async function saveCurrentMapping() {
     console.log('💾 Saving config:', currentScope, config, 'emotions:', emotions);
     
     try {
-        if (currentProfile === 'default') {
-            // 保存到通用档案
-            if (currentScope.type === 'default') {
+        const allowed = allowedAuxTypesForScope(currentScope);
+        const auxTypes = allowed.filter((type) => dirtyAuxTypes.has(type));
+        if (!auxTypes.length && !(currentScope.type === 'default' && idleDirty)) {
+            alert('当前没有需要保存的修改');
+            return;
+        }
+        if (currentScope.type === 'default') {
                 // 保存defaults（包含表情 + 社交四槽）
                 await Promise.all([
-                    saveDefaultMapping('idle', config.idle),
-                    ...ALL_AUX_TYPES.map((k) =>
+                    ...(idleDirty ? [saveDefaultMapping('idle', config.idle)] : []),
+                    ...auxTypes.map((k) =>
                         saveDefaultMapping(k, config[k] || [], emotions[k], config.__sequence?.[k] || {}, config.__animation?.[k] || '')
                     ),
                 ]);
-            } else if (currentScope.type === 'course') {
-                // 保存课程级（包含表情）
-                await Promise.all(
-                    STANDARD_AUX_TYPES.map((k) =>
-                        saveCourseMapping(currentScope.courseId, k, config[k] || [], emotions[k], config.__sequence?.[k] || {}, config.__animation?.[k] || '')
-                    )
-                );
-            }
-        } else {
-            // 保存到学生档案
-            if (currentScope.type === 'course') {
-                await Promise.all(
-                    STANDARD_AUX_TYPES.map((k) =>
-                        saveStudentCourseMapping(currentProfile, currentScope.courseId, k, config[k] || [], emotions[k], config.__sequence?.[k] || {}, config.__animation?.[k] || '')
-                    )
-                );
-            } else if (currentScope.type === 'item') {
-                await Promise.all(
-                    STANDARD_AUX_TYPES.map((k) =>
-                        saveItemMapping(currentProfile, currentScope.courseId, currentScope.itemId, k, config[k] || [], emotions[k], config.__sequence?.[k] || {}, config.__animation?.[k] || '')
-                    )
-                );
-            }
+        } else if (currentScope.type === 'course') {
+            await Promise.all(auxTypes.map((k) =>
+                saveCourseMapping(currentScope.courseId, k, config[k] || [], emotions[k], config.__sequence?.[k] || {}, config.__animation?.[k] || '')
+            ));
+        } else if (currentScope.type === 'item') {
+            await Promise.all(auxTypes.map((k) =>
+                saveCourseItemMapping(currentScope.courseId, currentScope.itemId, k, config[k] || [], emotions[k], config.__sequence?.[k] || {}, config.__animation?.[k] || '')
+            ));
         }
         
         // 重新加载映射数据
@@ -654,14 +630,14 @@ async function saveDefaultMapping(auxType, value, emotion, sequence = {}, animat
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ motionName: value })
-        }).then(r => r.json());
+        }).then(assertBehaviorResponse);
     } else {
         // 包含表情数据
         return fetch(`/api/robot/mapping/defaults/${auxType}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ motions: value, emotion: emotion, sequence, animation })
-        }).then(r => r.json());
+        }).then(assertBehaviorResponse);
     }
 }
 
@@ -670,24 +646,43 @@ async function saveCourseMapping(courseId, auxType, motions, emotion, sequence =
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ motions, emotion, sequence, animation })
-    }).then(r => r.json());
+    }).then(assertBehaviorResponse);
 }
 
-async function saveStudentCourseMapping(studentId, courseId, auxType, motions, emotion, sequence = {}, animation = '') {
-    return fetch(`/api/robot/mapping/student/${studentId}/course/${courseId}/${auxType}`, {
+async function saveCourseItemMapping(courseId, itemId, auxType, motions, emotion, sequence = {}, animation = '') {
+    return fetch(`/api/robot/mapping/course/${courseId}/item/${itemId}/${auxType}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ motions, emotion, sequence, animation })
-    }).then(r => r.json());
+    }).then(assertBehaviorResponse);
 }
 
-async function saveItemMapping(studentId, courseId, itemId, auxType, motions, emotion, sequence = {}, animation = '') {
-    return fetch(`/api/robot/mapping/item/${studentId}/${courseId}/${itemId}/${auxType}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ motions, emotion, sequence, animation })
-    }).then(r => r.json());
+async function assertBehaviorResponse(response) {
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body.success === false) {
+        throw new Error(body.error || body.message || `HTTP ${response.status}`);
+    }
+    return body;
 }
+
+async function resetBehaviorToParent(auxType) {
+    if (currentScope.type === 'default') {
+        alert('全局层是最终兜底，不能恢复上一级');
+        return;
+    }
+    const url = currentScope.type === 'course'
+        ? `/api/robot/mapping/course/${currentScope.courseId}/${auxType}`
+        : `/api/robot/mapping/course/${currentScope.courseId}/item/${currentScope.itemId}/${auxType}`;
+    const response = await fetch(url, { method: 'DELETE' });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body.success === false) throw new Error(body.error || `HTTP ${response.status}`);
+    const mappingRes = await fetchJsonOrThrow('/api/robot/mapping/full');
+    mappingData = mappingRes.mapping || {};
+    window.mappingData = mappingData;
+    loadScope(currentScope);
+}
+
+window.resetBehaviorToParent = resetBehaviorToParent;
 
 // ===== 静态姿势下拉框填充 =====
 function populateIdleSelect() {

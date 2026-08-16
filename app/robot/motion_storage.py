@@ -243,7 +243,9 @@ def load_document() -> Dict[str, Any]:
     """读取并返回归一化后的动作文档。"""
     with _document_lock:
         try:
-            with open(MOTIONS_FILE, 'r', encoding='utf-8') as f:
+            # Windows editors/PowerShell may add a UTF-8 BOM. Accept it while
+            # keeping all subsequent atomic writes as plain UTF-8.
+            with open(MOTIONS_FILE, 'r', encoding='utf-8-sig') as f:
                 raw = json.load(f)
             return _normalize_document(raw)
         except Exception as e:

@@ -1,8 +1,8 @@
 """
 课程动作映射解析器
-负责从多层级配置中查找匹配的动作和表情
+负责从三层配置中查找匹配的动作和表情
 
-查找优先级：项目级 > 学生-课程级 > 课程级 > 默认级
+查找优先级：课点级 > 课程级 > 全局默认级
 """
 import json
 import os
@@ -55,11 +55,12 @@ class MappingResolver:
     """
     课程动作映射解析器
     
-    支持四级映射配置：
-    1. 项目级（最高优先级）：特定学生 + 课程 + 项目
-    2. 学生-课程级：特定学生 + 课程
-    3. 课程级：特定课程
-    4. 默认级：通用动作
+    支持三级映射配置：
+    1. 课点级（最高优先级）：特定课程 + 课点
+    2. 课程级：特定课程
+    3. 全局默认级：所有课程的兜底
+
+    ``students`` 旧节点只为数据安全保留，不再参与运行时解析。
     """
     
     def __init__(self, course_map_file: str = COURSE_MAP_FILE):
@@ -76,7 +77,9 @@ class MappingResolver:
     def _load_course_map(self) -> Dict[str, Any]:
         """加载映射配置"""
         try:
-            with open(self._course_map_file, 'r', encoding='utf-8') as f:
+            # utf-8-sig accepts both regular UTF-8 and files saved with a
+            # Windows UTF-8 BOM, avoiding a silent fallback to an empty map.
+            with open(self._course_map_file, 'r', encoding='utf-8-sig') as f:
                 return json.load(f)
         except Exception as e:
             logger.error(f"加载 course_map.json 失败: {e}")
@@ -134,8 +137,6 @@ class MappingResolver:
             return 'praise'
         if aux.get('hint') is True:
             return 'hint'
-        if aux.get('question') is True:
-            return 'question'
         if aux.get('socialGreetingIntro') is True:
             return 'social_greeting_intro'
         if aux.get('socialGreetingPlay') is True:
@@ -144,6 +145,8 @@ class MappingResolver:
             return 'social_farewell_bye'
         if aux.get('socialFarewellReply') is True:
             return 'social_farewell_reply'
+        if aux.get('question') is True:
+            return 'question'
         return 'silent'
     
     def find_motions(
@@ -190,31 +193,20 @@ class MappingResolver:
         with self._map_lock:
             course_map = copy.deepcopy(self._course_map)
 
-        sid = str(student_id) if student_id else None
         cid = str(course_id)
         iid = str(item_id) if item_id is not None else None
         
-        # 1. 项目级（最高优先级）
-        if sid and iid:
+        # 1. 课点级（最高优先级）
+        if iid:
             data = self._get_nested(
                 course_map,
-                ['students', sid, cid, 'items', iid, aux_type]
+                ['courses', cid, 'items', iid, aux_type]
             )
             if self._layer_has_config(data):
-                logger.debug(f"✓ 找到项目级映射: student={sid}, course={cid}, item={iid}, type={aux_type}")
+                logger.debug(f"✓ 找到课点级映射: course={cid}, item={iid}, type={aux_type}")
                 return self._normalize_action_data(data)
-        
-        # 2. 学生-课程级
-        if sid:
-            data = self._get_nested(
-                course_map,
-                ['students', sid, cid, aux_type]
-            )
-            if self._layer_has_config(data):
-                logger.debug(f"✓ 找到学生-课程级映射: student={sid}, course={cid}, type={aux_type}")
-                return self._normalize_action_data(data)
-        
-        # 3. 课程级
+
+        # 2. 课程级
         data = self._get_nested(
             course_map,
             ['courses', cid, aux_type]
@@ -223,7 +215,7 @@ class MappingResolver:
             logger.debug(f"✓ 找到课程级映射: course={cid}, type={aux_type}")
             return self._normalize_action_data(data)
         
-        # 4. 默认级（允许 silent：无动作但有 emotion）
+        # 3. 全局默认级（允许 silent：无动作但有 emotion）
         data = self._get_nested(
             course_map,
             ['defaults', aux_type]
@@ -232,7 +224,7 @@ class MappingResolver:
             logger.debug(f"✓ 找到默认级映射: type={aux_type}")
             return self._normalize_action_data(data)
         
-        logger.warning(f"⚠️ 未找到匹配映射: student={sid}, course={cid}, item={iid}, type={aux_type}")
+        logger.warning(f"⚠️ 未找到匹配映射: course={cid}, item={iid}, type={aux_type}")
         return {
             "motions": [],
             "emotion": _default_emotion_name(),
@@ -386,6 +378,46 @@ class MappingResolver:
         with self._map_lock:
             if self._get_nested(self._course_map, ['courses', cid, aux_type]):
                 del self._course_map['courses'][cid][aux_type]
+                self._save_course_map()
+
+    # ========== 课点级动作 CRUD（三级模型） ==========
+
+    def update_course_item_motions(
+        self,
+        course_id: int,
+        item_id: int,
+        aux_type: str,
+        motions: List[str],
+        emotion: Optional[str] = None,
+        sequence: Optional[Dict[str, Any]] = None,
+        animation: Optional[str] = None,
+    ) -> None:
+        """更新课程课点覆盖；未配置字段继续由课程/全局层兜底。"""
+        cid, iid = str(course_id), str(item_id)
+        with self._map_lock:
+            courses = self._course_map.setdefault('courses', {})
+            course = courses.setdefault(cid, {})
+            items = course.setdefault('items', {})
+            item = items.setdefault(iid, {})
+            item[aux_type] = {
+                'motions': motions or [],
+                'emotion': emotion or _default_emotion_name(),
+                'animation': str(animation or '').strip(),
+                'sequence': _normalize_sequence(sequence),
+            }
+            self._save_course_map()
+
+    def delete_course_item_motions(
+        self,
+        course_id: int,
+        item_id: int,
+        aux_type: str,
+    ) -> None:
+        cid, iid = str(course_id), str(item_id)
+        with self._map_lock:
+            item = self._get_nested(self._course_map, ['courses', cid, 'items', iid])
+            if isinstance(item, dict) and aux_type in item:
+                del item[aux_type]
                 self._save_course_map()
     
     # ========== 学生-课程级动作 CRUD ==========

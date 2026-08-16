@@ -87,6 +87,7 @@ function onEmotionChange(auxType) {
     const select = document.getElementById(`emotion-${auxType}`);
     if (select) {
         window.currentEmotions[auxType] = select.value;
+        if (typeof window.markBehaviorDirty === 'function') window.markBehaviorDirty(auxType);
         console.log(`表情已更新: ${auxType} → ${select.value}`);
     }
 }
@@ -125,7 +126,7 @@ function loadEmotionsForScope(scope) {
         return;
     }
     
-    console.log('📥 加载表情配置:', scope, 'profile:', window.currentProfile);
+    console.log('📥 加载三级表情配置:', scope);
     
     const auxTypes = emotionAuxTypes();
     auxTypes.forEach(type => {
@@ -146,24 +147,14 @@ function loadEmotionsForScope(scope) {
 // ===== 辅助函数：获取配置数据 =====
 function getConfigData(scope, auxType) {
     const data = window.mappingData;
-    const profile = window.currentProfile;
-    
     if (!data) return null;
     
     if (scope.type === 'default') {
         return data.defaults?.[auxType];
     } else if (scope.type === 'course') {
-        if (profile && profile !== 'default') {
-            // 学生-课程级配置
-            return data.students?.[profile]?.[scope.courseId]?.[auxType];
-        } else {
-            // 通用课程级配置
-            return data.courses?.[scope.courseId]?.[auxType];
-        }
+        return data.courses?.[scope.courseId]?.[auxType];
     } else if (scope.type === 'item') {
-        if (profile && profile !== 'default') {
-            return data.students?.[profile]?.[scope.courseId]?.items?.[scope.itemId]?.[auxType];
-        }
+        return data.courses?.[scope.courseId]?.items?.[scope.itemId]?.[auxType];
     }
     
     return null;

@@ -32,6 +32,21 @@ def test_motion_speed_defaults_scales_and_persists(tmp_path, monkeypatch):
             motion_storage.set_motion_speed("wave", invalid)
 
 
+def test_motion_library_accepts_windows_utf8_bom(tmp_path, monkeypatch):
+    from app.robot import motion_storage
+
+    target = tmp_path / "motions.json"
+    target.write_bytes(
+        b"\xef\xbb\xbf" + json.dumps({
+            "version": 2,
+            "motions": {"wave": [{"time": 0, "pose": {}, "moveMs": 100}]},
+        }).encode("utf-8")
+    )
+    monkeypatch.setattr(motion_storage, "MOTIONS_FILE", str(target))
+
+    assert "wave" in motion_storage.load_document()["motions"]
+
+
 def test_motion_atomic_write_failure_keeps_previous_file(tmp_path, monkeypatch):
     from app.robot import motion_storage
 

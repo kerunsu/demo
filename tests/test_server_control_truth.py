@@ -292,6 +292,8 @@ def test_server_control_frontend_tracks_terminal_instead_of_trusting_http_200():
     assert "/api/robot/control/status" in behavior
     assert "data.statusUrl" in behavior
     assert "testBehaviorSequence(auxType, config, triggerButton)" in mapping
+    assert "fetchWithLegacyFallback('/api/config/courses', '/api/robot/courses', 'courses')" in mapping
+    assert "fetchWithLegacyFallback('/api/students', '/api/robot/students', 'students')" in mapping
     assert "robot.lastCommand" in monitor
     assert "/api/v2/control/actions/stop-robot" in monitor
     assert "/api/v2/control/actions/stop-audio" in monitor

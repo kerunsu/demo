@@ -121,115 +121,7 @@
     }
   },
   "courses": {
-    "1": {
-      "praise": {
-        "motions": [],
-        "emotion": "v3_speak_excitedly_short.mp4",
-        "animation": "",
-        "sequence": {
-          "expressionMediaId": "",
-          "expressionDurationMs": 0,
-          "motionOffsetMs": 0,
-          "audio": {
-            "offsetMs": 0
-          }
-        }
-      },
-      "hint": {
-        "motions": [],
-        "emotion": "v3_speak_bye.mp4",
-        "animation": "",
-        "sequence": {
-          "expressionMediaId": "",
-          "expressionDurationMs": 0,
-          "motionOffsetMs": 0,
-          "audio": {
-            "offsetMs": 0
-          }
-        }
-      },
-      "question": {
-        "motions": [],
-        "emotion": "v3_speak_lookdown_namecall.mp4",
-        "animation": "",
-        "sequence": {
-          "expressionMediaId": "",
-          "expressionDurationMs": 0,
-          "motionOffsetMs": 0,
-          "audio": {
-            "offsetMs": 0
-          }
-        }
-      },
-      "silent": {
-        "motions": [],
-        "emotion": "v3_speak_bye.mp4",
-        "animation": "",
-        "sequence": {
-          "expressionMediaId": "",
-          "expressionDurationMs": 0,
-          "motionOffsetMs": 0,
-          "audio": {
-            "offsetMs": 0
-          }
-        }
-      }
-    },
-    "5": {
-      "praise": {
-        "motions": [],
-        "emotion": "v3_speak_excitedly_short.mp4",
-        "animation": "",
-        "sequence": {
-          "expressionMediaId": "",
-          "expressionDurationMs": 0,
-          "motionOffsetMs": 0,
-          "audio": {
-            "offsetMs": 0
-          }
-        }
-      },
-      "question": {
-        "motions": [],
-        "emotion": "v3_speak_lookdown_sort.mp4",
-        "animation": "",
-        "sequence": {
-          "expressionMediaId": "",
-          "expressionDurationMs": 0,
-          "motionOffsetMs": 0,
-          "audio": {
-            "offsetMs": 0
-          }
-        }
-      },
-      "hint": {
-        "motions": [],
-        "emotion": "v3_speak_bye.mp4",
-        "animation": "",
-        "sequence": {
-          "expressionMediaId": "",
-          "expressionDurationMs": 0,
-          "motionOffsetMs": 0,
-          "audio": {
-            "offsetMs": 0
-          }
-        }
-      },
-      "silent": {
-        "motions": [],
-        "emotion": "v3_speak_bye.mp4",
-        "animation": "",
-        "sequence": {
-          "expressionMediaId": "",
-          "expressionDurationMs": 0,
-          "motionOffsetMs": 0,
-          "audio": {
-            "offsetMs": 0
-          }
-        }
-      }
-    },
-    "2": {
+    "6": {
       "praise": {
         "motions": [],
         "emotion": "v3_speak_excitedly_short.mp4",
@@ -281,9 +173,95 @@
             "offsetMs": 0
           }
         }
+      },
+      "items": {
+        "14": {
+          "praise": {
+            "motions": [],
+            "emotion": "v3_idle_sleepy2.mp4",
+            "animation": "",
+            "sequence": {
+              "expressionMediaId": "",
+              "expressionDurationMs": 0,
+              "motionOffsetMs": 0,
+              "audio": {
+                "offsetMs": 0
+              }
+            }
+          }
+        },
+        "20": {
+          "praise": {
+            "motions": [],
+            "emotion": "v3_idle_sleepy2.mp4",
+            "animation": "",
+            "sequence": {
+              "expressionMediaId": "",
+              "expressionDurationMs": 0,
+              "motionOffsetMs": 0,
+              "audio": {
+                "offsetMs": 0
+              }
+            }
+          }
+        }
       }
     },
-    "4": {
+    "7": {
+      "praise": {
+        "motions": [],
+        "emotion": "v3_speak_excitedly_short.mp4",
+        "animation": "",
+        "sequence": {
+          "expressionMediaId": "",
+          "expressionDurationMs": 0,
+          "motionOffsetMs": 0,
+          "audio": {
+            "offsetMs": 0
+          }
+        }
+      },
+      "question": {
+        "motions": [],
+        "emotion": "v3_speak_lookdown_sound.mp4",
+        "animation": "",
+        "sequence": {
+          "expressionMediaId": "",
+          "expressionDurationMs": 0,
+          "motionOffsetMs": 0,
+          "audio": {
+            "offsetMs": 0
+          }
+        }
+      },
+      "hint": {
+        "motions": [],
+        "emotion": "v3_speak_bye.mp4",
+        "animation": "",
+        "sequence": {
+          "expressionMediaId": "",
+          "expressionDurationMs": 0,
+          "motionOffsetMs": 0,
+          "audio": {
+            "offsetMs": 0
+          }
+        }
+      },
+      "silent": {
+        "motions": [],
+        "emotion": "v3_speak_bye.mp4",
+        "animation": "",
+        "sequence": {
+          "expressionMediaId": "",
+          "expressionDurationMs": 0,
+          "motionOffsetMs": 0,
+          "audio": {
+            "offsetMs": 0
+          }
+        }
+      }
+    },
+    "8": {
       "praise": {
         "motions": [],
         "emotion": "v3_speak_excitedly_short.mp4",
@@ -337,7 +315,7 @@
         }
       }
     },
-    "3": {
+    "9": {
       "praise": {
         "motions": [],
         "emotion": "v3_speak_excitedly_short.mp4",
@@ -353,7 +331,7 @@
       },
       "question": {
         "motions": [],
-        "emotion": "v3_speak_lookdown_sound.mp4",
+        "emotion": "v3_speak_lookdown_sort.mp4",
         "animation": "",
         "sequence": {
           "expressionMediaId": "",
@@ -392,14 +370,5 @@
       }
     }
   },
-  "students": {
-    "102": {
-      "1": {
-        "praise": [],
-        "hint": [],
-        "question": [],
-        "silent": []
-      }
-    }
-  }
+  "students": {}
 }

@@ -127,7 +127,7 @@ def test_phase1_existing_recording_timeline_columns_are_frozen():
     ]
 
 
-def test_phase1_mapping_resolver_preserves_aux_slots_and_precedence(tmp_path):
+def test_phase1_mapping_resolver_uses_global_course_item_precedence(tmp_path):
     mapping_path = tmp_path / "course_map.json"
     mapping_path.write_text(
         json.dumps(
@@ -136,7 +136,10 @@ def test_phase1_mapping_resolver_preserves_aux_slots_and_precedence(tmp_path):
                     "question": ["default-question"],
                     "praise": ["default-praise"],
                 },
-                "courses": {"7": {"question": ["course-question"]}},
+                "courses": {"7": {
+                    "question": ["course-question"],
+                    "items": {"11": {"question": ["item-question"]}},
+                }},
                 "students": {
                     "3": {
                         "7": {
@@ -156,8 +159,28 @@ def test_phase1_mapping_resolver_preserves_aux_slots_and_precedence(tmp_path):
     assert resolver.parse_aux_type({"socialGreetingIntro": True}) == "social_greeting_intro"
     assert resolver.parse_aux_type({}) == "silent"
     assert resolver.find_mapping(3, 7, 11, "question")["motions"] == ["item-question"]
-    assert resolver.find_mapping(3, 7, 12, "question")["motions"] == [
-        "student-course-question"
-    ]
+    # 旧 students 数据保留但已退出机器人执行链。
+    assert resolver.find_mapping(3, 7, 12, "question")["motions"] == ["course-question"]
     assert resolver.find_mapping(4, 7, 12, "question")["motions"] == ["course-question"]
     assert resolver.find_mapping(4, 8, 12, "question")["motions"] == ["default-question"]
+
+
+def test_behavior_event_ownership_separates_social_from_ordering():
+    from app.robot.behavior_events import allowed_aux_types, is_aux_allowed
+
+    assert allowed_aux_types("ordering") == ("praise", "question", "hint", "silent")
+    assert not is_aux_allowed("ordering", "social_greeting_intro")
+    assert allowed_aux_types("social", social_role="greeting") == (
+        "social_greeting_intro", "social_greeting_play",
+    )
+    assert not is_aux_allowed("social", "social_farewell_bye", social_role="greeting")
+
+
+def test_mapping_resolver_accepts_windows_utf8_bom(tmp_path):
+    mapping_path = tmp_path / "course_map.json"
+    payload = {"defaults": {"question": ["ask"]}, "courses": {}, "students": {}}
+    mapping_path.write_bytes(b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8"))
+
+    resolver = MappingResolver(str(mapping_path))
+
+    assert resolver.find_mapping(None, 1, None, "question")["motions"] == ["ask"]

@@ -173,12 +173,10 @@
                     <div class="mapping-workspace">
                         <!-- 左侧：导航区域 -->
                         <aside class="mapping-nav glass-panel">
-                            <div class="profile-selector">
-                                <label>学生/档案选择:</label>
-                                <select id="profile-select" onchange="switchProfile()">
-                                    <option value="default">通用档案</option>
-                                </select>
-                            </div>
+                <div class="profile-selector">
+                    <label>配置优先级</label>
+                    <select id="profile-select" disabled><option value="default">全局 → 课程 → 课点</option></select>
+                </div>
 
                             <div class="config-tree" id="config-tree">
                                 <!-- 动态生成树形结构 -->
@@ -303,7 +301,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
     <!-- 应用脚本 -->
     <script src="/static/robot/js/robot_control.js"></script>
-    <script src="/static/robot/js/robot_mapping.js"></script>
-    <script src="/static/robot/js/robot_emotion_mapping.js"></script>
+    <script src="/static/robot/js/robot_mapping.js?v=20260813-three-layer-behavior"></script>
+    <script src="/static/robot/js/robot_emotion_mapping.js?v=20260813-three-layer-behavior"></script>
 </body>
 </html>

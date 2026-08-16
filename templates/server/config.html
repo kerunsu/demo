@@ -225,7 +225,7 @@
         <div>
           <div class="cc-breadcrumb">交互内容 / 行为绑定</div>
           <h1 class="cc-page-title">行为绑定</h1>
-          <p class="cc-page-subtitle">四级覆盖 · praise / hint / question / silent · 数据仍写 <code>course_map.json</code></p>
+          <p class="cc-page-subtitle">三级覆盖：全局兜底 → 课程覆盖 → 课点覆盖 · 自动触发与教师触发共用机器人状态机</p>
         </div>
         <div class="cc-head-actions">
           <a class="cc-btn soft" href="/robot" target="_blank" rel="noopener">打开实时控制</a>
@@ -240,10 +240,8 @@
       <div class="cc-binding mapping-workspace" id="binding-root">
         <aside class="mapping-nav glass-panel">
           <div class="profile-selector">
-            <label>学生/档案选择:</label>
-            <select id="profile-select" onchange="switchProfile()">
-              <option value="default">通用档案</option>
-            </select>
+            <label>配置优先级</label>
+            <select id="profile-select" disabled><option value="default">全局 → 课程 → 课点</option></select>
           </div>
           <div class="config-tree" id="config-tree"></div>
         </aside>
@@ -252,6 +250,7 @@
             <h2 id="current-scope-title">全局通用配置</h2>
             <button type="button" class="btn-save" onclick="saveCurrentMapping()">保存配置</button>
           </div>
+          <div class="cc-notice info" style="margin-bottom:12px;">只保存本次修改的行为。课程或课点未配置时自动继承上一级；要取消覆盖，请点击对应行为的“恢复上一级”。</div>
           <div class="action-slots">
             <div class="action-slot">
               <div class="slot-header">
@@ -811,8 +810,8 @@
   <script src="/static/js/config_content_phrases.js"></script>
   <script src="/static/js/config_content_workbench.js"></script>
   <script src="/static/js/config_algo.js"></script>
-  <script src="/static/robot/js/robot_mapping.js"></script>
-  <script src="/static/robot/js/robot_emotion_mapping.js"></script>
+  <script src="/static/robot/js/robot_mapping.js?v=20260813-three-layer-behavior"></script>
+  <script src="/static/robot/js/robot_emotion_mapping.js?v=20260813-three-layer-behavior"></script>
   <script src="/static/js/config_behavior_sequence.js"></script>
   <script src="/static/js/config_phase5.js"></script>
 </body>

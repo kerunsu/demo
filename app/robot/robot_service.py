@@ -2589,7 +2589,44 @@ class RobotService:
         
         # 解析动作类型
         aux_type = self._mapping_resolver.parse_aux_type(aux)
-        logger.info(f"📥 课程事件: student={student_id}, course={course_id}, item={item_id}, auxType={aux_type}")
+        course_type = str(data.get('courseType') or data.get('course_type') or '').strip().lower()
+        social_role = None
+        try:
+            from database.models import Course, CourseItem
+
+            course = Course.query.get(int(course_id))
+            if course is not None:
+                course_type = str(course.to_dict().get('type') or course_type).strip().lower()
+            if item_id is not None:
+                item = CourseItem.query.get(int(item_id))
+                if item is not None and int(item.course_id) == int(course_id):
+                    item_data = item.to_dict()
+                    social_role = item_data.get('socialRole')
+                    if not social_role:
+                        config = item_data.get('config') if isinstance(item_data.get('config'), dict) else {}
+                        social_role = config.get('socialRole')
+                    if not social_role and item.name in ('打招呼', '再见'):
+                        social_role = 'greeting' if item.name == '打招呼' else 'farewell'
+        except Exception as exc:
+            logger.warning('解析行为课程归属失败，使用事件载荷课型: %s', exc)
+
+        from app.robot.behavior_events import is_aux_allowed
+        if not is_aux_allowed(course_type, aux_type, social_role=social_role):
+            logger.warning(
+                '拒绝课程不支持的机器人事件: course=%s type=%s item=%s role=%s aux=%s',
+                course_id, course_type, item_id, social_role, aux_type,
+            )
+            return {
+                'success': False,
+                'message': '该机器人行为不属于当前课程/课点',
+                'error': 'behavior_event_not_allowed',
+                'motion': None,
+                'auxType': aux_type,
+                'emotion': None,
+                'courseType': course_type,
+            }
+        data['courseType'] = course_type
+        logger.info(f"📥 课程事件: course={course_id}, type={course_type}, item={item_id}, auxType={aux_type}")
         
         # 查找匹配的动作、表情与偏移配置
         mapping = self._mapping_resolver.find_mapping(student_id, course_id, item_id, aux_type)
@@ -2603,21 +2640,10 @@ class RobotService:
             motions = fallback.get('motions', []) or motions
             emotion = emotion or fallback.get('emotion')
         sequence_config = mapping.get('sequence') if isinstance(mapping.get('sequence'), dict) else {}
-        v2_plan = self.resolve_interaction_plan(data)
-        if v2_plan is not None and v2_plan.source.startswith('v2.'):
-            v2_motions = [str(item.get('assetId')) for item in v2_plan.motions if item.get('assetId')]
-            if v2_motions or v2_plan.source == 'v2.replace':
-                motions = v2_motions
-            if v2_plan.expressions:
-                emotion = str(v2_plan.expressions[0].get('assetId') or emotion)
-            if isinstance(v2_plan.metadata, dict) and isinstance(v2_plan.metadata.get('sequence'), dict):
-                sequence_config = v2_plan.metadata['sequence']
-            v2_speech_configured = bool(
-                isinstance(v2_plan.metadata, dict)
-                and v2_plan.metadata.get('speechConfigured')
-            )
-        else:
-            v2_speech_configured = False
+        # 课程机器人表现只有 course_map 的全局→课程→课点三级配置是执行真相。
+        # InteractionProfileV2 仍可用于独立预演/迁移，但不再暗中覆盖配置中心。
+        v2_plan = None
+        v2_speech_configured = False
         speech_payload = {}
         if v2_speech_configured:
             speech_payload = {
@@ -2715,6 +2741,18 @@ class RobotService:
     def delete_course_motions(self, course_id: int, aux_type: str) -> None:
         """删除课程级动作"""
         self._mapping_resolver.delete_course_motions(course_id, aux_type)
+
+    def update_course_item_motions(
+        self, course_id: int, item_id: int, aux_type: str, motions: List[str],
+        emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None,
+        animation: Optional[str] = None,
+    ) -> None:
+        self._mapping_resolver.update_course_item_motions(
+            course_id, item_id, aux_type, motions, emotion, sequence, animation,
+        )
+
+    def delete_course_item_motions(self, course_id: int, item_id: int, aux_type: str) -> None:
+        self._mapping_resolver.delete_course_item_motions(course_id, item_id, aux_type)
     
     def update_student_course_motions(
         self, student_id: int, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None

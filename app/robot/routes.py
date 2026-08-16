@@ -3,6 +3,7 @@
 Flask Blueprint 实现
 """
 from flask import Blueprint, request, jsonify, send_file
+from typing import Optional
 
 from app.robot import get_robot_service
 from app.robot.motion_storage import (
@@ -13,11 +14,40 @@ from app.robot.motion_storage import (
 from app.robot.release_package import load_manifest, resolve_zip_path
 from app.utils.logger import setup_logger
 from app.versioning import version_matrix
+from app.robot.behavior_events import is_aux_allowed, validate_aux_type
 
 logger = setup_logger('robot_routes')
 
 # 创建 Blueprint
 robot_bp = Blueprint('robot', __name__, url_prefix='/api/robot')
+
+
+def _behavior_scope(course_id: int, item_id: Optional[int] = None):
+    """从数据库解析课程行为归属；配置写入不信任浏览器传来的课型。"""
+    from database.models import Course, CourseItem
+
+    course = Course.query.get(course_id)
+    if course is None:
+        raise LookupError('course_not_found')
+    course_type = str(course.to_dict().get('type') or '').strip().lower()
+    social_role = None
+    if item_id is not None:
+        item = CourseItem.query.get(item_id)
+        if item is None or int(item.course_id) != int(course_id):
+            raise LookupError('course_item_not_found')
+        item_data = item.to_dict()
+        config = item_data.get('config') if isinstance(item_data.get('config'), dict) else {}
+        social_role = item_data.get('socialRole') or config.get('socialRole')
+        if not social_role and item.name in ('打招呼', '再见'):
+            social_role = 'greeting' if item.name == '打招呼' else 'farewell'
+    return course_type, social_role
+
+
+def _validate_scope_event(course_id: int, aux_type: str, item_id: Optional[int] = None):
+    validate_aux_type(aux_type)
+    course_type, social_role = _behavior_scope(course_id, item_id)
+    if not is_aux_allowed(course_type, aux_type, social_role=social_role):
+        raise ValueError('behavior_event_not_allowed_for_scope')
 
 
 # ========== 动作管理 API ==========
@@ -201,12 +231,7 @@ def set_idle_pose():
 def update_default_motions(aux_type):
     """更新通用动作"""
     try:
-        if aux_type not in [
-            'praise', 'hint', 'question', 'silent',
-            'social_greeting_intro', 'social_greeting_play',
-            'social_farewell_bye', 'social_farewell_reply',
-        ]:
-            return jsonify({'success': False, 'error': 'Invalid auxType'}), 400
+        validate_aux_type(aux_type)
         
         data = request.get_json()
         motions = data.get('motions')
@@ -248,6 +273,7 @@ def delete_default_motions(aux_type):
 def update_course_motions(course_id, aux_type):
     """更新课程级动作"""
     try:
+        _validate_scope_event(course_id, aux_type)
         data = request.get_json()
         motions = data.get('motions')
         emotion = data.get('emotion')  # 新增：获取表情字段
@@ -267,6 +293,10 @@ def update_course_motions(course_id, aux_type):
             'sequence': sequence,
             'animation': animation,
         })
+    except LookupError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
         logger.error(f"更新课程级动作失败: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -276,12 +306,55 @@ def update_course_motions(course_id, aux_type):
 def delete_course_motions(course_id, aux_type):
     """删除课程级动作"""
     try:
+        _validate_scope_event(course_id, aux_type)
         service = get_robot_service()
         service.delete_course_motions(course_id, aux_type)
         return jsonify({'success': True, 'message': f'Course {course_id} {aux_type} motions deleted'})
+    except LookupError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
         logger.error(f"删除课程级动作失败: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@robot_bp.route('/mapping/course/<int:course_id>/item/<int:item_id>/<aux_type>', methods=['PUT'])
+def update_course_item_motions(course_id, item_id, aux_type):
+    """更新三级模型中的课点级覆盖。"""
+    try:
+        _validate_scope_event(course_id, aux_type, item_id)
+        data = request.get_json(silent=True) or {}
+        motions = data.get('motions')
+        if not isinstance(motions, list):
+            return jsonify({'success': False, 'error': 'motions must be an array'}), 400
+        get_robot_service().update_course_item_motions(
+            course_id, item_id, aux_type, motions,
+            data.get('emotion'), data.get('sequence'), data.get('animation'),
+        )
+        return jsonify({'success': True, 'message': 'Course item behavior updated'})
+    except LookupError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        logger.error('更新课点级动作失败: %s', exc)
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@robot_bp.route('/mapping/course/<int:course_id>/item/<int:item_id>/<aux_type>', methods=['DELETE'])
+def delete_course_item_motions(course_id, item_id, aux_type):
+    try:
+        _validate_scope_event(course_id, aux_type, item_id)
+        get_robot_service().delete_course_item_motions(course_id, item_id, aux_type)
+        return jsonify({'success': True, 'message': 'Course item behavior deleted'})
+    except LookupError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        logger.error('删除课点级动作失败: %s', exc)
+        return jsonify({'success': False, 'error': str(exc)}), 500
 
 
 @robot_bp.route('/mapping/student/<int:student_id>/course/<int:course_id>/<aux_type>', methods=['PUT'])
@@ -449,26 +522,38 @@ def robot_control_status():
 
 @robot_bp.route('/students', methods=['GET'])
 def get_students():
-    """获取学生列表"""
+    """获取当前数据库学生；旧 JSON 仅在数据库不可用时降级。"""
     try:
-        service = get_robot_service()
-        students = service.get_students()
+        from database.models import Student
+
+        students = [item.to_dict() for item in Student.query.order_by(Student.created_at.desc()).all()]
         return jsonify({'success': True, 'students': students})
     except Exception as e:
-        logger.error(f"获取学生列表失败: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.warning("数据库学生列表读取失败，降级到 legacy JSON: %s", e)
+        try:
+            students = get_robot_service().get_students()
+            return jsonify({'success': True, 'students': students, 'source': 'legacy'})
+        except Exception as legacy_error:
+            logger.error("获取学生列表失败: %s", legacy_error)
+            return jsonify({'success': False, 'error': str(legacy_error)}), 500
 
 
 @robot_bp.route('/courses', methods=['GET'])
 def get_courses():
-    """获取课程列表"""
+    """获取当前数据库课程；旧 JSON 仅在数据库不可用时降级。"""
     try:
-        service = get_robot_service()
-        courses = service.get_courses()
+        from database.models import Course
+
+        courses = [item.to_dict() for item in Course.query.order_by(Course.id).all()]
         return jsonify({'success': True, 'courses': courses})
     except Exception as e:
-        logger.error(f"获取课程列表失败: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.warning("数据库课程列表读取失败，降级到 legacy JSON: %s", e)
+        try:
+            courses = get_robot_service().get_courses()
+            return jsonify({'success': True, 'courses': courses, 'source': 'legacy'})
+        except Exception as legacy_error:
+            logger.error("获取课程列表失败: %s", legacy_error)
+            return jsonify({'success': False, 'error': str(legacy_error)}), 500
 
 
 # ========== 表情管理 API ==========
