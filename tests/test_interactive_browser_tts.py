@@ -6,6 +6,7 @@ from app.dialogue.phrases import (
     ordering_phrase_key,
     pick_phrase,
 )
+from app.dialogue.phrase_library import effective_lines
 
 
 def test_pairing_ordering_praise_pools_match_demorobot_style():
@@ -111,12 +112,16 @@ def test_social_phrase_pools():
     play = bank["social_greeting_play"]["social"]
     bye = bank["social_farewell_bye"]["social"]
     reply = bank["social_farewell_reply"]["social"]
-    assert intro == ["你好，我是麦麦。"]
+    assert intro == ["你好，我是麦麦。很高兴认识你。"]
     assert "我们一起玩吧。" in play
     assert "再见啦。" in bye
     assert "再见，下次见。" in reply
-    assert pick_phrase("social_greeting_intro", "social") in intro
-    assert pick_phrase("social_farewell_bye", "social") in bye
+    assert pick_phrase("social_greeting_intro", "social") in effective_lines(
+        intro, "social_greeting_intro", "social"
+    )
+    assert pick_phrase("social_farewell_bye", "social") in effective_lines(
+        bye, "social_farewell_bye", "social"
+    )
 
 
 def test_play_interactive_browser_emits_robot_speak_text(monkeypatch):
@@ -262,13 +267,13 @@ def test_social_browser_aux_emits_robot_speak_text(monkeypatch):
     from app.audio.service import AudioService
 
     cases = [
-        ("socialGreetingIntro", "social_greeting_intro", "你好，我是麦麦。"),
-        ("socialGreetingPlay", "social_greeting_play", "我们一起玩吧。"),
-        ("socialFarewellBye", "social_farewell_bye", "再见啦。"),
-        ("socialFarewellReply", "social_farewell_reply", "再见，下次见。"),
+        ("socialGreetingIntro", "social_greeting_intro"),
+        ("socialGreetingPlay", "social_greeting_play"),
+        ("socialFarewellBye", "social_farewell_bye"),
+        ("socialFarewellReply", "social_farewell_reply"),
     ]
 
-    for aux_key, intent, sample in cases:
+    for aux_key, intent in cases:
         emitted = []
 
         class FakeSocketio:
@@ -295,9 +300,9 @@ def test_social_browser_aux_emits_robot_speak_text(monkeypatch):
         assert payload["intent"] == intent
         assert payload["courseType"] == "social"
         assert payload["ttsMode"] == "browser"
-        pool = get_phrase_bank()[intent]["social"]
+        base_pool = get_phrase_bank()[intent]["social"]
+        pool = effective_lines(base_pool, intent, "social")
         assert payload["text"] in pool
-        assert sample in pool
 
 
 def test_social_legacy_file_env_still_uses_realtime_tts(monkeypatch):

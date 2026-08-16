@@ -54,6 +54,14 @@
       },
       {
         "method": "DELETE",
+        "path": "/api/robot/mapping/course/<int:course_id>/item/<int:item_id>/<aux_type>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "tests/test_robot_asset_tuning.py"
+      },
+      {
+        "method": "DELETE",
         "path": "/api/robot/mapping/defaults/<aux_type>",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
@@ -1387,6 +1395,14 @@
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
         "behaviorFixture": "partial; see 01-contract-inventory.md"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/mapping/course/<int:course_id>/item/<int:item_id>/<aux_type>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "tests/test_robot_asset_tuning.py"
       },
       {
         "method": "PUT",
