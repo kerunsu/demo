@@ -644,6 +644,29 @@ def emotion_idle_pool():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@robot_bp.route('/emotions/dialogue-reply-rules', methods=['GET', 'PUT'])
+def dialogue_reply_expression_rules():
+    """Read or replace length-based MP4 expressions for LLM replies."""
+    try:
+        service = get_robot_service()
+        if request.method == 'GET':
+            return jsonify({
+                'success': True,
+                'config': service.get_dialogue_reply_expressions(),
+            })
+        config = service.set_dialogue_reply_expressions(
+            request.get_json(silent=True) or {}
+        )
+        return jsonify({'success': True, 'config': config})
+    except FileNotFoundError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        logger.error('更新大模型回复表情规则失败: %s', e)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @robot_bp.route('/emotions/<name>/style', methods=['GET', 'PUT'])
 def emotion_style(name: str):
     """读取或更新单个表情的播放与显示参数。"""

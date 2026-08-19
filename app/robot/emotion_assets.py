@@ -47,6 +47,10 @@ DEFAULT_GLOBAL_FILTER = {
     'contrast': 1.0,
     'opacity': 1.0,
 }
+DEFAULT_DIALOGUE_REPLY_EXPRESSIONS = {
+    'enabled': False,
+    'rules': [],
+}
 STYLE_RANGES = {
     'speedMultiplier': (0.25, 4.0),
     'scale': (0.5, 2.0),
@@ -101,6 +105,10 @@ def _save_meta(meta: Dict[str, Any]) -> None:
         dict(normalized.get('styles')) if isinstance(normalized.get('styles'), dict) else {}
     )
     normalized['globalFilter'] = _effective_global_filter(normalized.get('globalFilter'))
+    normalized['dialogueReplyExpressions'] = _normalize_dialogue_reply_expressions(
+        normalized.get('dialogueReplyExpressions'),
+        validate_files=False,
+    )
     with _meta_lock:
         _atomic_write_meta(normalized)
 
@@ -159,6 +167,83 @@ def _effective_global_filter(value: Any) -> Dict[str, Any]:
         except ValueError:
             result[key] = DEFAULT_GLOBAL_FILTER[key]
     return result
+
+
+def _normalize_dialogue_reply_expressions(
+    value: Any,
+    *,
+    validate_files: bool,
+) -> Dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    enabled = source.get('enabled', False)
+    if not isinstance(enabled, bool):
+        raise ValueError('enabled must be a boolean')
+    raw_rules = source.get('rules', [])
+    if not isinstance(raw_rules, list):
+        raise ValueError('rules must be an array')
+    if len(raw_rules) > 12:
+        raise ValueError('最多允许 12 条大模型回复表情规则')
+
+    available = set(list_emotion_files()) if validate_files else None
+    rules: List[Dict[str, Any]] = []
+    previous_max = 0
+    for index, raw in enumerate(raw_rules):
+        if not isinstance(raw, dict):
+            raise ValueError(f'rules[{index}] must be an object')
+        try:
+            max_chars = int(raw.get('maxChars'))
+        except (TypeError, ValueError):
+            raise ValueError(f'rules[{index}].maxChars must be an integer') from None
+        if isinstance(raw.get('maxChars'), bool) or not 1 <= max_chars <= 1000:
+            raise ValueError(f'rules[{index}].maxChars must be between 1 and 1000')
+        if max_chars <= previous_max:
+            raise ValueError('规则字数上限必须严格递增')
+        emotion = os.path.basename(str(raw.get('emotion') or '').strip())
+        if not emotion.lower().endswith('.mp4'):
+            raise ValueError(f'rules[{index}].emotion must be an MP4 expression')
+        if available is not None and emotion not in available:
+            raise FileNotFoundError(f'表情不存在: {emotion}')
+        rules.append({'maxChars': max_chars, 'emotion': emotion})
+        previous_max = max_chars
+    if enabled and not rules:
+        raise ValueError('启用大模型回复表情时至少需要一条规则')
+    return {'enabled': enabled, 'rules': rules}
+
+
+def get_dialogue_reply_expressions() -> Dict[str, Any]:
+    raw = _load_meta().get('dialogueReplyExpressions')
+    try:
+        return _normalize_dialogue_reply_expressions(raw, validate_files=False)
+    except (ValueError, FileNotFoundError) as exc:
+        logger.warning('大模型回复表情配置无效，按关闭处理: %s', exc)
+        return dict(DEFAULT_DIALOGUE_REPLY_EXPRESSIONS)
+
+
+def set_dialogue_reply_expressions(value: Any) -> Dict[str, Any]:
+    normalized = _normalize_dialogue_reply_expressions(value, validate_files=True)
+    meta = _load_meta()
+    meta['dialogueReplyExpressions'] = normalized
+    _save_meta(meta)
+    return normalized
+
+
+def select_dialogue_reply_emotion(text: str) -> Optional[Dict[str, Any]]:
+    config = get_dialogue_reply_expressions()
+    rules = config.get('rules') or []
+    if not config.get('enabled') or not rules:
+        return None
+    char_count = len(''.join(str(text or '').split()))
+    if char_count <= 0:
+        return None
+    selected = next(
+        (rule for rule in rules if char_count <= int(rule['maxChars'])),
+        rules[-1],
+    )
+    return {
+        'emotion': selected['emotion'],
+        'charCount': char_count,
+        'maxChars': int(selected['maxChars']),
+    }
 
 
 def list_emotion_files() -> List[str]:
@@ -313,15 +398,20 @@ def _walk_emotion_refs(node: Any, path: str, out: List[Tuple[str, str]]) -> None
 
 
 def find_emotion_references(name: str) -> List[str]:
-    """返回 course_map 中引用该表情的路径列表。"""
+    """返回课程绑定和大模型回复规则中引用该表情的路径列表。"""
     try:
         with open(COURSE_MAP_FILE, 'r', encoding='utf-8') as f:
             course_map = json.load(f)
     except Exception:
-        return []
+        course_map = {}
     refs: List[Tuple[str, str]] = []
     _walk_emotion_refs(course_map, '', refs)
-    return [path for path, emo in refs if emo == name]
+    result = [path for path, emo in refs if emo == name]
+    dialogue = get_dialogue_reply_expressions()
+    for index, rule in enumerate(dialogue.get('rules') or []):
+        if rule.get('emotion') == name:
+            result.append(f'emotions_meta.dialogueReplyExpressions.rules[{index}]')
+    return result
 
 
 def count_emotion_references(name: str) -> int:

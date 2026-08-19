@@ -581,19 +581,21 @@ class AnalysisService:
             'dropped': 'ended',
         }.get(str(status or '').lower(), str(status or '').lower())
         state = self._sessions[session_id]
+        analyzer = getattr(self._audio_pipeline, 'speech_analyzer', None)
         if normalized == 'playing':
             state.system_audio_active = True
             state.ignore_audio_until = float('inf')
+            # Dump robot echo so it cannot be recognized as a child answer.
+            if analyzer and hasattr(analyzer, 'reset_buffer'):
+                analyzer.reset_buffer()
         elif normalized in ('ended', 'stopped', 'error'):
             state.system_audio_active = False
-            # 给扬声器尾音和房间混响留出短暂退避时间。
-            state.ignore_audio_until = time.time() + 0.75
+            # Only cover the speaker tail. A 0.75s mute plus buffer reset was
+            # dropping answers that started as soon as the question ended.
+            state.ignore_audio_until = time.time() + 0.18
         else:
             return
 
-        analyzer = getattr(self._audio_pipeline, 'speech_analyzer', None)
-        if analyzer and hasattr(analyzer, 'reset_buffer'):
-            analyzer.reset_buffer()
         logger.info(
             "系统播音 ASR 门控: session=%s entry=%s status=%s active=%s",
             session_id, entry, normalized, state.system_audio_active
@@ -700,7 +702,17 @@ class AnalysisService:
         state = self._sessions[session_id]
         if not state.is_active or not state.enable_realtime:
             return [], []
-        if state.system_audio_active or time.time() < state.ignore_audio_until:
+        if state.system_audio_active:
+            return [], []
+        if time.time() < state.ignore_audio_until:
+            # Keep a short preroll during the speaker-tail gate so a child
+            # answer that starts immediately after TTS is still recognized.
+            audio_chunk = self._decode_audio(chunk_data)
+            if audio_chunk is not None:
+                analyzer = getattr(self._audio_pipeline, 'speech_analyzer', None)
+                ingest = getattr(analyzer, 'ingest_preroll', None)
+                if callable(ingest):
+                    ingest(audio_chunk, max_seconds=1.0)
             return [], []
         
         try:

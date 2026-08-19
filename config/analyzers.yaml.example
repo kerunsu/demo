@@ -57,6 +57,12 @@ analyzers:
     model_name: paraformer-zh  # FunASR 模型名称
     device: cuda               # 推理设备: cuda 或 cpu
     sample_rate_audio: 16000   # 音频采样率
+    accumulation_duration: 2.0 # 连续识别窗口（秒）
+    rms_threshold: 0.006       # 整段最低 RMS，过滤近静音
+    frame_rms_threshold: 0.014 # 20ms 有声帧最低 RMS
+    peak_threshold: 0.02       # 有声帧最低峰值
+    min_voiced_ratio: 0.12     # 窗口内至少约 240ms 有效语音
+    max_input_gain: 3.0        # ASR 输入最大增益，禁止微声放大到满幅
 
 # 比对器配置
 matchers:

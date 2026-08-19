@@ -1052,6 +1052,10 @@ const BEHAVIOR_ANIMATION_FADE_MS = 320;
 const BEHAVIOR_ANIMATION_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const BEHAVIOR_ANIMATION_DEDUPE_MAX = 256;
 let activeBehaviorAnimationPlayback = null;
+/** Last praise frame held visible until next content / leave (not snapped back). */
+let heldPraiseOverlay = null;
+/** prepare_behavior_animation decode-only state; play starts on play_resource. */
+let preparedBehaviorAnimation = null;
 const completedBehaviorAnimationPlaybacks = new Map();
 const preloadedBehaviorAnimationVideos = new Map();
 
@@ -1508,17 +1512,62 @@ function interactiveResourceUrl(payload, course, item, transitionId) {
   return `${base}${base.includes("?") ? "&" : "?"}${params.toString()}`;
 }
 
+function looksLikeAudioPath(path) {
+  return /\.(mp3|wav|ogg|m4a|aac)(\?|#|$)/i.test(String(path || ""));
+}
+
+function looksLikeImagePath(path) {
+  return /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i.test(String(path || ""));
+}
+
+function looksLikeMediaFolderPath(path) {
+  const text = String(path || "").split(/[?#]/)[0];
+  if (!text) return false;
+  if (/\/$/.test(text)) return true;
+  // Folder refs without trailing slash still have no file extension.
+  return /\/images\/[^/]+\/\d+$/i.test(text);
+}
+
+function resolveImageSource(payload, course, item) {
+  // Display slot must be a concrete image URL. Legacy 拟声 courses.json put
+  // animal sounds (e.g. dog_bark.mp3) in item.file with type:"image", which
+  // trips img.onerror as image_load_failed. Prefer resolved/icon images.
+  const candidates = [
+    payload && payload.resolvedFile,
+    item && item.file,
+    item && item.icon,
+    course && course.icon,
+    course && course.file,
+    "resources/images/UI/FG.png",
+  ];
+  const imageCandidate = candidates.find(
+    (value) =>
+      value &&
+      !looksLikeAudioPath(value) &&
+      looksLikeImagePath(value)
+  );
+  if (imageCandidate) return imageCandidate;
+  // Folder paths are resolved server-side into resolvedFile; if only a folder
+  // remains, fall through to FG rather than feeding a directory to <img>.
+  const nonAudio = candidates.find(
+    (value) =>
+      value &&
+      !looksLikeAudioPath(value) &&
+      !looksLikeMediaFolderPath(value)
+  );
+  if (nonAudio) return nonAudio;
+  console.warn(
+    "⚠️ [child.js] image slot had audio/folder-only paths; falling back to FG.png",
+    candidates.filter(Boolean)
+  );
+  return "resources/images/UI/FG.png";
+}
+
 function buildResourceSpec(payload, course, item, transitionId) {
   const rawType = String(firstDefined(item && item.type, course && course.type, "")).toLowerCase();
   const interactiveTypes = new Set(["interactive", "pairing", "matching", "ordering", "sequencing"]);
   if (rawType === "image") {
-    const source = firstDefined(
-      payload.resolvedFile,
-      item && item.file,
-      item && item.icon,
-      course && course.file,
-      "resources/images/UI/FG.png"
-    );
+    const source = resolveImageSource(payload, course, item);
     return { type: "image", src: buildStaticUrl(source) };
   }
   if (rawType === "video") {
@@ -1727,6 +1776,11 @@ async function transitionCourseResource(payload, course, item) {
     clearOtherCommittedMedia(promoted);
     currentVisibleCourseMedia = { el: promoted, type: spec.type, transitionId };
     pendingResourceTransition = null;
+    // Keep praise visible throughout preload/crossfade. Clear it only after
+    // the next resource is committed, so duplicate or failed transitions do
+    // not reveal the previous question again.
+    clearHeldPraiseOverlay("content_committed");
+    preparedBehaviorAnimation = null;
     try {
       commitCourseLogicalContext(payload, course, item, stagedPageContext);
     } catch (contextError) {
@@ -1895,7 +1949,10 @@ socket.on("play_resource", (payload) => {
 socket.on("prepare_behavior_animation", (payload) => {
   if (!payload || !isEventForActiveChildSession(payload)) return;
   if (!payload.behaviorAnimation) return;
-  playBehaviorAnimation(payload.behaviorAnimation, payload);
+  // Decode/preload only. Starting full playback here races play_resource:
+  // short MP4s finish into completedBehaviorAnimationPlaybacks, then
+  // play_resource dedupes and the child never shows praise 画面.
+  prepareBehaviorAnimation(payload.behaviorAnimation, payload);
 });
 
 // 监听joined_session确认
@@ -2248,8 +2305,11 @@ socket.on("teacher_leave_control", (payload) => {
   interactiveEl.style.display = "none";
 
   const behaviorAnimationEl = document.getElementById("behaviorAnimationVideo");
+  preparedBehaviorAnimation = null;
   if (activeBehaviorAnimationPlayback) {
     finishBehaviorAnimationPlayback(activeBehaviorAnimationPlayback, "stopped", "teacher_leave");
+  } else if (heldPraiseOverlay) {
+    clearHeldPraiseOverlay("teacher_leave");
   } else if (behaviorAnimationEl) {
     cleanupBehaviorAnimationElement(behaviorAnimationEl);
   }
@@ -2920,6 +2980,17 @@ function cleanupBehaviorAnimationElement(video) {
   } catch (e) {}
 }
 
+function clearHeldPraiseOverlay(reason = "") {
+  if (!heldPraiseOverlay) return;
+  const held = heldPraiseOverlay;
+  heldPraiseOverlay = null;
+  if (activeBehaviorAnimationPlayback && activeBehaviorAnimationPlayback.video === held.video) {
+    return;
+  }
+  cleanupBehaviorAnimationElement(held.video);
+  console.log("🧹 [child.js] cleared held praise overlay:", reason || "unspecified");
+}
+
 function finishBehaviorAnimationPlayback(playback, status, reason = "") {
   if (!playback || playback.finished) return;
   playback.finished = true;
@@ -2948,6 +3019,29 @@ function finishBehaviorAnimationPlayback(playback, status, reason = "") {
     });
     pruneCompletedBehaviorAnimationPlaybacks();
   }
+
+  // Keep the last praise frame until评分/下一题 advances — do not snap back
+  // to the previous question image when the MP4 ends.
+  if (status === "ended") {
+    try {
+      playback.video.pause();
+    } catch (e) {}
+    playback.video.style.opacity = "1";
+    playback.video.style.display = "block";
+    playback.video.style.pointerEvents = "none";
+    if (activeBehaviorAnimationPlayback === playback) {
+      activeBehaviorAnimationPlayback = null;
+    }
+    heldPraiseOverlay = {
+      video: playback.video,
+      playbackId: playback.playbackId,
+      payload: playback.payload,
+    };
+    socket.emit("behavior_animation_ended", terminal);
+    console.log("📡 [child.js] behavior_animation_ended (holding frame):", terminal);
+    return;
+  }
+
   playback.video.style.opacity = "0";
   playback.finishTimer = setTimeout(() => {
     if (activeBehaviorAnimationPlayback === playback) {
@@ -2957,6 +3051,74 @@ function finishBehaviorAnimationPlayback(playback, status, reason = "") {
     socket.emit("behavior_animation_ended", terminal);
     console.log("📡 [child.js] behavior_animation_ended:", terminal);
   }, BEHAVIOR_ANIMATION_FADE_MS);
+}
+
+/**
+ * Decode-only warm-up for prepare_behavior_animation.
+ * Must not start playback or mark the request completed.
+ */
+function prepareBehaviorAnimation(videoPath, payload = {}) {
+  const behaviorAnimationEl = document.getElementById("behaviorAnimationVideo");
+  const playbackId = behaviorAnimationPlaybackIdentity(videoPath, payload);
+  if (!behaviorAnimationEl || !videoPath) return false;
+  if (activeBehaviorAnimationPlayback) {
+    console.log("⏭️ [child.js] prepare skipped; animation already active:", playbackId);
+    return false;
+  }
+  if (
+    preparedBehaviorAnimation &&
+    preparedBehaviorAnimation.playbackId === playbackId &&
+    preparedBehaviorAnimation.video === behaviorAnimationEl
+  ) {
+    return true;
+  }
+
+  preparedBehaviorAnimation = {
+    playbackId,
+    videoPath,
+    payload: { ...payload },
+    video: behaviorAnimationEl,
+    ready: false,
+  };
+
+  behaviorAnimationEl.onloadeddata = null;
+  behaviorAnimationEl.oncanplay = null;
+  behaviorAnimationEl.onplaying = null;
+  behaviorAnimationEl.onended = null;
+  behaviorAnimationEl.onerror = null;
+  behaviorAnimationEl.style.display = "block";
+  behaviorAnimationEl.style.opacity = "0";
+  behaviorAnimationEl.style.pointerEvents = "none";
+  behaviorAnimationEl.preload = "auto";
+
+  const onReady = () => {
+    if (
+      !preparedBehaviorAnimation ||
+      preparedBehaviorAnimation.playbackId !== playbackId
+    ) {
+      return;
+    }
+    if (preparedBehaviorAnimation.ready) return;
+    preparedBehaviorAnimation.ready = true;
+    const readyPayload = behaviorAnimationTerminalPayload(
+      preparedBehaviorAnimation.payload,
+      playbackId,
+      "ready"
+    );
+    readyPayload.terminalStatus = null;
+    readyPayload.readyAtClientMs = Date.now();
+    socket.emit("behavior_modality_ready", readyPayload);
+    console.log("🧊 [child.js] praise animation prepared (not started):", videoPath);
+  };
+
+  behaviorAnimationEl.onloadeddata = onReady;
+  behaviorAnimationEl.oncanplay = onReady;
+  setElementSource(behaviorAnimationEl, buildStaticUrl(videoPath));
+  try {
+    behaviorAnimationEl.load();
+  } catch (e) {}
+  if (behaviorAnimationEl.readyState >= 2) Promise.resolve().then(onReady);
+  return true;
 }
 
 // The animation is an overlay; the committed course remains intact underneath.
@@ -2986,6 +3148,13 @@ function playBehaviorAnimation(videoPath, payload = {}) {
     return false;
   }
 
+  clearHeldPraiseOverlay("new_praise");
+  const reusePrepared =
+    preparedBehaviorAnimation &&
+    preparedBehaviorAnimation.playbackId === playbackId &&
+    preparedBehaviorAnimation.video === behaviorAnimationEl;
+  preparedBehaviorAnimation = null;
+
   const playback = {
     playbackId,
     payload: { ...payload },
@@ -2997,15 +3166,26 @@ function playBehaviorAnimation(videoPath, payload = {}) {
     loadTimer: null,
     finishTimer: null,
     watchdogTimer: null,
-    readyEmitted: false,
+    readyEmitted: Boolean(reusePrepared && behaviorAnimationEl.readyState >= 2),
   };
   activeBehaviorAnimationPlayback = playback;
-  cleanupBehaviorAnimationElement(behaviorAnimationEl);
-  behaviorAnimationEl.style.display = "block";
-  behaviorAnimationEl.style.opacity = "0";
-  behaviorAnimationEl.style.pointerEvents = "none";
-  behaviorAnimationEl.preload = "auto";
-  behaviorAnimationEl.currentTime = 0;
+  if (!reusePrepared) {
+    cleanupBehaviorAnimationElement(behaviorAnimationEl);
+    behaviorAnimationEl.style.display = "block";
+    behaviorAnimationEl.style.opacity = "0";
+    behaviorAnimationEl.style.pointerEvents = "none";
+    behaviorAnimationEl.preload = "auto";
+    try {
+      behaviorAnimationEl.currentTime = 0;
+    } catch (e) {}
+  } else {
+    behaviorAnimationEl.style.display = "block";
+    behaviorAnimationEl.style.opacity = "0";
+    behaviorAnimationEl.style.pointerEvents = "none";
+    try {
+      behaviorAnimationEl.currentTime = 0;
+    } catch (e) {}
+  }
 
   const startPlayback = () => {
     if (activeBehaviorAnimationPlayback !== playback || playback.finished) return;
@@ -3082,8 +3262,10 @@ function playBehaviorAnimation(videoPath, payload = {}) {
   playback.loadTimer = setTimeout(() => {
     finishBehaviorAnimationPlayback(playback, "error", "video_load_timeout");
   }, RESOURCE_LOAD_TIMEOUT_MS);
-  setElementSource(behaviorAnimationEl, buildStaticUrl(videoPath));
-  try { behaviorAnimationEl.load(); } catch (e) {}
+  if (!reusePrepared) {
+    setElementSource(behaviorAnimationEl, buildStaticUrl(videoPath));
+    try { behaviorAnimationEl.load(); } catch (e) {}
+  }
   if (behaviorAnimationEl.readyState >= 2) Promise.resolve().then(onReady);
   return true;
 }

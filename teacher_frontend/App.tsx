@@ -549,6 +549,14 @@ export default function App() {
     cancelPreparedTraining();
   };
 
+  const handleReadinessReprepare = useCallback(async () => {
+    const trainingId = await prepareTraining(
+      assessmentMode ? 'assessment' : 'training',
+    );
+    setPreparedTrainingSessionId(trainingId);
+    return trainingId;
+  }, [assessmentMode, prepareTraining]);
+
   const handleBackToStudents = () => {
     if (currentPage === 'courseSelection') {
       if (readinessOpen && prepareSocketRef.current?.connected) {
@@ -631,6 +639,7 @@ export default function App() {
         items={readinessItems}
         onEnter={handleReadinessEnter}
         onCancel={handleReadinessCancel}
+        onReprepare={handleReadinessReprepare}
       />
     </div>
   );

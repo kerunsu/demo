@@ -25,8 +25,8 @@ KEYWORD_LISTEN_COURSE_TYPES = frozenset({'naming', 'speech', 'onomatopoeia'})
 
 _DEFAULT_TIMEOUT_SEC = 75.0
 _MIN_KEYWORD_LEN = 1
-# 连续 ASR 块可能重复同一句；与 child_dialogue.js 短窗去重对齐
-_CHILD_SPEECH_DEDUPE_SEC = 2.5
+# 连续 ASR 约 2s 窗 + 推理时延，短于 8s 的同一句会刷屏
+_CHILD_SPEECH_DEDUPE_SEC = 8.0
 _PUNCT_RE = re.compile(
     r'[\s\u3000，。！？、；：,.!?;:\'\"“”‘’（）()\[\]【】<>《》…—～~·]+'
 )
@@ -551,9 +551,10 @@ class KeywordListenService:
         except Exception:  # noqa: BLE001
             pass
 
-        # 教师同路：只通知教师端执行 playCurrentItem({praise:true}) /
-        # play_resource。勿在此直接 _play_interactive_course_audio，否则会
-        # 缺 play_resource_ack / 动画结束关联，教师无法打分切题，且可能双播。
+        # Prefer server-side full praise package (emotion/motion/animation/TTS),
+        # then notify teacher to attach scoring only. If robot is busy / package
+        # fails, fall back to teacher playCurrentItem({praise:true}) — same as
+        # clicking「表扬」.
         request_id = f'keyword-praise-{uuid.uuid4().hex[:12]}'
         payload = {
             'sessionId': str(session_id),
@@ -564,16 +565,74 @@ class KeywordListenService:
             'keyword': matched,
             'source': 'keyword_listen',
             'action': 'praise',
+            'serverPlayed': False,
         }
-        ok = self._emit_teacher_auto_praise(str(session_id), payload)
+        teacher_notified = {'ok': False}
+
+        def _notify_teacher_before_play(info: Dict[str, Any]) -> None:
+            """Attach scoring before child play_resource so ended cannot race."""
+            payload.update({
+                'serverPlayed': True,
+                'behaviorId': info.get('behaviorId'),
+                'behaviorAnimation': info.get('behaviorAnimation'),
+                'hasAnimation': bool(info.get('hasAnimation')),
+                'trainingSessionId': info.get('trainingSessionId'),
+                'courseId': info.get('courseId'),
+                'studentId': info.get('studentId'),
+            })
+            if info.get('itemId') is not None:
+                payload['itemId'] = info.get('itemId')
+            teacher_notified['ok'] = self._emit_teacher_auto_praise(
+                str(session_id), payload
+            )
+
+        try:
+            from app.sockets.events import trigger_keyword_parity_praise
+
+            played = trigger_keyword_parity_praise(
+                str(session_id),
+                request_id=request_id,
+                course_type=snap.course_type,
+                item_id=snap.item_id,
+                on_before_child_play=_notify_teacher_before_play,
+            )
+        except Exception as play_err:  # noqa: BLE001
+            logger.warning(
+                'keyword_listen parity praise failed session=%s: %s',
+                session_id,
+                play_err,
+            )
+            played = {'ok': False}
+
+        if played.get('ok') and played.get('serverPlayed'):
+            if not teacher_notified['ok']:
+                payload.update({
+                    'serverPlayed': True,
+                    'behaviorId': played.get('behaviorId'),
+                    'behaviorAnimation': played.get('behaviorAnimation'),
+                    'hasAnimation': bool(played.get('hasAnimation')),
+                    'trainingSessionId': played.get('trainingSessionId'),
+                    'courseId': played.get('courseId'),
+                    'studentId': played.get('studentId'),
+                })
+                if played.get('itemId') is not None:
+                    payload['itemId'] = played.get('itemId')
+                ok = self._emit_teacher_auto_praise(str(session_id), payload)
+            else:
+                ok = True
+        else:
+            # Robot busy / package failed → teacher runs playCurrentItem({praise}).
+            payload['serverPlayed'] = False
+            ok = self._emit_teacher_auto_praise(str(session_id), payload)
 
         if ok:
             logger.info(
-                'keyword_listen auto_praise session=%s course=%s item=%s kw=%s',
+                'keyword_listen auto_praise session=%s course=%s item=%s kw=%s serverPlayed=%s',
                 session_id,
                 snap.course_type,
                 snap.item_id,
                 matched,
+                bool(payload.get('serverPlayed')),
             )
             try:
                 from app.monitor.events import append_monitor_event
@@ -582,7 +641,7 @@ class KeywordListenService:
                 ctx = get_behavior_service().get_current_context_for_runtime(session_id) or {}
                 append_monitor_event(
                     'auto_praise',
-                    f'关键词自动表扬 kw={matched}',
+                    f'关键词自动表扬 kw={matched} serverPlayed={bool(payload.get("serverPlayed"))}',
                     training_session_id=ctx.get('training_session_id'),
                     question_id=ctx.get('question_id'),
                     level='info',
@@ -639,9 +698,31 @@ class KeywordListenService:
         except Exception:  # noqa: BLE001
             return None
 
+    @staticmethod
+    def _is_displayable_transcript(transcript: str) -> bool:
+        """Reject FunASR silence/noise gibberish before child UI emit."""
+        raw = (transcript or '').strip()
+        if not raw:
+            return False
+        cleaned = _PUNCT_RE.sub('', raw)
+        if not cleaned:
+            return False
+        # 纯拉丁短串（如 Gyggny）在中文 ASR 场景几乎都是幻觉
+        if re.search(r'[A-Za-z]', cleaned) and not re.search(r'[\u4e00-\u9fff]', cleaned):
+            return False
+        fillers = {
+            '嗯', '啊', '呃', '哦', '唔', '呵', '额', '欸', '唉',
+            '的', '了', '呢', '吧', '嘛', '呀', '嗯嗯', '啊啊',
+        }
+        if cleaned in fillers:
+            return False
+        return True
+
     def _should_emit_child_speech(self, session_id: str, transcript: str) -> bool:
         """Drop near-identical repeats within a short window (ASR chunk spam)."""
         sid = str(session_id)
+        if not self._is_displayable_transcript(transcript):
+            return False
         norm = normalize_speech_text(transcript) or (transcript or '').strip()
         if not norm:
             return False
@@ -650,18 +731,14 @@ class KeywordListenService:
             prev = self._last_child_speech.get(sid)
             if prev:
                 prev_norm, prev_at = prev
-                if (
-                    prev_norm == norm
-                    and (now - float(prev_at)) < _CHILD_SPEECH_DEDUPE_SEC
-                ):
-                    return False
-                # Growing / shrinking near-duplicates from overlapping chunks
-                if (now - float(prev_at)) < _CHILD_SPEECH_DEDUPE_SEC and (
-                    norm in prev_norm or prev_norm in norm
-                ):
-                    # Prefer the longer form; skip if not longer than last
-                    if len(norm) <= len(prev_norm):
+                age = now - float(prev_at)
+                if age < _CHILD_SPEECH_DEDUPE_SEC:
+                    if prev_norm == norm:
                         return False
+                    # Growing / shrinking near-duplicates from overlapping chunks
+                    if norm in prev_norm or prev_norm in norm:
+                        if len(norm) <= len(prev_norm):
+                            return False
             self._last_child_speech[sid] = (norm, now)
         return True
 

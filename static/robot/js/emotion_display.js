@@ -45,6 +45,10 @@ let emotionAssetsReady = false;
 let idlePlayTimer = null;
 let lastIdleEmotion = null;
 const pendingEmotionEvents = [];
+const MEDIA_CROSSFADE_MS = 180;
+let activeMediaElement = null;
+let mediaTransitionTimer = null;
+const videoPreloaders = new Map();
 
 // ========== DOM 元素 ==========
 let emotionImg = document.getElementById('emotion-gif');
@@ -116,11 +120,7 @@ function applySettingsUpdate(data) {
         EMOTION_STYLES[emotionName] = normalizedStyle(data.style);
     }
     if (!emotionName || emotionName !== currentEmotion) return;
-    if (emotionName === DEFAULT_EMOTION) {
-        applyMediaStyle(isVideo(emotionName) ? idleVideo : idleImg, emotionName);
-    } else {
-        applyMediaStyle(isVideo(emotionName) ? emotionVideo : emotionImg, emotionName);
-    }
+    applyMediaStyle(activeMediaElement, emotionName);
 }
 
 function mediaUrl(mediaId) {
@@ -281,16 +281,17 @@ function showGifWithoutFlash(url, generation, emotionName, style, onError) {
     next.onload = () => {
         if (
             generation !== renderGeneration
-            || !isPlayingNonDefault
             || currentEmotion !== emotionName
         ) {
             console.log('[Emotion Display] 忽略已过期的 GIF 加载结果:', emotionName);
             return;
         }
         applyMediaStyle(next, emotionName, style);
-        next.hidden = false;
         emotionImg.replaceWith(next);
         emotionImg = next;
+        commitMediaTransition(next, generation, style.opacity, () => {
+            if (activeEmotionEvent) emitEmotionStarted(activeEmotionEvent);
+        });
     };
     next.onerror = () => {
         console.warn('[Emotion Display] GIF 加载失败:', url);
@@ -405,20 +406,125 @@ async function preferLocalEmotionAssets() {
 }
 
 function preloadVideoAsset(mediaId) {
-    if (!mediaId) return emotionVideo;
-    const url = mediaUrl(mediaId);
-    if (emotionVideo.getAttribute('src') !== url) {
-        emotionVideo.pause();
-        emotionVideo.src = url;
-        try { emotionVideo.load(); } catch (_) { /* best effort */ }
+    if (!mediaId) return document.createElement('video');
+    let player = videoPreloaders.get(mediaId);
+    if (!player) {
+        player = document.createElement('video');
+        player.preload = 'auto';
+        player.muted = true;
+        player.defaultMuted = true;
+        player.playsInline = true;
+        videoPreloaders.set(mediaId, player);
     }
-    return emotionVideo;
+    const url = mediaUrl(mediaId);
+    if (player.getAttribute('src') !== url) {
+        player.pause();
+        player.src = url;
+        try { player.load(); } catch (_) { /* best effort */ }
+    }
+    return player;
 }
 
 function stopIdlePlayback() {
     if (idlePlayTimer) clearTimeout(idlePlayTimer);
     idlePlayTimer = null;
-    idleVideo.pause();
+}
+
+function nextVideoBuffer() {
+    return activeMediaElement === emotionVideo ? idleVideo : emotionVideo;
+}
+
+function clearMediaTransitionTimer() {
+    if (!mediaTransitionTimer) return;
+    clearTimeout(mediaTransitionTimer);
+    mediaTransitionTimer = null;
+}
+
+function commitMediaTransition(incoming, generation, targetOpacity, onCommitted) {
+    if (generation !== renderGeneration) return;
+    const outgoing = activeMediaElement;
+    clearMediaTransitionTimer();
+    incoming.hidden = false;
+    incoming.style.zIndex = '2';
+    incoming.style.transition = 'none';
+    incoming.style.opacity = '0';
+
+    requestAnimationFrame(() => {
+        if (generation !== renderGeneration) return;
+        incoming.style.transition = `opacity ${MEDIA_CROSSFADE_MS}ms ease-out`;
+        if (outgoing && outgoing !== incoming) {
+            outgoing.style.zIndex = '1';
+            outgoing.style.transition = `opacity ${MEDIA_CROSSFADE_MS}ms ease-out`;
+        }
+        requestAnimationFrame(() => {
+            if (generation !== renderGeneration) return;
+            incoming.style.opacity = String(targetOpacity);
+            if (outgoing && outgoing !== incoming) outgoing.style.opacity = '0';
+            activeMediaElement = incoming;
+            onCommitted?.();
+            mediaTransitionTimer = setTimeout(() => {
+                mediaTransitionTimer = null;
+                if (activeMediaElement !== incoming) return;
+                incoming.style.transition = 'none';
+                incoming.style.zIndex = '1';
+                if (outgoing && outgoing !== incoming) {
+                    if ('pause' in outgoing) outgoing.pause();
+                    outgoing.hidden = true;
+                    outgoing.style.transition = 'none';
+                }
+            }, MEDIA_CROSSFADE_MS + 40);
+        });
+    });
+}
+
+function playVideoWithoutBlackFrame(eventData, emotionName, style, generation) {
+    const incoming = nextVideoBuffer();
+    const source = mediaUrl(emotionName);
+    let committed = false;
+    let failed = false;
+    const fail = (reason) => {
+        if (failed || committed || generation !== renderGeneration) return;
+        failed = true;
+        incoming.pause();
+        incoming.hidden = true;
+        onEmotionPlayComplete('error', reason);
+    };
+    const commitFirstFrame = () => {
+        if (committed || failed || generation !== renderGeneration) return;
+        committed = true;
+        const finish = () => commitMediaTransition(
+            incoming,
+            generation,
+            style.opacity,
+            () => {
+                if (eventData.isIdle !== true) emitEmotionStarted(activeEmotionEvent);
+            }
+        );
+        if (typeof incoming.requestVideoFrameCallback === 'function') {
+            incoming.requestVideoFrameCallback(finish);
+        } else {
+            requestAnimationFrame(finish);
+        }
+    };
+
+    incoming.pause();
+    incoming.hidden = false;
+    incoming.style.zIndex = '2';
+    incoming.style.transition = 'none';
+    incoming.style.opacity = '0';
+    incoming.loop = false;
+    applyMediaStyle(incoming, emotionName, style);
+    incoming.style.opacity = '0';
+    incoming.onplaying = commitFirstFrame;
+    incoming.onerror = () => fail('video_load_failed');
+    if (incoming.getAttribute('src') !== source) {
+        incoming.src = source;
+        try { incoming.load(); } catch (_) { /* best effort */ }
+    }
+    try { incoming.currentTime = 0; } catch (_) { /* best effort */ }
+    incoming.play().then(commitFirstFrame).catch((error) => {
+        fail(error && error.name ? error.name : 'video_play_failed');
+    });
 }
 
 function chooseIdleEmotion() {
@@ -452,21 +558,6 @@ function showIdleLayer() {
 function loadIdleMedia(emotionName = DEFAULT_EMOTION) {
     if (!emotionName) return;
     DEFAULT_EMOTION = emotionName;
-    const url = mediaUrl(emotionName);
-    if (isVideo(DEFAULT_EMOTION)) {
-        idleImg.hidden = true;
-        idleImg.removeAttribute('src');
-        idleVideo.src = url;
-        idleVideo.loop = false;
-        idleVideo.currentTime = 0;
-        applyMediaStyle(idleVideo, DEFAULT_EMOTION);
-    } else {
-        idleVideo.pause();
-        idleVideo.removeAttribute('src');
-        idleVideo.hidden = true;
-        idleImg.src = url;
-        applyMediaStyle(idleImg, DEFAULT_EMOTION);
-    }
 }
 
 async function loadEmotionCatalog() {
@@ -761,9 +852,44 @@ function queueEmotion(payload) {
             console.log('[Emotion Display] 忽略当前行为的重复表情:', identity.key);
             return false;
         }
-        pendingEmotionEvents.push(eventData);
-        console.log('[Emotion Display] 正式表情播放中，新事件进入队列:', identity.key || emotionName);
-        return true;
+        const activeBehaviorId = activeEmotionEvent && (
+            activeEmotionEvent.behaviorId ||
+            activeEmotionEvent.sequenceId ||
+            (activeEmotionEvent.identity && activeEmotionEvent.identity.behaviorId)
+        );
+        const incomingBehaviorId = identity.behaviorId;
+        // A new dialogue-reply transaction means the previous formal behavior
+        // already released the server lock; don't wait out leftover media.
+        if (
+            eventData.dialogueReply === true &&
+            incomingBehaviorId &&
+            activeBehaviorId &&
+            String(incomingBehaviorId) !== String(activeBehaviorId)
+        ) {
+            console.log('[Emotion Display] 对话回复表情立即接替残留正式表情');
+            if (emotionPlayTimer) {
+                clearTimeout(emotionPlayTimer);
+                emotionPlayTimer = null;
+            }
+            rememberCompletedEmotion(emotionIdentity(activeEmotionEvent));
+            emitEmotionTerminal(activeEmotionEvent, 'stopped', 'superseded_by_dialogue_reply');
+            isPlayingNonDefault = false;
+            activeEmotionEvent = null;
+            eventData.startDelayMs = 0;
+            eventData.startAtEpochMs = Date.now();
+        } else {
+            if (isVideo(emotionName)) {
+                preloadVideoAsset(emotionName);
+            } else if (!warmedImages.has(emotionName)) {
+                const stagedImage = new Image();
+                stagedImage.src = mediaUrl(emotionName);
+                stagedImage.decode?.().then(() => warmedImages.add(emotionName)).catch(() => {});
+            }
+            stageEmotionReady(eventData, emotionName);
+            pendingEmotionEvents.push(eventData);
+            console.log('[Emotion Display] 正式表情播放中，新事件进入队列:', identity.key || emotionName);
+            return true;
+        }
     }
 
     // Formal behavior transactions explicitly restart the same asset so every
@@ -821,90 +947,44 @@ function playEmotion(payload) {
     if (eventData.style) EMOTION_STYLES[emotionName] = normalizedStyle(eventData.style);
     if (eventData.globalFilter) applyGlobalFilter(eventData.globalFilter);
     const style = normalizedStyle(eventData.style || EMOTION_STYLES[emotionName]);
-    // 清除之前的播放定时器
     if (emotionPlayTimer) {
         clearTimeout(emotionPlayTimer);
         emotionPlayTimer = null;
     }
-    
+
     console.log('[Emotion Display] 播放表情:', emotionName);
     currentEmotion = emotionName;
     const generation = ++renderGeneration;
-
-    if (eventData.isIdle === true) {
-        isPlayingNonDefault = false;
-        activeEmotionEvent = null;
-        showIdleLayer();
-        console.log('[Emotion Display] 待机表情底层持续播放中');
-        return;
-    }
-
     stopIdlePlayback();
 
+    const isIdleEvent = eventData.isIdle === true;
     const video = isVideo(emotionName);
     const newSrc = mediaUrl(emotionName);
-    emotionImg.hidden = true;
-    emotionVideo.hidden = !video;
+    isPlayingNonDefault = !isIdleEvent;
+    activeEmotionEvent = isIdleEvent
+        ? null
+        : { ...eventData, identity: emotionIdentity(eventData) };
+
     if (video) {
-        emotionVideo.pause();
-        emotionVideo.loop = false;
-        applyMediaStyle(emotionVideo, emotionName, style);
-        emotionVideo.onloadedmetadata = () => {
-            if (
-                generation !== renderGeneration
-                || !isPlayingNonDefault
-                || !Number.isFinite(emotionVideo.duration)
-                || emotionVideo.duration <= 0
-            ) return;
-            if (emotionPlayTimer) clearTimeout(emotionPlayTimer);
-            emotionPlayTimer = setTimeout(() => {
-                onEmotionPlayComplete('error', 'video_ended_timeout');
-            }, Math.ceil(emotionVideo.duration * 1000 / style.speedMultiplier) + 2000);
-        };
-        if (
-            eventData.stagedVideoUrl !== newSrc
-            || emotionVideo.getAttribute('src') !== newSrc
-        ) {
-            emotionVideo.src = newSrc;
-        }
-        emotionVideo.currentTime = 0;
-        emotionVideo.play()
-            .then(() => {
-                if (generation !== renderGeneration) emotionVideo.pause();
-                else emitEmotionStarted(activeEmotionEvent);
-            })
-            .catch((e) => {
-                console.warn('[Emotion Display] 视频播放失败:', e);
-                if (generation === renderGeneration) {
-                    onEmotionPlayComplete(
-                        'error',
-                        e && e.name ? e.name : 'video_play_failed'
-                    );
-                }
-            });
+        // The outgoing buffer keeps its final decoded frame. The incoming
+        // buffer is revealed only after its first frame has really rendered.
+        playVideoWithoutBlackFrame(eventData, emotionName, style, generation);
     } else {
-        emotionVideo.pause();
-        emotionVideo.removeAttribute('src');
         showGifWithoutFlash(newSrc, generation, emotionName, style, (reason) => {
-            onEmotionPlayComplete('error', reason);
+            if (isIdleEvent) console.warn('[Emotion Display] 待机 GIF 加载失败:', reason);
+            else onEmotionPlayComplete('error', reason);
         });
     }
 
-    // 非默认表情只播放一次；到点后隐藏上层，立即露出持续运行的待机层。
-    isPlayingNonDefault = true;
-    activeEmotionEvent = {
-        ...eventData,
-        identity: emotionIdentity(eventData),
-    };
-    if (!video) emitEmotionStarted(activeEmotionEvent);
+    if (isIdleEvent) {
+        console.log('[Emotion Display] 待机表情首帧就绪后平滑接管显示');
+        return;
+    }
+
     const requestedDuration = Number(eventData.durationMs || 0);
     const duration = requestedDuration > 0 ? requestedDuration : DEFAULT_GIF_DURATION;
-    // MP4 以浏览器原生 ended 为准，计时器仅是损坏文件/浏览器异常时的看门狗，
-    // 不会在视频自然结束前提前切回待机。GIF 继续按单次循环时长完成。
-    // Keep the fallback bounded. A lost `ended` event must not hold the
-    // teacher UI for minutes; the server can recover on the next command.
     const completionDelay = video ? Math.max(duration + 3000, 8000) : duration;
-    console.log(`[Emotion Display] 行为表情单次播放，完成后露出待机层`);
+    console.log('[Emotion Display] 行为表情单次播放，结束后平滑切换下一表情');
     emotionPlayTimer = setTimeout(() => {
         onEmotionPlayComplete(video ? 'error' : 'ended', video ? 'video_ended_timeout' : '');
     }, completionDelay);
@@ -951,10 +1031,18 @@ function playDefaultEmotion() {
     }
 }
 
-// 每次事件视频都 loop=false，并由原生 ended 精确完成一次。回调具备幂等保护。
-emotionVideo.addEventListener('ended', () => onEmotionPlayComplete('ended', 'media_ended'));
+// 两个 video 元素交替作为前台和后台缓冲，只有前台 ended 才能推进状态机。
+emotionVideo.loop = false;
+idleVideo.loop = false;
+emotionVideo.addEventListener('ended', () => {
+    if (activeMediaElement !== emotionVideo) return;
+    if (isPlayingNonDefault) onEmotionPlayComplete('ended', 'media_ended');
+    else playDefaultEmotion();
+});
 idleVideo.addEventListener('ended', () => {
-    if (!isPlayingNonDefault) playDefaultEmotion();
+    if (activeMediaElement !== idleVideo) return;
+    if (isPlayingNonDefault) onEmotionPlayComplete('ended', 'media_ended');
+    else playDefaultEmotion();
 });
 
 

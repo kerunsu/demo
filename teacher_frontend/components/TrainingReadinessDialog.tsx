@@ -39,6 +39,17 @@ export interface TrainingReadinessDialogProps {
   items: ReadinessCourseItem[];
   onEnter: () => void;
   onCancel: () => void;
+  /** When the media session was wiped (e.g. server restart), re-run prepare. */
+  onReprepare?: () => Promise<string | null | void> | string | null | void;
+}
+
+function isSessionLostError(text: string | null | undefined): boolean {
+  const value = String(text || '');
+  return (
+    value.includes('strict_preflight_session_not_found')
+    || value.includes('录制会话已丢失')
+    || value.includes('重新点击开始评估')
+  );
 }
 
 /**
@@ -53,10 +64,12 @@ export function TrainingReadinessDialog({
   items,
   onEnter,
   onCancel,
+  onReprepare,
 }: TrainingReadinessDialogProps) {
   const [state, setState] = useState<GateState>(initialState);
   const [now, setNow] = useState(() => Date.now());
   const [retryToken, setRetryToken] = useState(0);
+  const [retrying, setRetrying] = useState(false);
 
   const start = useCallback((retry = false) => {
     if (!socket || !studentId || !trainingSessionId || items.length === 0) {
@@ -140,6 +153,28 @@ export function TrainingReadinessDialog({
     onCancel();
   };
 
+  const retry = async () => {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      if (isSessionLostError(state.error || state.detail) && onReprepare) {
+        await onReprepare();
+        // Parent updates trainingSessionId; effect below restarts readiness.
+        return;
+      }
+      setRetryToken((value) => value + 1);
+    } catch (error: any) {
+      setState((current) => ({
+        ...current,
+        status: 'FAILED',
+        error: error?.message || String(error) || '重新准备录制失败',
+        detail: error?.message || String(error) || '重新准备录制失败',
+      }));
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 px-4" role="dialog" aria-modal="true">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl">
@@ -161,7 +196,17 @@ export function TrainingReadinessDialog({
         <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-6 py-4">
           <button type="button" onClick={cancel} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">返回选课</button>
           <div className="flex gap-2">
-            {failed && <button type="button" onClick={() => setRetryToken((value) => value + 1)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><RefreshCw className="h-4 w-4" />重试录制</button>}
+            {failed && (
+              <button
+                type="button"
+                disabled={retrying}
+                onClick={() => { void retry(); }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                <RefreshCw className={`h-4 w-4 ${retrying ? 'animate-spin' : ''}`} />
+                {isSessionLostError(state.error || state.detail) && onReprepare ? '重新准备并重试' : '重试录制'}
+              </button>
+            )}
             <button type="button" disabled={!confirmed} onClick={onEnter} className={`rounded-lg px-5 py-2 text-sm font-semibold text-white ${confirmed ? 'bg-indigo-600 hover:bg-indigo-700' : 'cursor-not-allowed bg-indigo-300'}`}>进入课堂</button>
           </div>
         </div>

@@ -237,7 +237,19 @@ class ReadinessService:
         except Exception as exc:
             result = {"ok": False, "error": str(exc)}
         if not result.get("ok"):
-            self._fail(gate, f"正式录制启动失败: {result.get('error') or 'unknown'}")
+            error_code = str(result.get("error") or "unknown")
+            detail = str(result.get("message") or "").strip()
+            if not detail:
+                if error_code == "strict_preflight_session_not_found":
+                    detail = (
+                        "服务端录制会话已丢失（常见于后端刚重启）。"
+                        "请返回选课，重新点击开始评估/训练后再开课。"
+                    )
+                else:
+                    detail = f"正式录制启动失败: {error_code}"
+            elif error_code and error_code not in detail:
+                detail = f"{detail}（{error_code}）"
+            self._fail(gate, detail)
             return
         gate.session_id = result.get("sessionId") or result.get("session_id")
         gate.capture_started = True

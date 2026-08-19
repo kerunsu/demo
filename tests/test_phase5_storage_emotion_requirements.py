@@ -192,6 +192,19 @@ def test_phase5_emotion_page_uses_native_single_play_mp4_contract():
     assert "emotionVideo.loop = false" in script
     assert "emotionVideo.addEventListener('ended'" in script
     assert "playDefaultEmotion();" in script
+    assert "function nextVideoBuffer()" in script
+    assert "requestVideoFrameCallback" in script
+    assert "commitMediaTransition(" in script
+    assert "activeMediaElement !== emotionVideo" in script
+    assert "activeMediaElement !== idleVideo" in script
+    assert "incoming.style.opacity = '0'" in script
+    assert "outgoing.style.opacity = '0'" in script
+    queued = script[
+        script.index("if (isPlayingNonDefault) {") :
+        script.index("pendingEmotionEvents.push(eventData)")
+    ]
+    assert "preloadVideoAsset(emotionName)" in queued
+    assert "stageEmotionReady(eventData, emotionName)" in queued
 
 
 def test_phase5_control_page_explains_device_and_recording_workflow():
@@ -400,3 +413,5 @@ def test_phase5_child_dialogue_checks_voice_health_before_listening():
     script = (root / "static/js/child_dialogue.js").read_text(encoding="utf-8")
     assert "/api/v2/voice/health" in script
     assert "语音识别不可用" in script
+    assert "prerollHasVoice" in script
+    assert "COOLDOWN_MS = 180" in script

@@ -282,20 +282,52 @@ def start_preflight_capture(training_session_id: str) -> Dict[str, Any]:
 
     This adapter intentionally reuses the legacy recording/session services;
     it is the reversible strangler seam until those services are migrated to
-    ``CapturePort``.  Calling it for a legacy warmup is rejected.
+    ``CapturePort``.
+
+    Legacy (non-strict) prepare already starts capture during prepare_training;
+    readiness still calls this callback, so an active continuous session for the
+    same training id is treated as an idempotent success rather than a miss.
     """
     with _strict_capture_start_lock:
         session_manager = get_session_manager()
+        training_key = str(training_session_id)
+        candidates = [
+            sess for sess in session_manager.list_all_sessions()
+            if str(getattr(sess, 'training_session_id', '') or '') == training_key
+        ]
         target = next(
             (
-                sess for sess in session_manager.list_all_sessions()
-                if getattr(sess, 'training_session_id', None) == str(training_session_id)
-                and bool((sess.metadata or {}).get('strict_preflight'))
+                sess for sess in candidates
+                if bool((sess.metadata or {}).get('strict_preflight'))
             ),
             None,
         )
         if target is None:
-            return {'ok': False, 'error': 'strict_preflight_session_not_found'}
+            # Browser/legacy prepare: recorder is already running for this training.
+            legacy = next(
+                (
+                    sess for sess in candidates
+                    if sess.is_active()
+                    or bool((sess.metadata or {}).get('capture_started'))
+                    or bool((sess.metadata or {}).get('continuous_recording'))
+                ),
+                None,
+            )
+            if legacy is not None:
+                return {
+                    'ok': True,
+                    'idempotent': True,
+                    'sessionId': legacy.session_id,
+                    'legacy': True,
+                }
+            return {
+                'ok': False,
+                'error': 'strict_preflight_session_not_found',
+                'message': (
+                    '服务端录制会话已丢失（常见于后端刚重启）。'
+                    '请返回选课，重新点击开始评估/训练后再开课。'
+                ),
+            }
         metadata = target.metadata or {}
         target.metadata = metadata
         if metadata.get('capture_started'):

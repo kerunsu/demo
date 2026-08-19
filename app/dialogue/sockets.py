@@ -42,6 +42,8 @@ logger = setup_logger("dialogue.sockets")
 
 _dialogue_ui_lock = threading.RLock()
 _dialogue_ui_visible: Dict[str, bool] = {}
+_pending_dialogue_speak_lock = threading.RLock()
+_pending_dialogue_speak: Dict[str, Dict[str, Any]] = {}
 
 
 def _training_id_for_runtime(session_id: Any) -> Optional[str]:
@@ -141,19 +143,61 @@ def _emit_speak(
         from app.robot import get_robot_service
 
         robot_service = get_robot_service()
-        reservation = robot_service.reserve_audio_only_behavior(
+        expression_match = None
+        if intent == "dialogue" and source == "dialogue":
+            selector = getattr(robot_service, "select_dialogue_reply_emotion", None)
+            if callable(selector):
+                expression_match = selector(spoken)
+        reserve = (
+            robot_service.reserve_behavior
+            if expression_match
+            else robot_service.reserve_audio_only_behavior
+        )
+        reservation = reserve(
             behavior_id=behavior_id,
             request_id=request_id,
             session_id=resolved_session_id,
         )
         if not reservation.get("accepted"):
             logger.info(
-                "正式行为忙碌，忽略本次对话朗读 session=%s active=%s",
+                "正式行为忙碌，排队本次对话朗读 session=%s active=%s intent=%s",
                 resolved_session_id,
                 reservation.get("activeBehaviorId"),
+                intent,
+            )
+            _queue_pending_dialogue_speak(
+                resolved_session_id,
+                {
+                    "room": room,
+                    "text": spoken,
+                    "intent": intent,
+                    "delay_ms": delay_ms,
+                    "source": source,
+                    "session_id": resolved_session_id,
+                },
             )
             return False
         behavior_id = str(reservation.get("behaviorId") or behavior_id)
+        behavior_result = None
+        if expression_match:
+            starter = getattr(robot_service, "start_dialogue_reply_behavior", None)
+            if callable(starter):
+                behavior_result = starter(
+                    emotion=expression_match["emotion"],
+                    behavior_id=behavior_id,
+                    request_id=request_id,
+                    session_id=resolved_session_id,
+                )
+            if not behavior_result:
+                robot_service.abort_behavior(behavior_id)
+                expression_match = None
+                reservation = robot_service.reserve_audio_only_behavior(
+                    behavior_id=behavior_id,
+                    request_id=request_id,
+                    session_id=resolved_session_id,
+                )
+                if not reservation.get("accepted"):
+                    return False
     except Exception as exc:
         logger.error("对话语音预占失败: %s", exc, exc_info=True)
         return False
@@ -164,7 +208,11 @@ def _emit_speak(
 
         "intent": intent,
 
-        "delayMs": max(0, int(delay_ms or 0)),
+        "delayMs": max(
+            0,
+            int(delay_ms or 0),
+            int((behavior_result or {}).get("scheduledDelayMs") or 0),
+        ),
 
         "source": source,
 
@@ -185,12 +233,15 @@ def _emit_speak(
         "request_id": request_id,
 
     }
+    if expression_match:
+        payload["expression"] = expression_match["emotion"]
+        payload["expressionMatch"] = dict(expression_match)
 
     timeout_ms = min(
         30000,
         max(
             5000,
-            len(spoken) * 360 + max(0, int(delay_ms or 0)) + 1500,
+            len(spoken) * 360 + int(payload["delayMs"]) + 1500,
         ),
     )
     try:
@@ -209,7 +260,15 @@ def _emit_speak(
             return False
         # Exactly one room-scoped delivery.  Direct+broadcast duplicates could
         # cancel/restart speech and leaked dialogue to unrelated children.
-        emit("robot_speak_text", payload, room=room, include_self=True)
+        try:
+            emit("robot_speak_text", payload, room=room, include_self=True)
+        except Exception:
+            from app.services.keyword_listen import KeywordListenService
+
+            sio = KeywordListenService._resolve_socketio()
+            if sio is None:
+                raise
+            sio.emit("robot_speak_text", payload, room=room)
     except Exception as exc:
         robot_service.abort_behavior(behavior_id)
         logger.error("对话语音下发失败: %s", exc, exc_info=True)
@@ -231,7 +290,42 @@ def _emit_speak(
     return True
 
 
+def _queue_pending_dialogue_speak(session_id: str, payload: Dict[str, Any]) -> None:
+    sid = str(session_id or "").strip()
+    if not sid or not (payload.get("text") or "").strip():
+        return
+    with _pending_dialogue_speak_lock:
+        _pending_dialogue_speak[sid] = dict(payload)
 
+
+def pending_dialogue_speak_queued(session_id: Optional[str]) -> bool:
+    sid = str(session_id or "").strip()
+    if not sid:
+        return False
+    with _pending_dialogue_speak_lock:
+        return sid in _pending_dialogue_speak
+
+
+def flush_pending_dialogue_speak(session_id: Optional[str]) -> bool:
+    """Replay the latest queued LLM/wake utterance after the mutex frees."""
+    sid = str(session_id or "").strip()
+    if not sid:
+        return False
+    with _pending_dialogue_speak_lock:
+        pending = _pending_dialogue_speak.pop(sid, None)
+    if not pending:
+        return False
+    spoken = _emit_speak(
+        room=pending.get("room"),
+        text=str(pending.get("text") or ""),
+        intent=str(pending.get("intent") or "dialogue"),
+        delay_ms=int(pending.get("delay_ms") or 0),
+        source=str(pending.get("source") or "dialogue"),
+        session_id=sid,
+    )
+    if not spoken and pending_dialogue_speak_queued(sid):
+        return False
+    return bool(spoken)
 
 
 def _child_room(session_id: Any) -> Optional[str]:

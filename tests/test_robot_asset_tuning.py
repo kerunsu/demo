@@ -243,3 +243,76 @@ def test_asset_tuning_frontend_contract():
     assert "pendingEmotionEvents.push(eventData)" in display
     assert "stopIdlePlayback();" in display
     assert "idleVideo.addEventListener('ended'" in display
+
+
+def test_dialogue_reply_expression_rules_validate_and_select(tmp_path, monkeypatch):
+    emotion_assets, meta = _prepare_emotions(tmp_path, monkeypatch)
+    Path(emotion_assets.emotions_dir(), "long.mp4").write_bytes(b"video")
+
+    saved = emotion_assets.set_dialogue_reply_expressions({
+        "enabled": True,
+        "rules": [
+            {"maxChars": 12, "emotion": "happy.mp4"},
+            {"maxChars": 40, "emotion": "long.mp4"},
+        ],
+    })
+    assert saved["enabled"] is True
+    assert emotion_assets.select_dialogue_reply_emotion("你好 世界") == {
+        "emotion": "happy.mp4",
+        "charCount": 4,
+        "maxChars": 12,
+    }
+    assert emotion_assets.select_dialogue_reply_emotion("x" * 100)["emotion"] == "long.mp4"
+    assert json.loads(meta.read_text(encoding="utf-8"))["dialogueReplyExpressions"] == saved
+
+    with pytest.raises(ValueError, match="strictly increasing|严格递增"):
+        emotion_assets.set_dialogue_reply_expressions({
+            "enabled": True,
+            "rules": [
+                {"maxChars": 20, "emotion": "happy.mp4"},
+                {"maxChars": 20, "emotion": "long.mp4"},
+            ],
+        })
+    with pytest.raises(ValueError, match="MP4"):
+        emotion_assets.set_dialogue_reply_expressions({
+            "enabled": True,
+            "rules": [{"maxChars": 20, "emotion": "legacy.gif"}],
+        })
+
+
+def test_dialogue_reply_rules_http_contract(monkeypatch):
+    from app.robot import routes
+
+    class Service:
+        def get_dialogue_reply_expressions(self):
+            return {"enabled": False, "rules": []}
+
+        def set_dialogue_reply_expressions(self, value):
+            return value
+
+    monkeypatch.setattr(routes, "get_robot_service", lambda: Service())
+    app = Flask("dialogue-expression-rules")
+    app.register_blueprint(routes.robot_bp)
+    client = app.test_client()
+
+    assert client.get("/api/robot/emotions/dialogue-reply-rules").get_json() == {
+        "success": True,
+        "config": {"enabled": False, "rules": []},
+    }
+    response = client.put(
+        "/api/robot/emotions/dialogue-reply-rules",
+        json={"enabled": True, "rules": [{"maxChars": 20, "emotion": "happy.mp4"}]},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["config"]["rules"][0]["maxChars"] == 20
+
+
+def test_dialogue_reply_frontend_binding_contract():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "templates" / "server" / "config.html").read_text(encoding="utf-8")
+    script = (root / "static" / "js" / "config_dialogue_expressions.js").read_text(encoding="utf-8")
+    assert 'id="dialogue-expression-card"' in template
+    assert 'id="dialogue-expression-rules"' in template
+    assert "/api/robot/emotions/dialogue-reply-rules" in script
+    assert "maxChars" in script
+    assert "有效字数" in script

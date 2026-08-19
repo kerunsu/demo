@@ -10,12 +10,12 @@
   const SILENCE_LEVEL = 0.018;
   const RESET_LEVEL = 0.024;
   const MIN_VOICE_MS = 180;
-  const MIN_TURN_MS = 900;
-  const SILENCE_END_MS = 1100;
-  const COOLDOWN_MS = 700;
+  const MIN_TURN_MS = 700;
+  const SILENCE_END_MS = 900;
+  const COOLDOWN_MS = 180;
   const MAX_TURN_MS = 12000;
-  /** 开说前环形缓冲：覆盖 MIN_VOICE_MS 确认窗 + ScriptProcessor 块延迟，避免丢句首 */
-  const PREROLL_MS = 400;
+  /** 开说前环形缓冲：覆盖 MIN_VOICE_MS 确认窗 + 提问结束后的句首 */
+  const PREROLL_MS = 700;
 
   const MAX_LOG_MESSAGES = 8;
   const PANEL_COLLAPSED_KEY = "eiart.child.dialogue.collapsed";
@@ -299,17 +299,28 @@
   }
 
   /** 儿童识别文本入对话气泡（短窗去重，避免双通路重复）。 */
+  function normalizeTranscriptKey(text) {
+    return String(text || "")
+      .trim()
+      .replace(/[\s\u3000，。！？、；：,.!?;:'"“”‘’（）()\[\]【】<>《》…—～~·]+/g, "");
+  }
+
   function appendChildTranscript(text) {
     const trimmed = String(text || "").trim();
     if (!trimmed) return false;
     const now = Date.now();
-    if (
-      trimmed === lastChildTranscriptKey &&
-      now - lastChildTranscriptAt < 2800
-    ) {
-      return false;
+    const norm = normalizeTranscriptKey(trimmed);
+    if (!norm) return false;
+    if (lastChildTranscriptKey && now - lastChildTranscriptAt < 8000) {
+      if (
+        norm === lastChildTranscriptKey ||
+        lastChildTranscriptKey.includes(norm) ||
+        norm.includes(lastChildTranscriptKey)
+      ) {
+        if (norm.length <= lastChildTranscriptKey.length) return false;
+      }
     }
-    lastChildTranscriptKey = trimmed;
+    lastChildTranscriptKey = norm;
     lastChildTranscriptAt = now;
     appendDialogueLog("child", trimmed);
     return true;
@@ -600,6 +611,18 @@
     pcmChunks = prerollChunks.map((c) => new Float32Array(c));
   }
 
+  function prerollHasVoice() {
+    if (!prerollChunks.length) return false;
+    const merged = concatenateFloat32(prerollChunks);
+    if (!merged.length) return false;
+    let sum = 0;
+    for (let i = 0; i < merged.length; i += 1) {
+      const v = merged[i];
+      sum += v * v;
+    }
+    return Math.sqrt(sum / merged.length) >= START_LEVEL * 0.7;
+  }
+
   function finalizeCapturedTurn() {
     if (!capturingTurn) return;
     capturingTurn = false;
@@ -646,19 +669,23 @@
         silenceStartedAt = null;
         turnStartedAt = null;
       }
-      clearPreroll();
+      // Only wipe preroll while the robot is actually speaking. During the
+      // post-TTS cooldown the child may already have started answering.
+      if (asrPausedForTts) {
+        clearPreroll();
+      }
       meterFrame = window.requestAnimationFrame(meterTick);
       return;
     }
 
     if (!capturingTurn) {
-      if (level >= START_LEVEL) {
+      const prerollReady = prerollHasVoice();
+      if (prerollReady || level >= START_LEVEL) {
         voiceStartedAt = voiceStartedAt || now;
-        if (now - voiceStartedAt >= MIN_VOICE_MS) {
+        if (prerollReady || now - voiceStartedAt >= MIN_VOICE_MS) {
           capturingTurn = true;
           turnStartedAt = now;
           silenceStartedAt = null;
-          // 用开说前环形缓冲作种子，避免丢掉确认窗内的句首音节
           seedPcmFromPreroll();
           setStatus("正在听…");
         }
@@ -979,7 +1006,6 @@
 
   function resumeAsrAfterTts() {
     asrPausedForTts = false;
-    clearPreroll();
     cooldownUntil = Date.now() + COOLDOWN_MS;
     setListenButtonState();
     maybeResumeListening();
@@ -1076,6 +1102,7 @@
         const speakFallback = replyText;
         window.setTimeout(() => {
           if (asrPausedForTts) return;
+          if (global.BrowserTts?.isBrowserSpeechBusy?.()) return;
           if (!global.BrowserTts?.isBrowserSpeechSynthesisSupported?.()) return;
           console.warn("[child_dialogue] robot_speak_text 未触发，本地补读");
           pauseAsrForTts();
@@ -1084,7 +1111,7 @@
             onEnd: () => resumeAsrAfterTts(),
             onError: () => resumeAsrAfterTts(),
           });
-        }, 220);
+        }, 1800);
       }
       // 若即将朗读，由 pauseAsrForTts 接管；否则恢复聆听
       if (!asrPausedForTts) {

@@ -23,10 +23,15 @@ analyzers:
     accumulation_duration: 2
     device: cuda
     enabled: true
+    frame_rms_threshold: 0.014
     language: zh
+    max_input_gain: 3.0
+    min_voiced_ratio: 0.12
     mode: null
     model_name: paraformer-zh
     model_path: models/whisper_tiny.bin
+    peak_threshold: 0.02
+    rms_threshold: 0.006
     sample_rate: 1
     sample_rate_audio: 16000
 global:

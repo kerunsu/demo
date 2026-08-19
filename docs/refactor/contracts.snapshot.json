@@ -3,9 +3,9 @@
   "generatedAt": "2026-08-12",
   "sourceCommit": "working-tree: realtime phrase configuration and config navigation",
   "generation": "Python AST scan of app.py and app/**/*.py; methods omitted by decorators default to GET; blueprint prefixes applied.",
-  "routeCount": 187,
+  "routeCount": 189,
   "runtimeImplicitRouteCount": 1,
-  "runtimeUrlRuleCountObserved": 188,
+  "runtimeUrlRuleCountObserved": 190,
   "runtimeImplicitRoutes": [
     "GET /static/<path:filename>"
   ],
@@ -66,6 +66,8 @@
     "GET /api/robot/control/status",
     "GET /api/robot/courses",
     "GET /api/robot/emotions",
+    "GET /api/robot/emotions/dialogue-reply-rules",
+    "PUT /api/robot/emotions/dialogue-reply-rules",
     "GET /api/robot/emotions/<name>/style",
     "GET /api/robot/emotions/default",
     "GET /api/robot/emotions/global-filter",

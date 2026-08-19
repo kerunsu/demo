@@ -171,8 +171,11 @@ def test_behavior_event_ownership_separates_social_from_ordering():
     assert allowed_aux_types("ordering") == ("praise", "question", "hint", "silent")
     assert not is_aux_allowed("ordering", "social_greeting_intro")
     assert allowed_aux_types("social", social_role="greeting") == (
-        "social_greeting_intro", "social_greeting_play",
+        "silent", "social_greeting_intro", "social_greeting_play",
     )
+    # 社交课点 content load 走 silent，必须允许；标准表扬不得泄漏进打招呼。
+    assert is_aux_allowed("social", "silent", social_role="greeting")
+    assert not is_aux_allowed("social", "praise", social_role="greeting")
     assert not is_aux_allowed("social", "social_farewell_bye", social_role="greeting")
 
 

@@ -38,6 +38,127 @@ def test_old_course_and_standby_survive_until_commit():
     assert 'socket.on("freeze_course_frame"' in child
 
 
+def test_prepare_behavior_animation_does_not_start_playback():
+    """prepare must decode only; early play races play_resource and skips 画面."""
+    child = _read("static/js/child.js")
+    prepare_handler = child[
+        child.index('socket.on("prepare_behavior_animation"') :
+        child.index('socket.on("joined_session"')
+    ]
+    assert "prepareBehaviorAnimation(" in prepare_handler
+    assert "playBehaviorAnimation(" not in prepare_handler
+    assert "function prepareBehaviorAnimation(" in child
+    hold = child[
+        child.index("function finishBehaviorAnimationPlayback") :
+        child.index("function prepareBehaviorAnimation")
+    ]
+    assert 'status === "ended"' in hold
+    assert "heldPraiseOverlay" in hold
+    assert "holding frame" in hold
+    assert "clearHeldPraiseOverlay(" in child
+    assert 'clearHeldPraiseOverlay("content_committed")' in child
+    transition = child[
+        child.index("async function transitionCourseResource") :
+        child.index("// 统一处理：播放资源")
+    ]
+    assert transition.index("currentVisibleCourseMedia =") < transition.index(
+        'clearHeldPraiseOverlay("content_committed")'
+    )
+    template = _read("templates/child.html")
+    assert 'child.js?v=20260818-praise-hold-v1' in template
+
+
+def test_interactive_questions_are_idempotent_and_answers_do_not_cut_speech():
+    matching = _read("static/resources/interactive/matching.html")
+    sequencing = _read("static/resources/interactive/sequencing.html")
+    events = _read("app/sockets/events.py")
+
+    matching_start = matching[
+        matching.index("socket.on('matching_start'") :
+        matching.index("socket.on('matching_set_difficulty'")
+    ]
+    ordering_start = sequencing[
+        sequencing.index("socket.on('sequencing_start'") :
+        sequencing.index("socket.on('sequencing_set_config'")
+    ]
+    assert "flushQuestionReady()" in matching_start
+    assert "emitQuestionReady()" not in matching_start
+    assert "flushQuestionReady()" in ordering_start
+    assert "emitQuestionReady()" not in ordering_start
+    assert "this._lastQuestionReadyKey === questionReadyKey" in matching
+    assert "this._lastQuestionReadyKey === questionReadyKey" in sequencing
+
+    matching_status = events[
+        events.index("def handle_matching_status_update") :
+        events.index("@socketio.on('matching_hint')")
+    ]
+    ordering_status = events[
+        events.index("def handle_sequencing_status_update") :
+        events.index("@socketio.on('sequencing_game_end')")
+    ]
+    assert "_interrupt_interactive_prompt" not in matching_status
+    assert "_interrupt_interactive_prompt" not in ordering_status
+    assert "_remember_pending_interactive_feedback" in events
+    assert "_flush_pending_interactive_work" in events
+    assert "maxMs = 20000" in matching
+    assert "maxMs = 20000" in sequencing
+    assert "maxMs: 2800" not in matching
+    assert "maxMs: 2800" not in sequencing
+    terminal_guard = "(data.status || data.terminalStatus || 'ended') !== 'ended'"
+    assert terminal_guard in matching
+    assert terminal_guard in sequencing
+    assert "_preempt_busy_behavior_for_item_question" not in events
+    assert "_pending_interactive_question_timers" in events
+
+
+def test_teacher_keyword_auto_praise_always_arms_scoring_fallback():
+    control = _read("teacher_frontend/components/ControlPage.tsx")
+    block = control[
+        control.index("socket.on('keyword_auto_praise'") :
+        control.index("socket.on('behavior_animation_ended'")
+    ]
+    assert "serverPlayed" in block
+    assert "armPraiseRatingFallback(praiseContext" in block
+    assert "data.hasAnimation ? 12000 : 3200" in block
+    assert "if (!data.hasAnimation)" not in block
+
+
+def test_teacher_praise_scoring_is_armed_before_emit_and_survives_degradation():
+    control = _read("teacher_frontend/components/ControlPage.tsx")
+    play = control[
+        control.index("const playCurrentItem = useCallback") :
+        control.index("const retryFailedPlayback")
+    ]
+    prearm = play.index("praiseRequestContextRef.current = praiseContext")
+    emit = play.index('socketRef.current.emit("play_resource", playData)')
+    assert prearm < emit
+    assert "armPraiseRatingFallback(praiseContext, 15000)" in play
+
+    completed = control[
+        control.index("socket.on('behavior_completed'") :
+        control.index("socket.on('analysis_result'")
+    ]
+    assert "matchesPraise" in completed
+    assert "queuePraiseRating(" in completed
+
+    animation = control[
+        control.index("socket.on('behavior_animation_ended'") :
+        control.index("return socket;")
+    ]
+    failed_branch = animation[
+        animation.index("if (animationStatus !== 'ended')") :
+        animation.index("const selected =")
+    ]
+    assert "queuePraiseRating(" in failed_branch
+
+    ack = control[
+        control.index("socket.on('play_resource_ack'") :
+        control.index("socket.on('resource_ready'")
+    ]
+    assert "data?.animationExpected === true" in ack
+    assert "armPraiseRatingFallback(" in ack
+
+
 def test_behavior_media_are_correlated_and_expression_self_heals():
     browser_tts = _read("static/js/browser_tts.js")
     audio_player = _read("static/js/audio_player.js")
@@ -54,6 +175,8 @@ def test_behavior_media_are_correlated_and_expression_self_heals():
 
     assert "正式表情播放中，新事件进入队列" in emotion
     assert "pendingEmotionEvents.push(eventData)" in emotion
+    assert "superseded_by_dialogue_reply" in emotion
+    assert "dialogueReply" in emotion
     assert "stopIdlePlayback();" in emotion
     assert "emotion_busy" not in emotion
     assert "robot_emotion_ended" in emotion

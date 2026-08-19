@@ -6,7 +6,7 @@
         "03-表扬"
       ],
       "emotion": "v3_speak_excitedly_short.mp4",
-      "animation": "",
+      "animation": "勾勾.mp4",
       "sequence": {
         "expressionMediaId": "",
         "expressionDurationMs": 0,
@@ -208,22 +208,9 @@
       }
     },
     "7": {
-      "praise": {
-        "motions": [],
-        "emotion": "v3_speak_excitedly_short.mp4",
-        "animation": "",
-        "sequence": {
-          "expressionMediaId": "",
-          "expressionDurationMs": 0,
-          "motionOffsetMs": 0,
-          "audio": {
-            "offsetMs": 0
-          }
-        }
-      },
       "question": {
         "motions": [],
-        "emotion": "v3_speak_lookdown_sound.mp4",
+        "emotion": "v3_speak_lookdown_namecall.mp4",
         "animation": "",
         "sequence": {
           "expressionMediaId": "",
@@ -277,7 +264,7 @@
       },
       "question": {
         "motions": [],
-        "emotion": "v3_speak_lookdown_match.mp4",
+        "emotion": "v3_speak_lookdown_sound.mp4",
         "animation": "",
         "sequence": {
           "expressionMediaId": "",
@@ -331,7 +318,7 @@
       },
       "question": {
         "motions": [],
-        "emotion": "v3_speak_lookdown_sort.mp4",
+        "emotion": "v3_speak_lookdown_match.mp4",
         "animation": "",
         "sequence": {
           "expressionMediaId": "",
@@ -358,6 +345,70 @@
       "silent": {
         "motions": [],
         "emotion": "v3_speak_bye.mp4",
+        "animation": "",
+        "sequence": {
+          "expressionMediaId": "",
+          "expressionDurationMs": 0,
+          "motionOffsetMs": 0,
+          "audio": {
+            "offsetMs": 0
+          }
+        }
+      }
+    },
+    "1": {
+      "praise": {
+        "motions": [],
+        "emotion": "v3_speak_excitedly_short.mp4",
+        "animation": "勾勾.mp4",
+        "sequence": {
+          "expressionMediaId": "",
+          "expressionDurationMs": 0,
+          "motionOffsetMs": 0,
+          "audio": {
+            "offsetMs": 0
+          }
+        }
+      }
+    },
+    "2": {
+      "items": {
+        "3": {
+          "praise": {
+            "motions": [],
+            "emotion": "v3_speak_excitedly_long.mp4",
+            "animation": "",
+            "sequence": {
+              "expressionMediaId": "",
+              "expressionDurationMs": 0,
+              "motionOffsetMs": 0,
+              "audio": {
+                "offsetMs": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "10": {
+      "question": {
+        "motions": [],
+        "emotion": "v3_speak_lookdown_sort.mp4",
+        "animation": "",
+        "sequence": {
+          "expressionMediaId": "",
+          "expressionDurationMs": 0,
+          "motionOffsetMs": 0,
+          "audio": {
+            "offsetMs": 0
+          }
+        }
+      }
+    },
+    "3": {
+      "question": {
+        "motions": [],
+        "emotion": "v3_speak_lookdown_sound.mp4",
         "animation": "",
         "sequence": {
           "expressionMediaId": "",

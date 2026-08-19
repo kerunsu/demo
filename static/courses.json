@@ -54,15 +54,17 @@
         "id": 1,
         "name": "小狗叫",
         "type": "image",
-        "file": "resources/audios/dog_bark.mp3",
-        "hint": "resources/audios/hint_dog.mp3"
+        "file": "resources/images/voice/203/",
+        "icon": "resources/images/voice/203/001.jpg",
+        "hint": "resources/audios/naming/hint_dog.mp3"
       },
       {
         "id": 2,
         "name": "小猫叫",
         "type": "image",
-        "file": "resources/audios/cat_meow.mp3",
-        "hint": "resources/audios/hint_cat.mp3"
+        "file": "resources/images/voice/201/",
+        "icon": "resources/images/voice/201/001.jpg",
+        "hint": "resources/audios/naming/hint_dog.mp3"
       }
     ]
   },

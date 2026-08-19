@@ -112,3 +112,16 @@ def test_animation_rename_ui_and_api_contract():
     assert 'id="btn-rename-animation"' in template
     assert "/animations/${encodeURIComponent(selected)}/rename" in script
     assert "referencesUpdated" in script or "newName" in script
+
+
+def test_animation_picker_updates_the_config_that_save_submits():
+    root = Path(__file__).resolve().parents[1]
+    mapping = (root / "static" / "robot" / "js" / "robot_mapping.js").read_text(encoding="utf-8")
+    handler = mapping.split("function onAnimationChange() {", 1)[1].split("\n}", 1)[0]
+
+    assert "const config = currentEditingConfig || getConfigForScope(currentScope);" in handler
+    assert "config.__animation = config.__animation || {};" in handler
+    assert "config.__animation.praise = value;" in handler
+    assert "dirtyAuxTypes.add('praise');" in handler
+    assert "mappingData.defaults" not in handler
+    assert "config.__animation?.[k] || ''" in mapping

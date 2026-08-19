@@ -12,7 +12,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from app import app  # noqa: E402
+from app import create_app  # noqa: E402
 from database.models import (  # noqa: E402
     db,
     CourseType,
@@ -34,9 +34,11 @@ TYPE_MAPPING = {
 
 def migrate_courses(force: bool = False):
     """将 courses.json 数据迁移到数据库。force=True 时跳过确认并覆盖已有课程。"""
-    with app.app_context():
-        # 读取 courses.json 文件
-        courses_file = os.path.join(app.static_folder, "courses.json")
+    # app/__init__.py 全局 app 默认为 None；须 create_app
+    application, _ = create_app()
+    with application.app_context():
+        # 课程配置在项目根 static/（非 app 包内 static）
+        courses_file = os.path.join(project_root, "static", "courses.json")
         if not os.path.exists(courses_file):
             print(f"错误：课程配置文件不存在: {courses_file}")
             return False

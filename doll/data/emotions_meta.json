@@ -84,6 +84,14 @@
       "brightness": 1.0,
       "saturation": 1.0,
       "opacity": 1.0
+    },
+    "v3_idle_sleepy2.mp4": {
+      "speedMultiplier": 1.0,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
     }
   },
   "globalFilter": {
@@ -93,5 +101,18 @@
     "saturation": 1.0,
     "contrast": 1.0,
     "opacity": 1.0
+  },
+  "dialogueReplyExpressions": {
+    "enabled": true,
+    "rules": [
+      {
+        "maxChars": 8,
+        "emotion": "v3_speak_excitedly_short.mp4"
+      },
+      {
+        "maxChars": 15,
+        "emotion": "v3_speak_excitedly_long.mp4"
+      }
+    ]
   }
 }

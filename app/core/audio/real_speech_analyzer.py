@@ -4,6 +4,7 @@
 只要识别出的文字和目标一致，就给高分。
 """
 import os
+import re
 import time
 import io
 import logging
@@ -12,7 +13,29 @@ import soundfile as sf
 # 引入 difflib 用于对比文本相似度
 import difflib 
 import threading
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Tuple
+
+# VAD 必须在 peak-norm 之前：否则静音/底噪被拉到 0.95 后几乎恒过阈，
+# FunASR 会把空块幻觉成 'Gyggny' / '我的意的' 等，连续 ASR → keyword_listen 刷屏。
+# Keep the MaiMaiCtrl Paraformer path, but require sustained voice activity.
+# A single low global threshold makes clicks/breathing look like speech after
+# normalization; frame occupancy separates a short noise from a short answer.
+_SPEECH_RMS_THRESHOLD = 0.006
+_SPEECH_FRAME_RMS_THRESHOLD = 0.014
+_SPEECH_PEAK_THRESHOLD = 0.02
+_SPEECH_MIN_VOICED_RATIO = 0.12
+_SPEECH_FRAME_MS = 20
+_SPEECH_TARGET_PEAK = 0.30
+_SPEECH_MAX_INPUT_GAIN = 3.0
+_PUNCT_RE = re.compile(
+    r'[\s\u3000，。！？、；：,.!?;:\'\"“”‘’（）()\[\]【】<>《》…—～~·]+'
+)
+_CJK_RE = re.compile(r'[\u4e00-\u9fff]')
+_LATIN_RE = re.compile(r'[A-Za-z]')
+_FILLER_ONLY = frozenset({
+    '嗯', '啊', '呃', '哦', '唔', '呵', '额', '欸', '唉',
+    '的', '了', '呢', '吧', '嘛', '呀', '嗯嗯', '啊啊', '呃呃',
+})
 
 # ------------------------------------------------------
 # 1. 本地定义基类
@@ -86,10 +109,27 @@ class RealSpeechAnalyzer(ParentClass):
         except (TypeError, ValueError):
             accumulation_duration = 2.0
         self._accumulation_duration = max(0.5, min(accumulation_duration, 5.0))
+        self._speech_rms_threshold = self._config_float(
+            'rms_threshold', _SPEECH_RMS_THRESHOLD, 0.0, 1.0
+        )
+        self._speech_frame_rms_threshold = self._config_float(
+            'frame_rms_threshold', _SPEECH_FRAME_RMS_THRESHOLD, 0.0, 1.0
+        )
+        self._speech_peak_threshold = self._config_float(
+            'peak_threshold', _SPEECH_PEAK_THRESHOLD, 0.0, 1.0
+        )
+        self._speech_min_voiced_ratio = self._config_float(
+            'min_voiced_ratio', _SPEECH_MIN_VOICED_RATIO, 0.0, 1.0
+        )
+        self._speech_max_input_gain = self._config_float(
+            'max_input_gain', _SPEECH_MAX_INPUT_GAIN, 1.0, 10.0
+        )
         self._buffer_lock = threading.Lock()
         self._inference_lock = threading.Lock()
         self._audio_buffer = []
         self._buffered_samples = 0
+        # (normalized_text, emitted_at) — overlapping 2s windows often repeat one sentence
+        self._last_emitted_transcript = ('', 0.0)
         self._model = None
         # local = 本进程 FunASR；voice-service = HTTP 回退（主 venv 无 torch 时）
         self._backend = None
@@ -97,11 +137,30 @@ class RealSpeechAnalyzer(ParentClass):
         self._unready_log_at = 0.0
         
         logger.info(
-            "真实语音分析器 (ASR模式) 已创建: model=%s sample_rate=%sHz accumulation=%.1fs",
+            "真实语音分析器 (ASR模式) 已创建: model=%s sample_rate=%sHz "
+            "accumulation=%.1fs frame_rms=%.4f voiced_ratio=%.2f max_gain=%.1f",
             self._model_name,
             self._target_sample_rate,
             self._accumulation_duration,
+            self._speech_frame_rms_threshold,
+            self._speech_min_voiced_ratio,
+            self._speech_max_input_gain,
         )
+
+    def _config_float(
+        self,
+        key: str,
+        default: float,
+        minimum: float,
+        maximum: float,
+    ) -> float:
+        try:
+            value = float(self._config.get(key, default))
+        except (TypeError, ValueError):
+            return default
+        if not np.isfinite(value):
+            return default
+        return max(minimum, min(value, maximum))
 
     def initialize(self) -> bool:
         if self._is_initialized:
@@ -170,8 +229,73 @@ class RealSpeechAnalyzer(ParentClass):
             logger.error("语音分析器 voice-service 探测失败: %s", vs_err)
             return False
 
-    def _preprocess_audio(self, audio_data):
-        """音频预处理"""
+    @staticmethod
+    def _audio_energy(audio: np.ndarray) -> Tuple[float, float]:
+        """Return (rms, peak) on float PCM before peak-normalization."""
+        if audio is None or getattr(audio, 'size', 0) == 0:
+            return 0.0, 0.0
+        flat = np.asarray(audio, dtype=np.float32).reshape(-1)
+        if flat.size == 0:
+            return 0.0, 0.0
+        peak = float(np.max(np.abs(flat)))
+        rms = float(np.sqrt(np.mean(np.square(flat)))) if peak > 0 else 0.0
+        return rms, peak
+
+    def _voiced_frame_ratio(self, audio: np.ndarray) -> float:
+        """Return the share of 20ms frames with sustained speech-level energy."""
+        flat = np.asarray(audio, dtype=np.float32).reshape(-1)
+        frame_samples = max(
+            1,
+            int(self._target_sample_rate * _SPEECH_FRAME_MS / 1000),
+        )
+        frame_count = flat.size // frame_samples
+        if frame_count <= 0:
+            return 0.0
+        frames = flat[: frame_count * frame_samples].reshape(frame_count, frame_samples)
+        frame_rms = np.sqrt(np.mean(np.square(frames), axis=1))
+        frame_peak = np.max(np.abs(frames), axis=1)
+        voiced = (
+            (frame_rms >= self._speech_frame_rms_threshold)
+            & (frame_peak >= self._speech_peak_threshold)
+        )
+        return float(np.mean(voiced))
+
+    @staticmethod
+    def _is_plausible_asr_text(text: str) -> bool:
+        """Drop FunASR silence/noise hallucinations (Latin gibberish, fillers)."""
+        raw = str(text or '').strip()
+        if not raw:
+            return False
+        cleaned = _PUNCT_RE.sub('', raw)
+        if not cleaned:
+            return False
+        # zh 场景下纯拉丁短串几乎都是底噪幻觉（如 Gyggny）
+        if _LATIN_RE.search(cleaned) and not _CJK_RE.search(cleaned):
+            return False
+        if cleaned in _FILLER_ONLY:
+            return False
+        # 单字非汉字（符号残留）丢弃；单汉字留给拟声/极短目标
+        if len(cleaned) < 2 and not _CJK_RE.search(cleaned):
+            return False
+        return True
+
+    def _dedupe_repeated_transcript(self, text: str) -> str:
+        """Drop identical / nested repeats from consecutive ASR windows."""
+        norm = _PUNCT_RE.sub('', str(text or ''))
+        if not norm:
+            return ''
+        now = time.time()
+        prev_norm, prev_at = self._last_emitted_transcript
+        if prev_norm and (now - float(prev_at or 0)) < 8.0:
+            if prev_norm == norm or norm in prev_norm or prev_norm in norm:
+                if len(norm) <= len(prev_norm):
+                    logger.info("🗣️ ASR 抑制重复识别: '%s'", text)
+                    return ''
+        self._last_emitted_transcript = (norm, now)
+        return text
+
+    def _preprocess_audio(self, audio_data, *, normalize: bool = True):
+        """音频预处理。normalize=False 时仅重采样，供 VAD 读原始能量。"""
         try:
             import soundfile as sf
             
@@ -186,6 +310,8 @@ class RealSpeechAnalyzer(ParentClass):
             if len(audio.shape) > 1:
                 audio = np.mean(audio, axis=1)
 
+            audio = np.asarray(audio, dtype=np.float32).reshape(-1)
+
             if sr != self._target_sample_rate:
                 try:
                     import librosa
@@ -196,15 +322,15 @@ class RealSpeechAnalyzer(ParentClass):
                         self._target_sample_rate,
                     )
                     return None
-                audio = audio.astype(np.float32)
                 audio = librosa.resample(
                     audio, orig_sr=sr, target_sr=self._target_sample_rate
                 )
             
-            # 音量标准化 (ASR 模型对音量不敏感，但放大一点更稳)
-            max_val = np.abs(audio).max()
-            if max_val > 0:
-                audio = audio / max_val * 0.95
+            if normalize:
+                # 仅在已通过能量 VAD 后放大，避免把底噪抬成“人声”
+                max_val = float(np.abs(audio).max()) if audio.size else 0.0
+                if max_val > 0:
+                    audio = audio / max_val * 0.95
             
             return audio
             
@@ -272,15 +398,21 @@ class RealSpeechAnalyzer(ParentClass):
 
         try:
             start_time = time.time()
-            audio_input = self._preprocess_audio(audio_data)
-            if audio_input is None: return None
+            # 先拿未放大的 PCM 做能量门控，再 peak-norm 送 ASR
+            audio_raw = self._preprocess_audio(audio_data, normalize=False)
+            if audio_raw is None:
+                return None
 
-            # 简易能量 VAD
-            rms = float(np.sqrt(np.mean(np.square(audio_input.astype(np.float32))))) if len(audio_input) else 0.0
-            is_speech = rms > 0.01
-            chunk_duration = len(audio_input) / float(self._target_sample_rate or 16000)
+            rms, peak = self._audio_energy(audio_raw)
+            voiced_ratio = self._voiced_frame_ratio(audio_raw)
+            is_speech = (
+                rms >= self._speech_rms_threshold
+                and peak >= self._speech_peak_threshold
+                and voiced_ratio >= self._speech_min_voiced_ratio
+            )
+            chunk_duration = len(audio_raw) / float(self._target_sample_rate or 16000)
 
-            # 明显静音块不打 ASR，降低 voice-service 压力
+            # 明显静音/底噪块不打 ASR，降低 voice-service 压力与幻觉
             if not is_speech:
                 return AnalysisResult(
                     session_id=getattr(context, 'session_id', None),
@@ -294,7 +426,13 @@ class RealSpeechAnalyzer(ParentClass):
                         'timestamps': [],
                         'latency_ms': 0,
                         'detection_time_ms': 0,
-                        'vad': {'is_speech': False, 'energy': rms, 'confidence': 0.0},
+                        'vad': {
+                            'is_speech': False,
+                            'energy': rms,
+                            'peak': peak,
+                            'voiced_ratio': voiced_ratio,
+                            'confidence': 0.0,
+                        },
                         'asr': {
                             'text': '',
                             'confidence': 0.0,
@@ -313,9 +451,27 @@ class RealSpeechAnalyzer(ParentClass):
                     confidence=0.0,
                     frame_index=getattr(context, 'frame_index', None),
                 )
-            
+
+            # Use bounded gain. Peak-normalizing every accepted sound to 0.95
+            # turns breathing and handling noise into full-scale ASR input.
+            max_val = float(np.abs(audio_raw).max()) if audio_raw.size else 0.0
+            gain = min(
+                self._speech_max_input_gain,
+                (_SPEECH_TARGET_PEAK / max_val) if max_val > 0 else 1.0,
+            )
+            audio_input = np.clip(audio_raw * gain, -0.95, 0.95)
+
             audio_int16 = (audio_input * 32767).astype(np.int16)
             rec_text, provider = self._recognize_text(audio_int16)
+            if rec_text and not self._is_plausible_asr_text(rec_text):
+                logger.info(
+                    "🗣️ ASR[%s] 丢弃不可信文本: '%s'",
+                    provider,
+                    rec_text,
+                )
+                rec_text = ''
+            if rec_text:
+                rec_text = self._dedupe_repeated_transcript(rec_text)
             detection_time = (time.time() - start_time) * 1000
             word_count = len(rec_text)
             
@@ -350,7 +506,13 @@ class RealSpeechAnalyzer(ParentClass):
                 'timestamps': [],
                 'latency_ms': 0,
                 'detection_time_ms': round(detection_time, 1),
-                'vad': {'is_speech': is_speech, 'energy': rms, 'confidence': min(1.0, rms * 10)},
+                'vad': {
+                    'is_speech': is_speech,
+                    'energy': rms,
+                    'peak': peak,
+                    'voiced_ratio': voiced_ratio,
+                    'confidence': min(1.0, voiced_ratio / max(0.01, self._speech_min_voiced_ratio)),
+                },
                 'asr': {
                     'text': rec_text,
                     'confidence': final_score / 100.0,
@@ -358,12 +520,12 @@ class RealSpeechAnalyzer(ParentClass):
                     'is_final': True,
                     'provider': provider,
                 },
-                'speech_ratio': 1.0 if is_speech else 0.0,
+                'speech_ratio': voiced_ratio if is_speech else 0.0,
                 'word_count': word_count,
                 'speech_duration': round(chunk_duration if is_speech else 0.0, 3),
                 'clarity_proxy': round(clarity_proxy, 3),
                 'is_speech': is_speech,
-                'data_quality': 'VALID' if (is_speech or rec_text) else 'DEGRADED',
+                'data_quality': 'VALID' if (is_speech and rec_text) else 'DEGRADED',
                 'speaker_assumption': 'child',
             }
 
@@ -421,11 +583,28 @@ class RealSpeechAnalyzer(ParentClass):
         finally:
             self._inference_lock.release()
 
+    def ingest_preroll(self, chunk_data, *, max_seconds: float = 1.0) -> None:
+        """Keep a short tail of gated audio so a quick child answer is not lost."""
+        try:
+            chunk = np.asarray(chunk_data, dtype=np.float32).reshape(-1)
+        except Exception:
+            return
+        if chunk.size == 0:
+            return
+        max_samples = max(1, int(self._target_sample_rate * max(0.2, min(max_seconds, 2.0))))
+        with self._buffer_lock:
+            self._audio_buffer.append(chunk.copy())
+            self._buffered_samples += int(chunk.size)
+            while self._buffered_samples > max_samples and self._audio_buffer:
+                removed = self._audio_buffer.pop(0)
+                self._buffered_samples -= int(removed.size)
+
     def reset_buffer(self) -> None:
         """丢弃系统播音期间累积的回声音频，不影响当前语音目标。"""
         with self._buffer_lock:
             self._audio_buffer.clear()
             self._buffered_samples = 0
+        self._last_emitted_transcript = ('', 0.0)
 
     def reset_statistics(self) -> None:
         self.reset_buffer()

@@ -385,28 +385,10 @@ function onAnimationChange() {
     const select = document.getElementById('animation-praise');
     if (!select || !currentScope) return;
     const value = String(select.value || '');
+    const config = currentEditingConfig || getConfigForScope(currentScope);
+    config.__animation = config.__animation || {};
+    config.__animation.praise = value;
     dirtyAuxTypes.add('praise');
-    let parent = null;
-    if (currentScope.type === 'default') {
-        mappingData.defaults = mappingData.defaults || {};
-        parent = mappingData.defaults;
-    } else if (currentScope.type === 'course') {
-        mappingData.courses = mappingData.courses || {};
-        parent = mappingData.courses[currentScope.courseId] = mappingData.courses[currentScope.courseId] || {};
-    } else if (currentScope.type === 'item') {
-        mappingData.courses = mappingData.courses || {};
-        const course = mappingData.courses[currentScope.courseId] = mappingData.courses[currentScope.courseId] || {};
-        course.items = course.items || {};
-        parent = course.items[currentScope.itemId] = course.items[currentScope.itemId] || {};
-    }
-    if (!parent) return;
-    const existing = parent.praise;
-    if (Array.isArray(existing)) {
-        parent.praise = { motions: existing, emotion: '', sequence: {}, animation: value };
-    } else {
-        parent.praise = existing && typeof existing === 'object' ? existing : { motions: [] };
-        parent.praise.animation = value;
-    }
 }
 
 // ===== 渲染动作插槽 =====

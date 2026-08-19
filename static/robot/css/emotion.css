@@ -48,7 +48,7 @@ html, body {
     height: 100%;
     object-fit: cover;
     transform-origin: center center;
-    /* 无过渡效果，直接切换 */
+    /* JS 在后台缓冲首帧就绪后临时启用短交叉淡化。 */
 }
 
 #emotion-idle,

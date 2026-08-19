@@ -364,6 +364,29 @@
           </div>
         </main>
       </div>
+      <section class="cc-card dialogue-expression-card" id="dialogue-expression-card">
+        <div class="dialogue-expression-head">
+          <div>
+            <h2 class="cc-card-title">大模型回复表情匹配</h2>
+            <p class="cc-tiny">按回复有效字数选择 MP4 说话表情。规则按上限从小到大匹配；超过最后一档时继续使用最后一档。</p>
+          </div>
+          <label class="dialogue-expression-toggle">
+            <input type="checkbox" id="dialogue-expression-enabled" />
+            <span>启用匹配</span>
+          </label>
+        </div>
+        <div class="dialogue-expression-rules" id="dialogue-expression-rules"></div>
+        <div class="dialogue-expression-actions">
+          <button type="button" class="cc-btn soft" id="btn-add-dialogue-expression-rule">添加字数档位</button>
+          <button type="button" class="cc-btn primary" id="btn-save-dialogue-expression-rules">保存规则</button>
+          <span class="cc-tiny" id="dialogue-expression-status" role="status" aria-live="polite"></span>
+        </div>
+        <div class="dialogue-expression-tester">
+          <label for="dialogue-expression-test-text">匹配预览</label>
+          <textarea id="dialogue-expression-test-text" rows="2" placeholder="输入一段大模型回复，查看会使用哪一个表情"></textarea>
+          <div class="dialogue-expression-test-result" id="dialogue-expression-test-result">输入文字后显示匹配结果</div>
+        </div>
+      </section>
     </section>
 
     <!-- 动作库 -->
@@ -813,6 +836,7 @@
   <script src="/static/robot/js/robot_mapping.js?v=20260813-three-layer-behavior"></script>
   <script src="/static/robot/js/robot_emotion_mapping.js?v=20260813-three-layer-behavior"></script>
   <script src="/static/js/config_behavior_sequence.js"></script>
+  <script src="/static/js/config_dialogue_expressions.js?v=20260819-dialogue-length-v1"></script>
   <script src="/static/js/config_phase5.js"></script>
 </body>
 </html>

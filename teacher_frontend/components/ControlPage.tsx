@@ -429,6 +429,9 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
     courseIndex: number;
     itemIndex: number;
     sessionId: string | null;
+    behaviorId: string | null;
+    animationExpected: boolean | null;
+    fallbackTimerId: number | null;
   } | null>(null);
   /** Dedup keyword_auto_praise before play_resource_ack sets praiseRequestContextRef. */
   const keywordAutoPraiseInFlightRef = useRef<{
@@ -648,6 +651,59 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
     }
   }, []);
 
+  const clearPraiseRequestContext = useCallback((requestId?: string | null) => {
+    const context = praiseRequestContextRef.current;
+    if (!context || (requestId && context.requestId !== requestId)) return;
+    clearScheduledTimeout(context.fallbackTimerId);
+    context.fallbackTimerId = null;
+    praiseRequestContextRef.current = null;
+  }, [clearScheduledTimeout]);
+
+  const queuePraiseRating = useCallback((
+    context: NonNullable<typeof praiseRequestContextRef.current>,
+    notice?: string,
+  ) => {
+    if (
+      currentCourseIndexRef.current !== context.courseIndex ||
+      currentItemIndexRef.current !== context.itemIndex ||
+      (context.sessionId && currentSessionIdRef.current !== context.sessionId)
+    ) {
+      clearPraiseRequestContext(context.requestId);
+      return;
+    }
+    clearScheduledTimeout(context.fallbackTimerId);
+    context.fallbackTimerId = null;
+    if (praiseRequestContextRef.current?.requestId === context.requestId) {
+      praiseRequestContextRef.current = null;
+    }
+    if (pendingPraiseAdvanceRef.current?.requestId !== context.requestId) {
+      pendingPraiseAdvanceRef.current = {
+        requestId: context.requestId,
+        courseIndex: context.courseIndex,
+        itemIndex: context.itemIndex,
+        sessionId: context.sessionId,
+      };
+    }
+    if (notice) setPlaybackNotice(notice);
+    scheduleTimeout(flushDeferredAutoQuestion, 0);
+  }, [
+    clearPraiseRequestContext,
+    clearScheduledTimeout,
+    flushDeferredAutoQuestion,
+    scheduleTimeout,
+  ]);
+
+  const armPraiseRatingFallback = useCallback((
+    context: NonNullable<typeof praiseRequestContextRef.current>,
+    delayMs: number,
+  ) => {
+    clearScheduledTimeout(context.fallbackTimerId);
+    context.fallbackTimerId = scheduleTimeout(() => {
+      if (praiseRequestContextRef.current?.requestId !== context.requestId) return;
+      queuePraiseRating(context, '表扬已完成，动画结束回执超时，现可评分');
+    }, Math.max(1000, delayMs));
+  }, [clearScheduledTimeout, queuePraiseRating, scheduleTimeout]);
+
   const releasePlaybackGate = useCallback((
     expectedRequestId?: string | null,
     expectedBehaviorId?: string | null,
@@ -835,6 +891,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
     selectedCourseItemsRef.current = selectedCourseItems;
     cancelAutoQuestionWait();
     clearContentResourceWait();
+    clearPraiseRequestContext();
     cancelPendingGameStartsRef.current();
     contentRequestRef.current = null;
     deferredContentRetryRef.current = null;
@@ -844,6 +901,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
   }, [
     cancelAutoQuestionWait,
     clearContentResourceWait,
+    clearPraiseRequestContext,
     currentCourseIndex,
     currentItemIndex,
     selectedCourseItems,
@@ -1408,6 +1466,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
             contentRequestRef.current = null;
           }
           clearContentResourceWait(requestId);
+          clearPraiseRequestContext(requestId);
           releasePlaybackGate(requestId);
           return;
         }
@@ -1419,6 +1478,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
         );
 
         if (!accepted) {
+          clearPraiseRequestContext(requestId);
           if (contentRequestRef.current?.requestId === requestId) {
             contentRequestRef.current = null;
           }
@@ -1534,12 +1594,18 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
           contentRequestRef.current.status = 'accepted';
         }
         if (pending.intent === 'praise') {
-          praiseRequestContextRef.current = {
-            requestId,
-            courseIndex: pending.courseIndex,
-            itemIndex: pending.itemIndex,
-            sessionId: ackSessionId,
-          };
+          const praiseContext = praiseRequestContextRef.current;
+          if (praiseContext?.requestId === requestId) {
+            praiseContext.sessionId = ackSessionId || praiseContext.sessionId;
+            praiseContext.behaviorId = behaviorId;
+            praiseContext.animationExpected = data?.animationExpected === true;
+            armPraiseRatingFallback(
+              praiseContext,
+              praiseContext.animationExpected
+                ? Math.max(12000, remainingMs + 500)
+                : Math.max(3200, remainingMs + 500),
+            );
+          }
         }
 
         if (remainingMs > 0) {
@@ -1681,7 +1747,13 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
           Boolean(requestId) && requestId === activePlaybackRequestIdRef.current;
         const matchesBehavior =
           Boolean(behaviorId) && behaviorId === activeBehaviorIdRef.current;
-        if (!matchesRequest && !matchesBehavior) return;
+        const praiseContext = praiseRequestContextRef.current;
+        const matchesPraise = Boolean(
+          praiseContext &&
+          ((requestId && requestId === praiseContext.requestId) ||
+            (behaviorId && behaviorId === praiseContext.behaviorId))
+        );
+        if (!matchesRequest && !matchesBehavior && !matchesPraise) return;
         const eventSessionId = normalizeId(data?.sessionId ?? data?.session_id);
         if (
           eventSessionId &&
@@ -1695,20 +1767,6 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
         ).toLowerCase();
         const failed = ['failed', 'cancelled', 'error'].includes(terminalStatus);
         const degraded = data?.degraded === true || terminalStatus === 'degraded';
-        const praiseContext = praiseRequestContextRef.current;
-        const isCurrentPraise = Boolean(
-          praiseContext &&
-          ((requestId && praiseContext.requestId === requestId) || matchesBehavior)
-        );
-        if ((failed || degraded) && isCurrentPraise) {
-          praiseRequestContextRef.current = null;
-          if (
-            pendingPraiseAdvanceRef.current?.requestId === praiseContext?.requestId
-          ) {
-            pendingPraiseAdvanceRef.current = null;
-          }
-        }
-
         const componentLabels: Record<string, string> = {
           audio: '语音',
           childAnimation: '儿童端动画',
@@ -1730,6 +1788,15 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
           .map(([name, component]: [string, any]) =>
             `${componentLabels[name] || name}=${component?.status}`,
           );
+        if (matchesPraise && praiseContext) {
+          const reason = data?.message || data?.error || abnormalComponents.join('、');
+          queuePraiseRating(
+            praiseContext,
+            failed || degraded
+              ? `表扬已完成，但部分画面或动作未完整播放${reason ? `（${reason}）` : ''}，现可评分`
+              : undefined,
+          );
+        }
         if (matchesBehavior) {
           releasePlaybackGate(null, behaviorId);
         } else {
@@ -1988,15 +2055,37 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
         }, 2000);
       });
       
-      // 关键词自动表扬：与教师点「表扬」完全同路（play_resource → 动画/表情/动作 → 打分 → 切题）
+      // 关键词自动表扬：服务端已播完整表扬包时只挂打分；否则等同点「表扬」
       socket.on('keyword_auto_praise', (data: {
         sessionId?: string;
         requestId?: string;
         courseType?: string;
         itemId?: string | number;
         keyword?: string;
+        serverPlayed?: boolean;
+        behaviorId?: string;
+        hasAnimation?: boolean;
+        behaviorAnimation?: string;
       }) => {
-        if (!eventMatchesCurrentSession(data)) return;
+        if (!eventMatchesCurrentSession(data)) {
+          // Soft fallback: same item on teacher UI still accepts (session race).
+          const courseIdxSoft = currentCourseIndexRef.current;
+          const itemIdxSoft = currentItemIndexRef.current;
+          const selectedSoft = selectedCourseItemsRef.current[courseIdxSoft];
+          const currentItemSoft = selectedSoft?.items?.[itemIdxSoft];
+          const eventItemIdSoft = data?.itemId != null ? String(data.itemId) : null;
+          if (
+            !(
+              eventItemIdSoft &&
+              currentItemSoft?.id != null &&
+              eventItemIdSoft === String(currentItemSoft.id)
+            )
+          ) {
+            console.log('🏅 忽略 keyword_auto_praise（会话不匹配）:', data);
+            return;
+          }
+          console.log('🏅 keyword_auto_praise 会话软匹配（按课点）:', data);
+        }
         const courseIdx = currentCourseIndexRef.current;
         const itemIdx = currentItemIndexRef.current;
         const selected = selectedCourseItemsRef.current[courseIdx];
@@ -2041,9 +2130,27 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
           itemId: eventItemId || (currentItem?.id != null ? String(currentItem.id) : null),
           atMs: nowMs,
         };
-        console.log('🏅 收到 keyword_auto_praise，等同教师点击表扬:', data);
-        // 与 handlePraise 一致：先记完成时刻，再走 playCurrentItem({ praise: true })
         completionAtRef.current = nowMs;
+
+        // Server already ran the full praise package — only attach scoring.
+        if (data?.serverPlayed && eventRequestId) {
+          console.log('🏅 收到 keyword_auto_praise（服务端已播完整包），挂接打分:', data);
+          const praiseContext = {
+            requestId: eventRequestId,
+            courseIndex: courseIdx,
+            itemIndex: itemIdx,
+            sessionId:
+              normalizeId(data?.sessionId) || currentSessionIdRef.current || null,
+            behaviorId: normalizeId(data?.behaviorId),
+            animationExpected: data?.hasAnimation === true,
+            fallbackTimerId: null,
+          };
+          praiseRequestContextRef.current = praiseContext;
+          armPraiseRatingFallback(praiseContext, data.hasAnimation ? 12000 : 3200);
+          return;
+        }
+
+        console.log('🏅 收到 keyword_auto_praise，等同教师点击表扬:', data);
         playCurrentItemRef.current({ praise: true });
       });
 
@@ -2073,12 +2180,9 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
           data?.terminalStatus || data?.status || 'ended',
         ).toLowerCase();
         if (animationStatus !== 'ended') {
-          praiseRequestContextRef.current = null;
-          if (pendingPraiseAdvanceRef.current?.requestId === praiseContext.requestId) {
-            pendingPraiseAdvanceRef.current = null;
-          }
-          setPlaybackNotice(
-            `表扬动画未完整播放（${data?.reason || animationStatus}），已停留在当前课点`,
+          queuePraiseRating(
+            praiseContext,
+            `表扬动画未完整播放（${data?.reason || animationStatus}），现可评分`,
           );
           return;
         }
@@ -2091,13 +2195,11 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
         const currentType = current?.course?.type;
         if (currentType === 'pairing' || currentType === 'ordering') {
           console.log('🛡️ 忽略交互课的 behavior_animation_ended:', currentType);
+          clearPraiseRequestContext(praiseContext.requestId);
           return;
         }
 
-        // 自动切换到下一个
-        praiseRequestContextRef.current = null;
-        pendingPraiseAdvanceRef.current = praiseContext;
-        scheduleTimeout(flushDeferredAutoQuestion, 0);
+        queuePraiseRating(praiseContext);
       });
       
       return socket;
@@ -2126,7 +2228,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
       contentResourceWaitRef.current = null;
       awaitingResourceReadyRef.current = false;
       contentRequestRef.current = null;
-      praiseRequestContextRef.current = null;
+      clearPraiseRequestContext();
       pendingPraiseAdvanceRef.current = null;
       deferredManualPlayRef.current = null;
       const leavingTrainingId = trainingSessionIdRef.current;
@@ -2171,13 +2273,16 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
   }, [
     armPlayRequestTimeout,
     armAutoQuestionWait,
+    armPraiseRatingFallback,
     cancelAutoQuestionWait,
     clearAllScheduledTimeouts,
     clearContentResourceWait,
+    clearPraiseRequestContext,
     clearScheduledTimeout,
     flushDeferredAutoQuestion,
     holdPlaybackGate,
     markResourceReady,
+    queuePraiseRating,
     releasePlaybackGate,
     scheduleTimeout,
     setPlaybackGate,
@@ -2547,6 +2652,24 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
         pending.retryCount,
       );
     }
+    if (
+      intent === 'praise' &&
+      selectedItem.course.type !== 'pairing' &&
+      selectedItem.course.type !== 'ordering'
+    ) {
+      clearPraiseRequestContext();
+      const praiseContext: NonNullable<typeof praiseRequestContextRef.current> = {
+        requestId,
+        courseIndex,
+        itemIndex,
+        sessionId: currentSessionIdRef.current,
+        behaviorId: null,
+        animationExpected: null,
+        fallbackTimerId: null,
+      };
+      praiseRequestContextRef.current = praiseContext;
+      armPraiseRatingFallback(praiseContext, 15000);
+    }
     setPlaybackGate('pending', requestId);
     setPlaybackNotice(null);
     armPlayRequestTimeout(pending);
@@ -2557,6 +2680,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
     } catch (error) {
       clearScheduledTimeout(pending.timeoutId);
       pendingPlayRequestsRef.current.delete(requestId);
+      clearPraiseRequestContext(requestId);
       if (contentRequestRef.current?.requestId === requestId) {
         contentRequestRef.current = null;
       }
@@ -2569,6 +2693,8 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
   }, [
     armContentResourceWait,
     armPlayRequestTimeout,
+    armPraiseRatingFallback,
+    clearPraiseRequestContext,
     clearScheduledTimeout,
     clearContentResourceWait,
     scheduleTimeout,

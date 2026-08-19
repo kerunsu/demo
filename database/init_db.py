@@ -10,7 +10,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from app import app  # noqa: E402
+from app import create_app  # noqa: E402
 from database.models import (  # noqa: E402
     db,
     Teacher,
@@ -23,7 +23,9 @@ from database.models import (  # noqa: E402
 
 def init_database():
     """初始化数据库"""
-    with app.app_context():
+    # app/__init__.py 里的全局 app 默认为 None；须 create_app 才有可用实例
+    application, _ = create_app()
+    with application.app_context():
         # 创建所有表
         db.create_all()
         print("数据库表创建成功！")

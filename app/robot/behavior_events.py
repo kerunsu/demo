@@ -43,15 +43,20 @@ def allowed_aux_types(
     *,
     social_role: Optional[str] = None,
 ) -> tuple[str, ...]:
-    """返回特定课程/课点真正可触发的行为槽。"""
+    """返回特定课程/课点真正可触发的行为槽。
+
+    社交课点进入时会先发一次无 aux 的 content load，解析为 silent（无动作
+    占位）。silent 必须始终放行，否则教师端会卡在「行为不属于当前课点」。
+    表扬/提问/提示仍不得泄漏进社交课点。
+    """
     if canonical_course_type(course_type) != "social":
         return STANDARD_AUX_TYPES
     role = str(social_role or "").strip().lower()
     if role == "greeting":
-        return SOCIAL_GREETING_AUX_TYPES
+        return ("silent",) + SOCIAL_GREETING_AUX_TYPES
     if role == "farewell":
-        return SOCIAL_FAREWELL_AUX_TYPES
-    return SOCIAL_AUX_TYPES
+        return ("silent",) + SOCIAL_FAREWELL_AUX_TYPES
+    return ("silent",) + SOCIAL_AUX_TYPES
 
 
 def is_aux_allowed(

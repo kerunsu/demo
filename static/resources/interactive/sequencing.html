@@ -544,9 +544,9 @@
         debugLog('收到启动指令');
         if (!game.isGameActive) {
           game.startGame();
-        } else if (typeof game.emitQuestionReady === 'function') {
-          // Hard rule: already on an item → force-ask
-          game.emitQuestionReady();
+        } else if (typeof game.flushQuestionReady === 'function') {
+          // The page auto-starts. Do not create a second ask for the same item.
+          game.flushQuestionReady();
         }
       });
       
@@ -874,7 +874,7 @@
         }
       }
 
-      waitForFeedbackSpeech(intent, { minMs = 900, maxMs = 2800 } = {}) {
+      waitForFeedbackSpeech(intent, { minMs = 900, maxMs = 20000 } = {}) {
         return new Promise((resolve) => {
           const start = Date.now();
           let settled = false;
@@ -895,6 +895,7 @@
             if (!data) return;
             if (data.sessionId && this.sessionId && data.sessionId !== this.sessionId) return;
             if (intent && data.intent && data.intent !== intent) return;
+            if ((data.status || data.terminalStatus || 'ended') !== 'ended') return;
             finish();
           };
           const onMessage = (ev) => {
@@ -929,6 +930,12 @@
           return;
         }
         const pageContext = this.buildPageContext();
+        const questionReadyKey = `${pageContext.questionId || ''}|${pageContext.questionIndex ?? ''}`;
+        if (this._lastQuestionReadyKey === questionReadyKey) {
+          this._pendingQuestionReady = false;
+          debugLog(`ignore duplicate ask: ordering ${questionReadyKey}`);
+          return;
+        }
         const askSeq = this._questionReadySeq || 0;
         socket.emit('sequencing_question_ready', {
           sessionId: sid,
@@ -942,6 +949,7 @@
           prompt: pageContext.prompt,
           pageContext,
         });
+        this._lastQuestionReadyKey = questionReadyKey;
         this._pendingQuestionReady = false;
         debugLog(`提问语音: ${this.category}/${this.rule} q=${pageContext.questionIndex} seq=${askSeq}`);
       }
@@ -977,7 +985,7 @@
         const token = (this._advanceToken = (this._advanceToken || 0) + 1);
         const waitSpeech = this.waitForFeedbackSpeech(speakIntent, {
           minMs: 900,
-          maxMs: 2800,
+          maxMs: 20000,
         });
 
         // 上报状态（含部分进度正确率与反应时，中途退出也可出分）

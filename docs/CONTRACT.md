@@ -47,6 +47,16 @@ The Server configuration console exposes device and recording operations as a
 top-level page at `GET /server/config/devices`; the historical
 `/server/config/content?view=phase5` browser URL redirects there.
 
+Generated LLM dialogue replies may add a configured MP4 expression selected by
+effective reply length. When matched, speech and expression share one reserved
+behavior ID, request ID, session ID and start anchor; both completion barriers
+must settle before the behavior slot is released. If the behavior slot is still
+held by a course utterance, the reply is queued and starts after that terminal
+event; a leftover formal expression from the already-released previous behavior
+must not block the matched MP4. Missing, disabled or invalid configuration
+preserves the existing audio-only dialogue path. Wake replies and course
+question/praise/hint speech are outside this matcher.
+
 ## Versioned additive APIs
 
 - `/api/v2/capture/devices` — configure/discover 0..N device profiles and freeze
@@ -105,6 +115,16 @@ top-level page at `GET /server/config/devices`; the historical
   the display runs any queued formal expression or returns to random idle. A
   successful pool update emits `robot_idle_pool_changed` so an online robot
   display applies the new pool without a page refresh.
+  MP4 display uses two alternating browser buffers: the outgoing expression
+  reaches its natural media end and holds its final decoded frame while the
+  incoming expression renders its first frame off-screen. The display then
+  performs a short crossfade and only the active buffer may emit completion.
+  A load or decode failure keeps the last valid frame visible instead of
+  exposing the black page background.
+- `GET|PUT /api/robot/emotions/dialogue-reply-rules` manages the ordered MP4
+  expression rules used only by generated LLM dialogue replies. Rules match
+  whitespace-free character counts by increasing upper bound; the final rule
+  is also the overflow fallback.
 
 For a praise action, `course_map.json` may carry an `animation` filename next
 to `motions`, `emotion`, and `sequence`. The server sends the resolved static
@@ -113,6 +133,40 @@ path as `behaviorAnimation`; the child reports completion through
 chooses a random MP4 from `static/resources/Animations/`. For one compatibility
 release, `praiseVideo` and `praise_video_ended` remain aliases only; they no
 longer select assets or contain a separate playback implementation.
+After a praise animation reaches its media end, the child keeps its final frame
+visible while still emitting `behavior_animation_ended` on time. The frame is
+cleared only after the next course resource commits successfully, or when the
+teacher leaves; duplicate, pending, or failed resource transitions do not
+restore the previous question screen.
+The teacher arms praise-to-rating correlation before emitting `play_resource`.
+The rating dialog is queued once by the correlated animation terminal event or
+the overall `behavior_completed` event, with a bounded timeout as fallback.
+Missing or degraded animation must show a notice but must not suppress rating.
+
+Pairing and ordering item questions are idempotent by course type, question ID
+and question index. A duplicate game-start or ready event for the visible item
+must not replay or preempt its active question. Child answer submission does not
+cancel a question already being spoken; feedback waits for that sentence to
+reach its terminal event. A real transition to a newer item may supersede the
+older pending question.
+Each runtime session has at most one pending item-question flush loop. A busy
+behavior is never aborted to make room for a question: the latest visible item
+wins and starts immediately after the active utterance ends. Question speech,
+expression and motion share the same behavior start anchor. Pairing and ordering
+advance normally only on an `ended` speech terminal; stopped or dropped speech
+waits for the bounded failure timeout instead of being treated as complete.
+Praise and encourage clicked while a question is still speaking are queued and
+start as soon as that question reaches a terminal event; they must not exhaust a
+short retry budget and leave the game waiting. Generated LLM replies that arrive
+while a course utterance still owns the behavior slot are likewise queued, and
+their matched expression may immediately replace leftover formal media from the
+previous already-released behavior.
+
+After robot question speech ends, continuous ASR keeps a short speaker-tail
+preroll instead of muting for most of a second, so a child answer that starts
+quickly is still recognized. Identical or nested transcripts from overlapping
+ASR windows are suppressed for several seconds so one spoken sentence does not
+appear many times in the child dialogue UI.
 
 Robot Runtime `POST /devices/check` proves first samples. Its additive
 `record/start.captureDevices[]` freezes Runtime-owned environment tracks; a

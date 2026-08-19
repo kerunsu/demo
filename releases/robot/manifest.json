@@ -1,12 +1,12 @@
 {
   "available": true,
-  "version": "20260812-1432-56bc3d5",
-  "buildVersion": "20260812-1432-56bc3d5",
+  "version": "20260818-1240-73ae283",
+  "buildVersion": "20260818-1240-73ae283",
   "protocolVersion": "1",
-  "sourceCommit": "56bc3d5",
-  "filename": "EIArt-Robot-20260812-1432-56bc3d5.zip",
+  "sourceCommit": "73ae283",
+  "filename": "EIArt-Robot-20260818-1240-73ae283.zip",
   "latest": "EIArt-Robot-latest.zip",
-  "sha256": "769223f6f791b1c9ef9108e89edc74781c397563ac6218621ce931b161fcf11a",
-  "sizeBytes": 98595181,
-  "builtAt": "2026-08-12T06:34:38.908918+00:00"
+  "sha256": "b07917e7a383f6065f8e685687b49685c833923f1f70347ebc4ce0df57b55004",
+  "sizeBytes": 99211073,
+  "builtAt": "2026-08-18T04:42:03.831399+00:00"
 }

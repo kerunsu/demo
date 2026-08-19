@@ -290,11 +290,16 @@ def ensure_db(
             _info('已删除 database/app.db')
         seed_courses = True
 
-    if not DB_PATH.is_file():
+    # 空文件也会被 is_file() 当成「已有库」，导致跳过播种且运行时报 no such table
+    db_missing_or_empty = (not DB_PATH.is_file()) or DB_PATH.stat().st_size == 0
+    if db_missing_or_empty:
         if check_only:
-            _warn('缺少 database/app.db（首次应 init + 标准库播种）')
+            _warn('缺少可用的 database/app.db（首次应 init + 标准库播种）')
             return False
-        _info('无 app.db → 运行标准库播种')
+        if DB_PATH.is_file() and DB_PATH.stat().st_size == 0:
+            DB_PATH.unlink()
+            _info('已删除空的 database/app.db')
+        _info('无可用 app.db → 运行标准库播种')
         run([str(py), str(ROOT / 'database' / 'seed_standard.py')])
         _ok('标准库已创建')
         return True

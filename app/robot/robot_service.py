@@ -1778,6 +1778,10 @@ class RobotService:
             startAtEpochMs=start_epoch_ms,
             startDelayMs=max(0, int(round((start_at - time.monotonic()) * 1000.0))),
             restart=True,
+            **(
+                {'dialogueReply': True, 'source': 'dialogue'}
+                if plan.get('dialogueReply') else {}
+            ),
         )
         plan['expressionDispatched'] = bool(sent)
         self._update_command_status(
@@ -2041,6 +2045,7 @@ class RobotService:
             'motionOffsetMs': motion_offset_ms,
             'audioOffsetMs': audio_offset_ms,
             'sessionId': str(session_id) if session_id else None,
+            'dialogueReply': bool(source.get('dialogueReply')),
         }
 
     def _run_sequence(self, plan: Dict[str, Any]) -> None:
@@ -2788,6 +2793,40 @@ class RobotService:
         )
         return resolve_animation(mapping.get('animation'))
 
+    def start_dialogue_reply_behavior(
+        self,
+        *,
+        emotion: str,
+        behavior_id: str,
+        request_id: str,
+        session_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Attach a configured expression to an already reserved dialogue turn."""
+        try:
+            plan = self._build_sequence_plan(
+                motion=None,
+                emotion=emotion,
+                sequence={},
+                event_data={
+                    'behaviorId': behavior_id,
+                    'requestId': request_id,
+                    'sessionId': session_id,
+                    'dialogueReply': True,
+                },
+            )
+        except (ValueError, FileNotFoundError) as exc:
+            logger.warning('构建大模型回复表情行为失败: %s', exc)
+            return None
+        if not self._enqueue_sequence(plan):
+            return None
+        return {
+            'behaviorId': plan['id'],
+            'emotion': plan['emotion'],
+            'durationMs': plan['durationMs'],
+            'scheduledDelayMs': plan.get('scheduledDelayMs', 0),
+            'startAtEpochMs': plan.get('startAtEpochMs'),
+        }
+
     def get_animations_payload(self) -> Dict[str, Any]:
         from app.robot.animation_assets import get_animations_payload
         return get_animations_payload()
@@ -2840,6 +2879,18 @@ class RobotService:
     def get_emotions_payload(self) -> Dict[str, Any]:
         from app.robot.emotion_assets import get_emotions_payload
         return get_emotions_payload()
+
+    def get_dialogue_reply_expressions(self) -> Dict[str, Any]:
+        from app.robot.emotion_assets import get_dialogue_reply_expressions
+        return get_dialogue_reply_expressions()
+
+    def set_dialogue_reply_expressions(self, value: Dict[str, Any]) -> Dict[str, Any]:
+        from app.robot.emotion_assets import set_dialogue_reply_expressions
+        return set_dialogue_reply_expressions(value)
+
+    def select_dialogue_reply_emotion(self, text: str) -> Optional[Dict[str, Any]]:
+        from app.robot.emotion_assets import select_dialogue_reply_emotion
+        return select_dialogue_reply_emotion(text)
 
     def get_emotion_style(self, name: str) -> Dict[str, Any]:
         from app.robot.emotion_assets import get_emotion_style

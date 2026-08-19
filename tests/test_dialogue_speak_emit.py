@@ -71,8 +71,44 @@ def test_emit_speak_reserves_audio_only_and_sends_exactly_once(monkeypatch):
         assert robot.expected[0][0][0] == payload["behaviorId"]
 
 
-def test_emit_speak_busy_rejects_dialogue_without_emitting(monkeypatch):
+def test_emit_speak_can_attach_length_matched_expression(monkeypatch):
+    robot = _install_robot(monkeypatch)
+    robot.select_dialogue_reply_emotion = lambda text: {
+        "emotion": "happy.mp4",
+        "charCount": len(text),
+        "maxChars": 20,
+    }
+    robot.reserve_behavior = robot.reserve_audio_only_behavior
+    robot.start_dialogue_reply_behavior = lambda **kwargs: {
+        "behaviorId": kwargs["behavior_id"],
+        "emotion": kwargs["emotion"],
+        "scheduledDelayMs": 700,
+    }
+    with patch("app.dialogue.sockets.emit") as emit:
+        assert _emit_speak(
+            room="session_expr_child",
+            session_id="expr",
+            text="匹配到表情",
+            intent="dialogue",
+            source="dialogue",
+        )
+    payload = emit.call_args.args[1]
+    assert payload["expression"] == "happy.mp4"
+    assert payload["expressionMatch"]["maxChars"] == 20
+    assert payload["delayMs"] == 700
+
+
+def test_emit_speak_busy_queues_dialogue_without_emitting(monkeypatch):
+    from app.dialogue.sockets import (
+        flush_pending_dialogue_speak,
+        pending_dialogue_speak_queued,
+        _pending_dialogue_speak,
+        _pending_dialogue_speak_lock,
+    )
+
     robot = _install_robot(monkeypatch, _Robot(accepted=False))
+    with _pending_dialogue_speak_lock:
+        _pending_dialogue_speak.pop("abc", None)
     with patch("app.dialogue.sockets.emit") as emit:
         accepted = _emit_speak(
             room="session_abc_child",
@@ -84,6 +120,13 @@ def test_emit_speak_busy_rejects_dialogue_without_emitting(monkeypatch):
     assert accepted is False
     emit.assert_not_called()
     assert len(robot.reservations) == 1
+    assert pending_dialogue_speak_queued("abc") is True
+
+    robot.accepted = True
+    with patch("app.dialogue.sockets.emit") as emit:
+        assert flush_pending_dialogue_speak("abc") is True
+        emit.assert_called_once()
+    assert pending_dialogue_speak_queued("abc") is False
 
 
 def test_emit_speak_commit_failure_aborts_before_emitting(monkeypatch):

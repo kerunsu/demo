@@ -165,6 +165,10 @@ def test_try_auto_praise_emits_child_speech_recognized(monkeypatch):
         '_emit_teacher_auto_praise',
         staticmethod(lambda session_id, payload: True),
     )
+    monkeypatch.setattr(
+        'app.sockets.events.trigger_keyword_parity_praise',
+        lambda *a, **k: {'ok': False, 'serverPlayed': False},
+    )
 
     assert svc.try_auto_praise_from_transcript(sid, '这是苹果') is True
     child_emits = [c for c in calls if c[0] == 'child_speech_recognized']
@@ -172,6 +176,64 @@ def test_try_auto_praise_emits_child_speech_recognized(monkeypatch):
     assert child_emits[0][1]['transcript'] == '这是苹果'
     assert child_emits[0][1]['keywordHit'] is True
     assert child_emits[0][2] == 'session_sess-kw-ui_child'
+
+
+def test_child_speech_emit_dedupes_repeats_across_asr_windows(monkeypatch):
+    svc = KeywordListenService()
+    sid = 'sess-kw-dedupe'
+    svc.prepare(sid, course_type='naming', item_id=1, name='老虎')
+    assert svc.arm_after_question(sid, intent='question', item_id=1)
+
+    calls = []
+
+    class FakeSio:
+        def emit(self, event, payload, room=None):
+            calls.append((event, payload, room))
+
+    monkeypatch.setattr(
+        KeywordListenService,
+        '_resolve_socketio',
+        staticmethod(lambda: FakeSio()),
+    )
+    monkeypatch.setattr(
+        KeywordListenService,
+        '_emit_teacher_auto_praise',
+        staticmethod(lambda session_id, payload: True),
+    )
+    monkeypatch.setattr(
+        'app.sockets.events.trigger_keyword_parity_praise',
+        lambda *a, **k: {'ok': False, 'serverPlayed': False},
+    )
+
+    svc.try_auto_praise_from_transcript(sid, '这是老虎')
+    svc.try_auto_praise_from_transcript(sid, '这是老虎。')
+    svc.try_auto_praise_from_transcript(sid, '老虎')
+    child_emits = [c for c in calls if c[0] == 'child_speech_recognized']
+    assert len(child_emits) == 1
+    assert child_emits[0][1]['transcript'] == '这是老虎'
+
+
+def test_child_speech_emit_rejects_latin_gibberish(monkeypatch):
+    """Ghost ASR like 'Gyggny.' must not spam child dialogue UI."""
+    svc = KeywordListenService()
+    sid = 'sess-kw-ghost'
+    svc.prepare(sid, course_type='naming', item_id=1, name='苹果')
+    assert svc.arm_after_question(sid, intent='question', item_id=1)
+
+    calls = []
+
+    class FakeSio:
+        def emit(self, event, payload, room=None):
+            calls.append((event, payload, room))
+
+    monkeypatch.setattr(
+        KeywordListenService,
+        '_resolve_socketio',
+        staticmethod(lambda: FakeSio()),
+    )
+
+    assert svc.try_auto_praise_from_transcript(sid, 'Gyggny.') is False
+    assert [c for c in calls if c[0] == 'child_speech_recognized'] == []
 
 
 def test_try_auto_praise_once_under_concurrent_calls(monkeypatch):
@@ -193,7 +255,96 @@ def test_try_auto_praise_once_under_concurrent_calls(monkeypatch):
         '_emit_child_speech_recognized',
         staticmethod(lambda *args, **kwargs: None),
     )
+    monkeypatch.setattr(
+        'app.sockets.events.trigger_keyword_parity_praise',
+        lambda *a, **k: {'ok': False, 'serverPlayed': False},
+    )
 
     assert svc.try_auto_praise_from_transcript(sid, '老虎') is True
     assert svc.try_auto_praise_from_transcript(sid, '老虎') is False
     assert len(emits) == 1
+
+
+def test_try_auto_praise_marks_server_played(monkeypatch):
+    """When server package succeeds, teacher payload carries serverPlayed."""
+    svc = KeywordListenService()
+    sid = 'sess-kw-pkg'
+    svc.prepare(sid, course_type='naming', item_id=7, name='苹果')
+    assert svc.arm_after_question(sid, intent='question', item_id=7)
+
+    captured = {}
+
+    def fake_emit(session_id, payload):
+        captured['payload'] = dict(payload)
+        return True
+
+    def fake_trigger(*_a, **kwargs):
+        hook = kwargs.get('on_before_child_play')
+        info = {
+            'ok': True,
+            'serverPlayed': True,
+            'behaviorId': 'beh-1',
+            'hasAnimation': True,
+            'behaviorAnimation': 'resources/Animations/x.mp4',
+        }
+        if callable(hook):
+            hook(info)
+        return info
+
+    monkeypatch.setattr(svc, '_emit_teacher_auto_praise', fake_emit)
+    monkeypatch.setattr(
+        KeywordListenService,
+        '_emit_child_speech_recognized',
+        staticmethod(lambda *args, **kwargs: None),
+    )
+    monkeypatch.setattr(
+        'app.sockets.events.trigger_keyword_parity_praise',
+        fake_trigger,
+    )
+
+    assert svc.try_auto_praise_from_transcript(sid, '苹果') is True
+    assert captured['payload']['serverPlayed'] is True
+    assert captured['payload']['behaviorId'] == 'beh-1'
+    assert captured['payload']['hasAnimation'] is True
+
+
+def test_try_auto_praise_notifies_teacher_via_before_play_hook(monkeypatch):
+    """Teacher scoring attach must happen via on_before_child_play (pre-play)."""
+    svc = KeywordListenService()
+    sid = 'sess-kw-hook'
+    svc.prepare(sid, course_type='naming', item_id=3, name='老虎')
+    assert svc.arm_after_question(sid, intent='question', item_id=3)
+
+    order = []
+
+    def fake_emit(session_id, payload):
+        order.append(('emit', bool(payload.get('serverPlayed'))))
+        return True
+
+    def fake_trigger(*_a, **kwargs):
+        hook = kwargs.get('on_before_child_play')
+        order.append('before_hook')
+        info = {
+            'ok': True,
+            'serverPlayed': True,
+            'behaviorId': 'beh-hook',
+            'hasAnimation': True,
+        }
+        if callable(hook):
+            hook(info)
+        order.append('after_play')
+        return info
+
+    monkeypatch.setattr(svc, '_emit_teacher_auto_praise', fake_emit)
+    monkeypatch.setattr(
+        KeywordListenService,
+        '_emit_child_speech_recognized',
+        staticmethod(lambda *args, **kwargs: None),
+    )
+    monkeypatch.setattr(
+        'app.sockets.events.trigger_keyword_parity_praise',
+        fake_trigger,
+    )
+
+    assert svc.try_auto_praise_from_transcript(sid, '老虎') is True
+    assert order == ['before_hook', ('emit', True), 'after_play']

@@ -105,6 +105,42 @@ def test_prepare_training_auto_uses_strict_preflight_for_agent_mode(monkeypatch)
     assert get_session_manager().get_session(result["session_id"]) is None
 
 
+def test_start_preflight_capture_legacy_session_is_idempotent(monkeypatch):
+    """readiness always calls start_preflight_capture; legacy prepare already recorded."""
+    root = Path("tests/_tmp_prepare_behavior") / "legacy-idempotent"
+    root.mkdir(parents=True, exist_ok=True)
+    _patch_behavior(monkeypatch, root)
+    _clear_student_sessions(9013)
+    monkeypatch.setattr(rt, "sessions_root", _sessions_root)
+    monkeypatch.setattr(handlers_mod, "load_student_label", lambda sid: ("遗留路径生", 6))
+    monkeypatch.setattr("app.config.Config.get_child_media_mode", lambda: "browser")
+
+    prepared = PrepareTrainingHandler.handle({
+        "studentId": 9013,
+        "mode": "training",
+        "preflightMode": "auto",
+        "requestId": "legacy-capture-1",
+    })
+    assert prepared["success"] is True
+    assert prepared["preflight_mode"] == "legacy"
+    started = handlers_mod.start_preflight_capture(prepared["training_session_id"])
+    assert started["ok"] is True
+    assert started.get("legacy") is True
+    assert started["sessionId"] == prepared["session_id"]
+
+    CancelPrepareTrainingHandler.handle({
+        "studentId": 9013,
+        "trainingSessionId": prepared["training_session_id"],
+    })
+
+
+def test_start_preflight_capture_missing_session_is_actionable():
+    missing = handlers_mod.start_preflight_capture("training-does-not-exist")
+    assert missing["ok"] is False
+    assert missing["error"] == "strict_preflight_session_not_found"
+    assert "重新点击开始评估" in missing["message"]
+
+
 def test_prepare_training_reuses_logical_duplicate_with_new_request_id(monkeypatch):
     root = Path("tests/_tmp_prepare_behavior") / "logical-idempotency"
     root.mkdir(parents=True, exist_ok=True)
