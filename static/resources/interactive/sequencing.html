@@ -910,6 +910,67 @@
         });
       }
 
+      waitForBehaviorAnimation({ maxMs = 20000, speechPromise = null, graceMs = 400 } = {}) {
+        return new Promise((resolve) => {
+          let settled = false;
+          let started = false;
+          let graceTimer = null;
+          const cleanup = () => {
+            window.removeEventListener('message', onMessage);
+            if (socket) socket.off('behavior_animation_ended', onEnded);
+            if (graceTimer) clearTimeout(graceTimer);
+            clearTimeout(maxTimer);
+          };
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve();
+          };
+          const onEnded = (data) => {
+            if (data && data.sessionId && this.sessionId && data.sessionId !== this.sessionId) return;
+            finish();
+          };
+          const onMessage = (ev) => {
+            const payload = ev && ev.data;
+            if (!payload || typeof payload !== 'object') return;
+            if (payload.type === 'behavior_animation_started') {
+              started = true;
+              return;
+            }
+            if (payload.type === 'behavior_animation_ended') {
+              onEnded(payload);
+            }
+          };
+          window.addEventListener('message', onMessage);
+          if (socket) socket.on('behavior_animation_ended', onEnded);
+          const armGrace = () => {
+            if (settled || started) return;
+            graceTimer = setTimeout(() => {
+              if (!started) finish();
+            }, graceMs);
+          };
+          if (speechPromise && typeof speechPromise.then === 'function') {
+            speechPromise.then(armGrace, armGrace);
+          } else {
+            armGrace();
+          }
+          const maxTimer = setTimeout(finish, maxMs);
+        });
+      }
+
+      waitForFeedbackPackage(intent, { minMs = 900, maxMs = 20000, waitAnimation = false } = {}) {
+        const start = Date.now();
+        const speech = this.waitForFeedbackSpeech(intent, { minMs: 0, maxMs });
+        const animation = waitAnimation
+          ? this.waitForBehaviorAnimation({ maxMs, speechPromise: speech })
+          : Promise.resolve();
+        return Promise.all([speech, animation]).then(() => {
+          const remain = Math.max(0, minMs - (Date.now() - start));
+          return new Promise((resolve) => setTimeout(resolve, remain));
+        });
+      }
+
       emitQuestionReady() {
         // Hard rule: every item display schedules an ask; reconnect/start re-asks.
         this._pendingQuestionReady = true;
@@ -983,9 +1044,10 @@
         // 必须先挂 wait，再发 status_update 触发 TTS；否则 ended 可能早于监听到达
         const speakIntent = isCorrect ? 'praise' : 'encourage';
         const token = (this._advanceToken = (this._advanceToken || 0) + 1);
-        const waitSpeech = this.waitForFeedbackSpeech(speakIntent, {
+        const waitPackage = this.waitForFeedbackPackage(speakIntent, {
           minMs: 900,
           maxMs: 20000,
+          waitAnimation: !!isCorrect,
         });
 
         // 上报状态（含部分进度正确率与反应时，中途退出也可出分）
@@ -1016,7 +1078,7 @@
 
         debugLog(`第${this.currentQuestion}题: ${isCorrect ? '正确' : '错误'}`);
 
-        waitSpeech.then(() => {
+        waitPackage.then(() => {
           if (token !== this._advanceToken) return;
           if (this.currentQuestion >= this.maxQuestions) {
             this.finishGame();
@@ -1031,7 +1093,7 @@
         cards.forEach(card => {
           if (card.dataset.path === selectedOption.path) {
             if (isCorrect) {
-              card.classList.add('correct-lvl3');
+              card.classList.add('correct');
             } else {
               card.classList.add('wrong');
             }
@@ -1039,17 +1101,6 @@
             card.classList.add('wrong');
           }
         });
-
-        if (isCorrect) {
-          this.ruleText.classList.add('bounce-big');
-          document.body.classList.add('flash-bg');
-          setTimeout(() => document.body.classList.remove('flash-bg'), 3200);
-
-          const rect = this.optionsGrid
-            .querySelector(`.option-card[data-path="${selectedOption.path}"]`)
-            .getBoundingClientRect();
-          createExplosion(rect.left + rect.width / 2, rect.top + rect.height / 2, 3);
-        }
       }
       
       showHint() {

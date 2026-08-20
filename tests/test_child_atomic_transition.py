@@ -55,6 +55,8 @@ def test_prepare_behavior_animation_does_not_start_playback():
     assert 'status === "ended"' in hold
     assert "heldPraiseOverlay" in hold
     assert "holding frame" in hold
+    assert "shouldHoldPraiseOverlay(" in hold
+    assert "interactiveAutoPraise" in child
     assert "clearHeldPraiseOverlay(" in child
     assert 'clearHeldPraiseOverlay("content_committed")' in child
     transition = child[
@@ -65,7 +67,17 @@ def test_prepare_behavior_animation_does_not_start_playback():
         'clearHeldPraiseOverlay("content_committed")'
     )
     template = _read("templates/child.html")
-    assert 'child.js?v=20260818-praise-hold-v1' in template
+    assert 'child.js?v=20260820-interactive-praise-v3' in template
+    handle_play = child[
+        child.index("function handlePlayResource") :
+        child.index('socket.on("play_resource"')
+    ]
+    praise_gate = handle_play[
+        handle_play.index("const isInteractiveAutoPraise") :
+        handle_play.index("const course = findCourseById")
+    ]
+    assert "playBehaviorAnimation(" in praise_gate
+    assert "isAuxOperation || isInteractiveAutoPraise" in praise_gate
 
 
 def test_interactive_questions_are_idempotent_and_answers_do_not_cut_speech():
@@ -109,6 +121,23 @@ def test_interactive_questions_are_idempotent_and_answers_do_not_cut_speech():
     assert terminal_guard in sequencing
     assert "_preempt_busy_behavior_for_item_question" not in events
     assert "_pending_interactive_question_timers" in events
+    assert "dimAllOptionCards()" in matching
+    assert "waitForBehaviorAnimation" in matching
+    assert "waitForBehaviorAnimation" in sequencing
+    assert "waitAnimation: true" in matching
+    assert "waitAnimation: !!isCorrect" in sequencing
+    matching_select = matching[
+        matching.index("selectOption(selectedOption") :
+        matching.index("finishGame()")
+    ]
+    assert "correct-lvl3" not in matching_select
+    assert "createExplosion" not in matching_select
+    sequencing_feedback = sequencing[
+        sequencing.index("showFeedback(selectedOption") :
+        sequencing.index("showHint()")
+    ]
+    assert "correct-lvl3" not in sequencing_feedback
+    assert "createExplosion" not in sequencing_feedback
 
 
 def test_teacher_keyword_auto_praise_always_arms_scoring_fallback():

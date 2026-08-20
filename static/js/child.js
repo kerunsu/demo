@@ -456,6 +456,37 @@ function notifyInteractiveSpeakEnded(payload) {
   }
 }
 
+function notifyInteractiveFrame(type, payload) {
+  const data = payload && typeof payload === "object" ? payload : {};
+  const msg = {
+    type,
+    sessionId: firstDefined(data.sessionId, currentSessionId, window.currentSessionId),
+    status: data.status || "ended",
+    terminalStatus: data.status || data.terminalStatus || "ended",
+    requestId: firstDefined(data.requestId, data.request_id),
+    behaviorId: firstDefined(data.behaviorId, data.behavior_id),
+    holdLastFrame: data.holdLastFrame,
+    interactiveAutoPraise: data.interactiveAutoPraise,
+  };
+  try {
+    const frame = document.getElementById("interactive");
+    if (frame && frame.contentWindow) {
+      frame.contentWindow.postMessage(msg, "*");
+    }
+  } catch (e) {
+    console.warn("postMessage", type, "失败:", e);
+  }
+}
+
+function shouldHoldPraiseOverlay(payload) {
+  if (!payload) return true;
+  if (payload.holdLastFrame === false || payload.hold_last_frame === false) return false;
+  if (payload.interactiveAutoPraise === true || payload.interactive_auto_praise === true) {
+    return false;
+  }
+  return true;
+}
+
 function getBackendBaseUrl() {
   return `${window.location.protocol}//${window.location.host}`;
 }
@@ -1881,6 +1912,22 @@ function handlePlayResource(payload) {
     });
 
   }
+
+  // 题内自动表扬：即使还没当成 aux（缺 currentSessionId / 被当成新会话），
+  // 也必须先播 MP4。否则 courseId 对不上会整包失败，后端 animationExpected
+  // 把行为锁占到超时，下一题提问只能一直“暂缓”。
+  const isInteractiveAutoPraise =
+    payload.interactiveAutoPraise === true ||
+    payload.interactive_auto_praise === true;
+  if (
+    payload.behaviorAnimation &&
+    aux &&
+    aux.praise &&
+    (isAuxOperation || isInteractiveAutoPraise)
+  ) {
+    playBehaviorAnimation(payload.behaviorAnimation, payload);
+    return;
+  }
   
   const course = findCourseById(courseId);
   if (!course) {
@@ -3022,7 +3069,10 @@ function finishBehaviorAnimationPlayback(playback, status, reason = "") {
 
   // Keep the last praise frame until评分/下一题 advances — do not snap back
   // to the previous question image when the MP4 ends.
-  if (status === "ended") {
+  // Pairing/ordering in-item auto-praise must clear so the next iframe
+  // question is visible.
+  const holdFrame = status === "ended" && shouldHoldPraiseOverlay(playback.payload);
+  if (holdFrame) {
     try {
       playback.video.pause();
     } catch (e) {}
@@ -3037,6 +3087,10 @@ function finishBehaviorAnimationPlayback(playback, status, reason = "") {
       playbackId: playback.playbackId,
       payload: playback.payload,
     };
+    notifyInteractiveFrame("behavior_animation_ended", {
+      ...terminal,
+      ...(playback.payload || {}),
+    });
     socket.emit("behavior_animation_ended", terminal);
     console.log("📡 [child.js] behavior_animation_ended (holding frame):", terminal);
     return;
@@ -3048,6 +3102,10 @@ function finishBehaviorAnimationPlayback(playback, status, reason = "") {
       activeBehaviorAnimationPlayback = null;
       cleanupBehaviorAnimationElement(playback.video);
     }
+    notifyInteractiveFrame("behavior_animation_ended", {
+      ...terminal,
+      ...(playback.payload || {}),
+    });
     socket.emit("behavior_animation_ended", terminal);
     console.log("📡 [child.js] behavior_animation_ended:", terminal);
   }, BEHAVIOR_ANIMATION_FADE_MS);
@@ -3220,6 +3278,10 @@ function playBehaviorAnimation(videoPath, payload = {}) {
       startedPayload.terminalStatus = null;
       startedPayload.actualAtClientMs = Date.now();
       socket.emit("behavior_modality_started", startedPayload);
+      notifyInteractiveFrame("behavior_animation_started", {
+        ...startedPayload,
+        ...(playback.payload || {}),
+      });
       console.log("🎬 [child.js] 行为动画叠层开始:", videoPath);
     }).catch(error => {
       finishBehaviorAnimationPlayback(

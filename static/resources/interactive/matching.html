@@ -954,6 +954,79 @@
           const maxTimer = setTimeout(finish, maxMs);
         });
       }
+
+      /**
+       * 题内自动表扬还要等父页 MP4。若短时间内没收到 started，视为本次没有动画。
+       */
+      waitForBehaviorAnimation({ maxMs = 20000, speechPromise = null, graceMs = 400 } = {}) {
+        return new Promise((resolve) => {
+          let settled = false;
+          let started = false;
+          let graceTimer = null;
+          const cleanup = () => {
+            window.removeEventListener('message', onMessage);
+            if (socket) socket.off('behavior_animation_ended', onEnded);
+            if (graceTimer) clearTimeout(graceTimer);
+            clearTimeout(maxTimer);
+          };
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve();
+          };
+          const onEnded = (data) => {
+            if (data && data.sessionId && sessionId && data.sessionId !== sessionId) return;
+            finish();
+          };
+          const onMessage = (ev) => {
+            const payload = ev && ev.data;
+            if (!payload || typeof payload !== 'object') return;
+            if (payload.type === 'behavior_animation_started') {
+              started = true;
+              return;
+            }
+            if (payload.type === 'behavior_animation_ended') {
+              onEnded(payload);
+            }
+          };
+          window.addEventListener('message', onMessage);
+          if (socket) socket.on('behavior_animation_ended', onEnded);
+          const armGrace = () => {
+            if (settled || started) return;
+            graceTimer = setTimeout(() => {
+              if (!started) finish();
+            }, graceMs);
+          };
+          if (speechPromise && typeof speechPromise.then === 'function') {
+            speechPromise.then(armGrace, armGrace);
+          } else {
+            armGrace();
+          }
+          const maxTimer = setTimeout(finish, maxMs);
+        });
+      }
+
+      waitForFeedbackPackage(intent, { minMs = 900, maxMs = 20000, waitAnimation = false } = {}) {
+        const start = Date.now();
+        const speech = this.waitForFeedbackSpeech(intent, { minMs: 0, maxMs });
+        const animation = waitAnimation
+          ? this.waitForBehaviorAnimation({ maxMs, speechPromise: speech })
+          : Promise.resolve();
+        return Promise.all([speech, animation]).then(() => {
+          const remain = Math.max(0, minMs - (Date.now() - start));
+          return new Promise((resolve) => setTimeout(resolve, remain));
+        });
+      }
+
+      dimAllOptionCards() {
+        const optionsGrid = document.getElementById('optionsGrid');
+        if (!optionsGrid) return;
+        Array.from(optionsGrid.children).forEach((card) => {
+          card.classList.add('wrong');
+          card.classList.remove('hint-highlight', 'dimmed', 'correct', 'correct-lvl3');
+        });
+      }
       
       // ==================== 游戏核心逻辑 ====================
       
@@ -1215,84 +1288,70 @@
         }
         
         const isCorrect = selectedOption.id === this.currentTarget.id;
+        this.isProcessing = true;
         
         if (isCorrect) {
-          this.isProcessing = true;
-          // 正确反馈 - 但只有在本题没点错过的情况下才计入正确数
-          if (!this.hasAnsweredWrong) {
-            this.correctAnswers++;
-            this.consecutiveCorrect++;
-            this.consecutiveWrong = 0;
-            this.questionsInCurrentLevel++;
-            
-            if (this.autoDifficulty === 2) {
-              this.consecutiveWrongInLevel1 = 0;
-            }
-            
-            // 自动难度提升（只有真正答对才提升）
-            if (this.questionsInCurrentLevel >= this.maxQuestionsInLevel && 
-                this.autoDifficulty < 5 && 
-                !this.isSimplifiedMode) {
-              this.autoDifficulty++;
-              this.questionsInCurrentLevel = 0;
-              debugLog(`难度提升至 ${this.autoDifficulty}选1`);
-            }
-          } else {
-            // 本题之前点错过，虽然最终点对了但不计入正确数
-            debugLog('本题之前已点错，不计入正确数');
+          this.correctAnswers++;
+          this.consecutiveCorrect++;
+          this.consecutiveWrong = 0;
+          this.questionsInCurrentLevel++;
+          
+          if (this.autoDifficulty === 2) {
+            this.consecutiveWrongInLevel1 = 0;
           }
           
-          // 视觉效果（无论是否之前点错都显示）
-          cardElement.classList.add('correct-lvl3');
+          if (this.questionsInCurrentLevel >= this.maxQuestionsInLevel && 
+              this.autoDifficulty < 5 && 
+              !this.isSimplifiedMode) {
+            this.autoDifficulty++;
+            this.questionsInCurrentLevel = 0;
+            debugLog(`难度提升至 ${this.autoDifficulty}选1`);
+          }
+          
+          cardElement.classList.add('correct');
           cardElement.classList.remove('hint-highlight', 'dimmed');
-          document.getElementById('targetFrame').classList.add('bounce-big');
 
-          // 背景闪光（覆盖表扬语音最短等待，避免切题时突兀收尾）
-          document.body.classList.add('flash-bg');
-          setTimeout(() => document.body.classList.remove('flash-bg'), 3200);
-          
-          // 粒子爆炸
-          const rect = cardElement.getBoundingClientRect();
-          createExplosion(rect.left + rect.width / 2, rect.top + rect.height / 2, 3);
-          
-          // 先挂 wait 再上报，避免 praise TTS ended 早于监听
           const token = (this._advanceToken = (this._advanceToken || 0) + 1);
-          const waitSpeech = this.waitForFeedbackSpeech('praise', {
+          const waitPackage = this.waitForFeedbackPackage('praise', {
             minMs: 900,
             maxMs: 20000,
+            waitAnimation: true,
           });
-          // 发送状态更新给教师端（isCorrect=计分正确；triggerPraise=点对即表扬）
-          this.emitStatusUpdate(isCorrect && !this.hasAnsweredWrong, true);
-          waitSpeech.then(() => {
+          this.emitStatusUpdate(true, true);
+          waitPackage.then(() => {
             if (token !== this._advanceToken) return;
             this.nextQuestion();
           });
           
         } else {
-          // 错误反馈
-          // 标记本题已答错（后续即使点对也不算正确）
-          if (!this.hasAnsweredWrong) {
-            this.hasAnsweredWrong = true;
-            this.consecutiveWrong++;
-            this.consecutiveCorrect = 0;
-            
-            // 难度调整逻辑
-            if (this.autoDifficulty === 2) {
-              this.consecutiveWrongInLevel1++;
-              if (this.consecutiveWrongInLevel1 >= 5) {
-                this.isSimplifiedMode = true;
-                this.autoDifficulty = 3;
-                this.questionsInCurrentLevel = 0;
-                debugLog('进入简化模式');
-              }
+          this.hasAnsweredWrong = true;
+          this.consecutiveWrong++;
+          this.consecutiveCorrect = 0;
+          
+          if (this.autoDifficulty === 2) {
+            this.consecutiveWrongInLevel1++;
+            if (this.consecutiveWrongInLevel1 >= 5) {
+              this.isSimplifiedMode = true;
+              this.autoDifficulty = 3;
+              this.questionsInCurrentLevel = 0;
+              debugLog('进入简化模式');
             }
           }
           this.wrongAttemptsThisQuestion = (this.wrongAttemptsThisQuestion || 0) + 1;
           this.publishPageContext();
-          
-          cardElement.classList.add('wrong');
-          // 点错：播鼓励/安慰（不切题，可继续点）
+          this.dimAllOptionCards();
+
+          const token = (this._advanceToken = (this._advanceToken || 0) + 1);
+          const waitSpeech = this.waitForFeedbackPackage('encourage', {
+            minMs: 900,
+            maxMs: 20000,
+            waitAnimation: false,
+          });
           this.emitStatusUpdate(false, false);
+          waitSpeech.then(() => {
+            if (token !== this._advanceToken) return;
+            this.nextQuestion();
+          });
         }
       }
       

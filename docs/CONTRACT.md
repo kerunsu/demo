@@ -138,6 +138,16 @@ visible while still emitting `behavior_animation_ended` on time. The frame is
 cleared only after the next course resource commits successfully, or when the
 teacher leaves; duplicate, pending, or failed resource transitions do not
 restore the previous question screen.
+Pairing and ordering in-item auto-praise uses the same `aux.praise` animation
+resolver as a teacher praise click, but sets `holdLastFrame=false` /
+`interactiveAutoPraise=true` so the overlay clears at media end. That automatic
+package does not open the teacher rating dialog and does not advance the course
+item. `behavior_animation_ended` still releases the reserved behavior even when
+there is no teacher `play_request`; otherwise the next item question stays
+queued behind `animationExpected`. A pairing wrong tap ends the question: all
+options dim and the game waits for encourage speech before the next item
+question.
+
 The teacher arms praise-to-rating correlation before emitting `play_resource`.
 The rating dialog is queued once by the correlated animation terminal event or
 the overall `behavior_completed` event, with a bounded timeout as fallback.

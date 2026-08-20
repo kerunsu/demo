@@ -65,6 +65,20 @@ _pending_interactive_question_timers: Dict[str, threading.Timer] = {}
 # Latest-wins praise/encourage while a question is still speaking.
 _pending_interactive_feedback: Dict[str, Dict[str, Any]] = {}
 _interactive_input_state: Dict[str, Dict[str, Any]] = {}
+_last_interactive_defer_log_at: Dict[str, float] = {}
+_INTERACTIVE_DEFER_LOG_INTERVAL_SEC = 1.0
+
+
+def _log_interactive_defer(session_id: Optional[str], message: str, *args) -> None:
+    """Keep the busy-slot retry loop, but do not flood INFO every 50ms."""
+    sid = str(session_id or '').strip() or '_'
+    now = time.monotonic()
+    last = float(_last_interactive_defer_log_at.get(sid) or 0)
+    if now - last < _INTERACTIVE_DEFER_LOG_INTERVAL_SEC:
+        logger.debug(message, *args)
+        return
+    _last_interactive_defer_log_at[sid] = now
+    logger.info(message, *args)
 
 
 def _authenticated_teacher() -> Optional[Dict[str, Any]]:
@@ -258,6 +272,7 @@ def _update_play_request(
     child_sid: Optional[str] = None,
     is_aux: Optional[bool] = None,
     interaction_context: Optional[Dict[str, Any]] = None,
+    interactive_auto_praise: Optional[bool] = None,
     keep: bool = True,
 ) -> None:
     with _play_request_lock:
@@ -272,6 +287,8 @@ def _update_play_request(
             entry['requesterSid'] = str(requester_sid)
         if is_aux is not None:
             entry['isAux'] = bool(is_aux)
+        if interactive_auto_praise is not None:
+            entry['interactiveAutoPraise'] = bool(interactive_auto_praise)
         if interaction_context is not None:
             entry['interactionContext'] = dict(interaction_context)
         if content_forward_data is not None and not bool(is_aux):
@@ -962,7 +979,8 @@ def _flush_pending_item_question(session_id: Optional[str]) -> bool:
         generation = str(pending.get('generation') or '')
     if not payload:
         return False
-    logger.info(
+    _log_interactive_defer(
+        sid,
         '补发题切换提问: session=%s kind=%s gen=%s',
         sid,
         kind,
@@ -1050,7 +1068,8 @@ def _flush_pending_interactive_feedback(session_id: Optional[str]) -> bool:
             _pending_interactive_feedback.pop(sid, None)
             return False
         payload = dict(pending)
-    logger.info(
+    _log_interactive_defer(
+        sid,
         '补发互动反馈语音: session=%s type=%s',
         sid,
         payload.get('audio_type'),
@@ -1205,6 +1224,24 @@ def _schedule_ordering_item_question(
     )
 
 
+def _event_socketio():
+    """Socket.IO instance used by keyword praise and interactive auto-praise."""
+    try:
+        from app.audio import get_audio_emitter
+
+        sio = getattr(get_audio_emitter(), 'socketio', None)
+        if sio is not None:
+            return sio
+    except Exception:
+        pass
+    try:
+        from app import get_socketio
+
+        return get_socketio()
+    except Exception:
+        return None
+
+
 def _play_interactive_course_audio(
     session_id: str,
     course_type: str,
@@ -1240,7 +1277,8 @@ def _play_interactive_course_audio(
             session_id=str(session_id),
         )
         if not reservation.get('accepted'):
-            logger.info(
+            _log_interactive_defer(
+                session_id,
                 '互动语音暂缓: session=%s type=%s q=%s/%s active=%s retry=%s',
                 session_id,
                 audio_type,
@@ -1344,6 +1382,61 @@ def _play_interactive_course_audio(
         if not robot_result.get('success'):
             robot_service.abort_behavior(resolved_behavior_id)
             return False
+
+        behavior_animation = None
+        if audio_type == 'praise':
+            try:
+                behavior_animation = robot_service.resolve_encouragement_animation(
+                    behavior_payload
+                )
+            except Exception as anim_err:
+                logger.warning(
+                    'interactive praise animation resolve failed: %s', anim_err
+                )
+                behavior_animation = None
+
+        child_sid = _child_owner_for_session(session_id)
+        child_room = f'session_{session_id}_child'
+        sio = _event_socketio() if behavior_animation else None
+        animation_payload = None
+        if behavior_animation:
+            animation_payload = dict(behavior_payload)
+            animation_payload.update({
+                'protocolVersion': '1',
+                'modality': 'childAnimation',
+                'aux': {'praise': True},
+                'behaviorAnimation': behavior_animation,
+                'praiseVideo': behavior_animation,
+                'holdLastFrame': False,
+                'interactiveAutoPraise': True,
+                'behaviorStartDelayMs': _remaining_behavior_start_delay_ms(
+                    robot_result
+                ),
+            })
+            if robot_result.get('startAtEpochMs') is not None:
+                animation_payload['behaviorStartAtMs'] = int(
+                    robot_result.get('startAtEpochMs')
+                )
+                animation_payload['startAtServerMs'] = int(
+                    robot_result.get('startAtEpochMs')
+                )
+            if sio is not None:
+                if child_sid:
+                    sio.emit(
+                        'prepare_behavior_animation',
+                        animation_payload,
+                        to=child_sid,
+                    )
+                else:
+                    sio.emit(
+                        'prepare_behavior_animation',
+                        animation_payload,
+                        room=child_room,
+                    )
+            else:
+                animation_payload = None
+                behavior_animation = None
+
         audio_delay_ms = _remaining_behavior_start_delay_ms(robot_result)
         if audio_type != 'question':
             try:
@@ -1370,6 +1463,17 @@ def _play_interactive_course_audio(
         if not ok:
             robot_service.abort_behavior(resolved_behavior_id)
             return False
+        if audio_type == 'praise':
+            dispatched_animation = bool(animation_payload and sio is not None)
+            if not robot_service.set_behavior_animation_expected(
+                resolved_behavior_id,
+                dispatched_animation,
+                session_id=str(session_id),
+            ):
+                robot_service.abort_behavior(resolved_behavior_id)
+                return False
+            if not dispatched_animation:
+                animation_payload = None
         if not robot_service.set_behavior_audio_expected(
             resolved_behavior_id,
             1,
@@ -1377,6 +1481,32 @@ def _play_interactive_course_audio(
         ):
             robot_service.abort_behavior(resolved_behavior_id)
             return False
+        if animation_payload and sio is not None:
+            # Correlate animation_ended to this reservation. Teacher scoring
+            # uses the same cache; interactive auto-praise marks the entry so
+            # the mutex can release without opening the rating dialog.
+            _claim_play_request(resolved_request_id, requester_sid=None)
+            _update_play_request(
+                resolved_request_id,
+                behavior_id=resolved_behavior_id,
+                is_aux=True,
+                interactive_auto_praise=True,
+                ack={
+                    'accepted': True,
+                    'requestId': resolved_request_id,
+                    'behaviorId': resolved_behavior_id,
+                    'sessionId': str(session_id),
+                    'isAux': True,
+                    'source': 'interactive_auto_praise',
+                    'animationExpected': True,
+                    'interactiveAutoPraise': True,
+                },
+                keep=True,
+            )
+            if child_sid:
+                sio.emit('play_resource', animation_payload, to=child_sid)
+            else:
+                sio.emit('play_resource', animation_payload, room=child_room)
         if audio_type == 'question':
             generation = None
             if isinstance(question_data, dict):
@@ -1895,7 +2025,8 @@ def _store_interactive_page_context(session_id, data, *, course_type: str) -> No
             'wrongAttempts', 'rule', 'ruleText', 'category',
             'questionIndex', 'totalQuestions', 'correctPosition',
             'correctLabel', 'correctOptionPosition', 'correctOptionLabel',
-            'questionId',
+            'questionId', 'courseId', 'itemId', 'studentId',
+            'trainingSessionId',
         ):
             if data.get(key) is not None and key not in ctx:
                 ctx[key] = data.get(key)
@@ -2192,6 +2323,52 @@ def _is_authorized_child_sender(
         and str(
             content.get('sessionId') or content.get('session_id') or ''
         ) == session_id
+    )
+
+
+def _play_request_entry_for(request_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    rid = str(request_id or '').strip()
+    if not rid:
+        return None
+    with _play_request_lock:
+        entry = _play_request_cache.get(rid)
+        return dict(entry) if entry else None
+
+
+def _should_forward_animation_terminal_to_teacher(
+    request_id: Optional[str],
+    behavior_id: Optional[str],
+) -> bool:
+    """Teacher scoring only. Interactive auto-praise must not open rating."""
+    entry = _play_request_entry_for(request_id)
+    if not entry or not behavior_id:
+        return False
+    if entry.get('interactiveAutoPraise'):
+        return False
+    return str(entry.get('behaviorId') or '') == str(behavior_id)
+
+
+def _release_behavior_animation_from_child(
+    payload: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Free animationExpected even when no teacher play_request exists."""
+    session_id = payload.get('sessionId') or payload.get('session_id')
+    request_id = payload.get('requestId') or payload.get('request_id')
+    behavior_id = (
+        payload.get('behaviorId')
+        or payload.get('behavior_id')
+        or payload.get('interactionId')
+    )
+    if not session_id or not request_id or not behavior_id:
+        return None
+    from app.robot import get_robot_service
+
+    return get_robot_service().mark_behavior_animation_complete(
+        behavior_id=str(behavior_id),
+        request_id=str(request_id),
+        session_id=str(session_id),
+        status=str(payload.get('status') or payload.get('terminalStatus') or ''),
+        modality=payload.get('modality') or 'childAnimation',
     )
 
 
@@ -4675,7 +4852,7 @@ def register_socket_events(socketio):
                 },
             )
 
-        # 点对（含本题曾点错后最终点对）自动播表扬；点错播鼓励（每次错误尝试一次）
+        # 点对自动播表扬包（口播 + 与教师表扬同一套随机动画）；点错播鼓励后由 iframe 切题
         if data.get('triggerPraise') or (
             'triggerPraise' not in data and data.get('isCorrect')
         ):
@@ -4906,25 +5083,7 @@ def register_socket_events(socketio):
         if not request_id or not behavior_id:
             logger.warning('拒绝未关联动画完成事件: %s', payload)
             return
-        with _play_request_lock:
-            entry = _play_request_cache.get(str(request_id))
-            cached_behavior = entry.get('behaviorId') if entry else None
-        if str(cached_behavior or '') != str(behavior_id):
-            logger.warning(
-                '拒绝行为标识不匹配的动画完成事件 request=%s behavior=%s',
-                request_id,
-                behavior_id,
-            )
-            return
-        from app.robot import get_robot_service
-
-        terminal = get_robot_service().mark_behavior_animation_complete(
-            behavior_id=str(behavior_id),
-            request_id=str(request_id),
-            session_id=str(session_id),
-            status=str(payload.get('status') or ''),
-            modality=payload.get('modality'),
-        )
+        terminal = _release_behavior_animation_from_child(payload)
         if not terminal:
             logger.warning('拒绝非活动行为的动画完成事件: %s', payload)
             return
@@ -4943,6 +5102,8 @@ def register_socket_events(socketio):
                 'status': payload.get('status'),
             },
         )
+        if not _should_forward_animation_terminal_to_teacher(request_id, behavior_id):
+            return
         teacher_room = f'session_{session_id}_teacher'
         if terminal.get('degraded'):
             socketio.emit(

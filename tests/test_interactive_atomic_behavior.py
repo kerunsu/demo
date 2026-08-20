@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import time
 
 from app.sockets import events
 
@@ -21,6 +22,14 @@ class _Robot:
 
     def resolve_audio_offset_ms(self, payload):
         return 0
+
+    def resolve_encouragement_animation(self, payload):
+        self.calls.append(("resolve_anim", payload))
+        return getattr(self, "animation_path", None)
+
+    def set_behavior_animation_expected(self, behavior_id, expected, **kwargs):
+        self.calls.append(("anim_expected", behavior_id, bool(expected), kwargs))
+        return True
 
     def set_behavior_audio_expected(self, behavior_id, count, **kwargs):
         self.calls.append(("commit", behavior_id, count, kwargs))
@@ -324,3 +333,124 @@ def test_manual_ordering_question_dispatches_rule_phrase(monkeypatch):
     assert dispatched[0]["rule"] == "more"
     assert dispatched[0]["behavior_id"] == "behavior-manual-ordering"
     assert dispatched[0]["request_id"] == "request-manual-ordering"
+
+
+class _FakeSocket:
+    def __init__(self):
+        self.emitted = []
+
+    def emit(self, event, payload, to=None, room=None, **kwargs):
+        self.emitted.append({
+            "event": event,
+            "payload": payload,
+            "to": to,
+            "room": room,
+        })
+
+
+def test_interactive_auto_praise_dispatches_teacher_equivalent_animation(monkeypatch):
+    robot = _Robot()
+    robot.animation_path = "resources/Animations/auto-praise.mp4"
+    audio = _Audio()
+    fake_socket = _FakeSocket()
+    monkeypatch.setattr(events, "_event_socketio", lambda: fake_socket)
+    monkeypatch.setattr(events, "_child_owner_for_session", lambda _sid: "child-sid")
+
+    assert events._play_interactive_course_audio(
+        "runtime-auto-praise",
+        "pairing",
+        "praise",
+        robot_service=robot,
+        audio_service=audio,
+    )
+
+    assert any(call[0] == "resolve_anim" for call in robot.calls)
+    anim_expected = next(call for call in robot.calls if call[0] == "anim_expected")
+    assert anim_expected[2] is True
+    events_sent = [item["event"] for item in fake_socket.emitted]
+    assert events_sent == ["prepare_behavior_animation", "play_resource"]
+    play = fake_socket.emitted[1]["payload"]
+    assert play["behaviorAnimation"] == "resources/Animations/auto-praise.mp4"
+    assert play["aux"] == {"praise": True}
+    assert play["holdLastFrame"] is False
+    assert play["interactiveAutoPraise"] is True
+    assert fake_socket.emitted[0]["to"] == "child-sid"
+    assert fake_socket.emitted[1]["to"] == "child-sid"
+    request_id = play["requestId"]
+    with events._play_request_lock:
+        cached = dict(events._play_request_cache.get(request_id) or {})
+    assert cached.get("behaviorId") == play["behaviorId"]
+    assert cached.get("interactiveAutoPraise") is True
+    assert events._should_forward_animation_terminal_to_teacher(
+        request_id,
+        play["behaviorId"],
+    ) is False
+
+
+def test_interactive_auto_praise_does_not_block_mutex_without_socket(monkeypatch):
+    robot = _Robot()
+    robot.animation_path = "resources/Animations/auto-praise.mp4"
+    audio = _Audio()
+    monkeypatch.setattr(events, "_event_socketio", lambda: None)
+
+    assert events._play_interactive_course_audio(
+        "runtime-auto-praise-nosocket",
+        "pairing",
+        "praise",
+        robot_service=robot,
+        audio_service=audio,
+    )
+    anim_expected = next(call for call in robot.calls if call[0] == "anim_expected")
+    assert anim_expected[2] is False
+
+
+def test_animation_ended_without_teacher_cache_still_releases_mutex(monkeypatch):
+    calls = []
+
+    class _CompleteRobot:
+        def mark_behavior_animation_complete(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "behaviorId": kwargs["behavior_id"],
+                "status": kwargs["status"],
+                "degraded": False,
+            }
+
+    monkeypatch.setattr("app.robot.get_robot_service", lambda: _CompleteRobot())
+    payload = {
+        "sessionId": "runtime-auto-praise-ended",
+        "requestId": "interactive-request-no-cache",
+        "behaviorId": "interactive-audio-no-cache",
+        "status": "ended",
+        "modality": "childAnimation",
+    }
+    with events._play_request_lock:
+        events._play_request_cache.pop(payload["requestId"], None)
+
+    terminal = events._release_behavior_animation_from_child(payload)
+    assert terminal["behaviorId"] == payload["behaviorId"]
+    assert calls[0]["behavior_id"] == payload["behaviorId"]
+    assert calls[0]["request_id"] == payload["requestId"]
+    assert calls[0]["session_id"] == payload["sessionId"]
+    assert events._should_forward_animation_terminal_to_teacher(
+        payload["requestId"],
+        payload["behaviorId"],
+    ) is False
+
+
+def test_teacher_animation_terminal_still_forwards_when_play_request_matches():
+    request_id = "teacher-praise-request"
+    behavior_id = "teacher-praise-behavior"
+    with events._play_request_lock:
+        events._play_request_cache[request_id] = {
+            "behaviorId": behavior_id,
+            "expiresAt": time.monotonic() + 30,
+        }
+    try:
+        assert events._should_forward_animation_terminal_to_teacher(
+            request_id,
+            behavior_id,
+        ) is True
+    finally:
+        with events._play_request_lock:
+            events._play_request_cache.pop(request_id, None)
