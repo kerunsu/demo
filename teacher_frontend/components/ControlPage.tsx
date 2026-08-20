@@ -17,6 +17,17 @@ interface MatchResult {
   details?: Record<string, any>;
 }
 
+function normalizeMatchScorePercent(score: unknown, threshold: unknown): number | null {
+  const raw = Number(score);
+  if (!Number.isFinite(raw)) return null;
+  const rawThreshold = Number(threshold);
+  const usesPercentScale = Number.isFinite(rawThreshold)
+    ? rawThreshold > 1.0001
+    : raw > 1.0001;
+  const percent = usesPercentScale ? raw : raw * 100;
+  return Math.min(100, Math.max(0, percent));
+}
+
 interface AttentionUpdate {
   session_id: string;
   score: number;
@@ -56,6 +67,10 @@ interface ControlPageProps {
   initialTrainingSessionId?: string | null;
   /** 开课录制门已通过（服务器已收到视频） */
   readinessPassed?: boolean;
+  /** Read-only ControlPage preview, available only under Vite development. */
+  previewMode?: boolean;
+  /** In-memory course fixtures used by the read-only preview. */
+  previewCourses?: Course[];
 }
 
 // 课程类型映射（与CourseSelectionPage保持一致）
@@ -70,6 +85,7 @@ const courseTypeMap: Record<string, { name: string; icon: typeof Brain }> = {
 
 const DefaultIcon = Brain;
 const DEFAULT_ITEM_IMAGE = 'https://images.unsplash.com/photo-1759159482847-78aadfcbeb85?w=300&h=200&fit=crop';
+const EMPTY_PREVIEW_COURSES: Course[] = [];
 
 type SocialAuxKey =
   | 'socialGreetingIntro'
@@ -198,7 +214,7 @@ function normalizeSocialOrder(selectedItems: SelectedCourseItem[]): SelectedCour
   return [...greetings, ...middle, ...farewells];
 }
 
-interface CourseItem {
+export interface CourseItem {
   id: number;
   name: string;
   type: string;
@@ -211,7 +227,7 @@ interface CourseItem {
   speechTarget?: string | null;
 }
 
-interface Course {
+export interface Course {
   id: number;
   title: string;
   type: string;
@@ -256,7 +272,18 @@ interface AdvanceSnapshot {
   clientRecordedAt: string;
 }
 
-export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, selectedStudent, initialTrainingSessionId = null, readinessPassed = false }: ControlPageProps) {
+export function ControlPage({
+  onBack,
+  onFinish,
+  onViewReport,
+  selectedCourses,
+  selectedStudent,
+  initialTrainingSessionId = null,
+  readinessPassed = false,
+  previewMode = false,
+  previewCourses = EMPTY_PREVIEW_COURSES,
+}: ControlPageProps) {
+  const isPreviewMode = import.meta.env.DEV && previewMode;
   const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [selectedCourseItems, setSelectedCourseItems] = useState<SelectedCourseItem[]>([]);
   const [currentCourseIndex, setCurrentCourseIndex] = useState(0);
@@ -885,6 +912,57 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
 
   // 从后端获取课程数据
   useEffect(() => {
+    if (isPreviewMode) {
+      const selectedItems = previewCourses
+        .filter((course) => course.items.length > 0)
+        .map((course) => ({
+          courseId: course.id,
+          itemIds: course.items.map((item) => item.id),
+          course,
+          items: course.items,
+        }));
+
+      setAllCourses(previewCourses);
+      setSelectedCourseItems(normalizeSocialOrder(selectedItems));
+      setExpandedCategories(new Set(previewCourses.map((course) => course.type)));
+      setCurrentCourseIndex(0);
+      setCurrentItemIndex(0);
+      setSocketConnected(true);
+      setTeacherLatencyMs(24);
+      setBehaviorSyncDeltaMs(12);
+      setControlRole('controller');
+      setMatchScore(92);
+      setMatchPassed(true);
+      setAttentionScore(86);
+      setAttentionState('high');
+      setMatchingStatus({
+        currentDifficulty: 3,
+        currentQuestion: 3,
+        totalQuestions: 8,
+        correctCount: 2,
+        wrongCount: 1,
+        accuracy: 67,
+        isCorrect: true,
+        consecutiveCorrect: 1,
+        isSimplifiedMode: false,
+      });
+      setSequencingStats({
+        size: { correct: 3, wrong: 0 },
+        length: { correct: 2, wrong: 1 },
+        height: { correct: 1, wrong: 1 },
+        count: { correct: 2, wrong: 0 },
+      });
+      setSequencingStatus({
+        currentQuestion: 3,
+        totalQuestions: 8,
+        category: 'size',
+        rule: 'bigger',
+      });
+      setError(selectedItems.length > 0 ? null : 'Preview course data is empty');
+      setLoading(false);
+      return;
+    }
+
     let disposed = false;
     const coursesAbortController = new AbortController();
     const fetchCourses = async () => {
@@ -1344,7 +1422,9 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
       socket.on('match_result', (data: MatchResult) => {
         if (!eventMatchesCurrentSession(data)) return;
         console.log('📊 收到匹配结果:', data);
-        setMatchScore(data.score);
+        const normalizedScore = normalizeMatchScorePercent(data.score, data.threshold);
+        if (normalizedScore == null) return;
+        setMatchScore(normalizedScore);
         setMatchPassed(data.passed);
         setMatchType(data.matcher_type);
       });
@@ -1715,19 +1795,25 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
           motion: '动作',
           expression: '表情',
         };
-        const componentStatuses = data?.components && typeof data.components === 'object'
-          ? Object.entries(data.components)
+        const componentStatuses: Array<[string, { status?: unknown }]> =
+          data?.components && typeof data.components === 'object'
+          ? Object.entries(data.components).map(([name, component]) => [
+              name,
+              component && typeof component === 'object'
+                ? component as { status?: unknown }
+                : {},
+            ])
           : [
               ['childAnimation', { status: data?.animationStatus }],
               ['motion', { status: data?.motionStatus }],
               ['expression', { status: data?.expressionStatus }],
             ];
         const abnormalComponents = componentStatuses
-          .filter(([, component]: [string, any]) =>
+          .filter(([, component]) =>
             ['failed', 'timeout', 'incomplete', 'unverified', 'stopped', 'error', 'dropped']
               .includes(String(component?.status || '').toLowerCase()),
           )
-          .map(([name, component]: [string, any]) =>
+          .map(([name, component]) =>
             `${componentLabels[name] || name}=${component?.status}`,
           );
         if (matchesBehavior) {
@@ -2181,9 +2267,12 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
     releasePlaybackGate,
     scheduleTimeout,
     setPlaybackGate,
+    isPreviewMode,
+    previewCourses,
   ]);
 
   useEffect(() => {
+    if (isPreviewMode) return;
     const finalizeOnPageExit = () => {
       const activeTrainingId = trainingSessionIdRef.current;
       if (!activeTrainingId || !navigator.sendBeacon) return;
@@ -2203,7 +2292,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
     };
     window.addEventListener('pagehide', finalizeOnPageExit);
     return () => window.removeEventListener('pagehide', finalizeOnPageExit);
-  }, []);
+  }, [isPreviewMode]);
 
   // 排序游戏：自动模式切换
   const handleSequencingAutoModeChange = useCallback((autoMode: boolean) => {
@@ -2712,6 +2801,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
 
   // 自动加载当前课点。提问语音只允许由非 aux 的 play_resource_ack 触发一次。
   useEffect(() => {
+    if (isPreviewMode) return;
     if (selectedCourseItems.length === 0 || loading || !socketConnected || !socketRef.current?.connected) return;
     const selectedItem = selectedCourseItems[currentCourseIndex];
     if (!selectedItem) return;
@@ -2747,6 +2837,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
     readinessPassed,
     scheduleTimeout,
     socketConnected,
+    isPreviewMode,
   ]);
 
   // 按类别分组选中的课程
@@ -3177,6 +3268,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
 
   // 课程完成弹窗打开时：立即结束训练并探测审核/推送态（不等待按钮）
   useEffect(() => {
+    if (isPreviewMode) return;
     if (!showFinishConfirm) return;
     let cancelled = false;
     setReportModulesLoading(true);
@@ -3201,7 +3293,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [finalizeTraining, showFinishConfirm]);
+  }, [finalizeTraining, isPreviewMode, showFinishConfirm]);
 
   // 监听服务端推送
   useEffect(() => {
@@ -3593,9 +3685,9 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
                 <span className={`text-3xl font-bold ${
                   matchScore === null ? 'text-gray-300' : 
                   matchPassed ? 'text-green-600' : 
-                  (matchScore ?? 0) > 0.7 ? 'text-yellow-600' : 'text-red-500'
+                  (matchScore ?? 0) > 70 ? 'text-yellow-600' : 'text-red-500'
                 }`}>
-                  {matchScore !== null ? `${(matchScore * 100).toFixed(0)}%` : '--'}
+                  {matchScore !== null ? `${matchScore.toFixed(0)}%` : '--'}
                 </span>
                 {matchType && (
                   <span className="text-xs text-gray-400 mb-1">{matchType}</span>
@@ -3666,12 +3758,12 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
         <div className="flex-1 overflow-y-auto">
           {/* 排序课程专用控制面板 */}
           {currentCourse?.type === 'ordering' && (
-            <div className="bg-white rounded-2xl p-6 mx-6 mt-6 shadow-lg border border-gray-200">
+            <div className="bg-white rounded-2xl p-4 sm:p-5 mx-4 sm:mx-6 mt-6 shadow-lg border border-gray-200">
             {/* 第一行：配置区 */}
-            <div className="flex items-center gap-6 mb-4">
+            <div className="mb-4 flex flex-wrap items-center justify-center gap-4 2xl:justify-start">
               {/* 自动开关 */}
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600 font-medium">自动模式：</span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="whitespace-nowrap text-xs font-medium text-gray-500">自动模式</span>
                 <button
                   onClick={() => handleSequencingAutoModeChange(!sequencingConfig.autoMode)}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
@@ -3684,15 +3776,15 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
                     }`}
                   />
                 </button>
-                <span className="text-sm text-gray-500">
+                <span className="whitespace-nowrap text-xs text-gray-500">
                   {sequencingConfig.autoMode ? '开启' : '关闭'}
                 </span>
               </div>
               
               {/* 类别选择器 */}
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600 font-medium">类别：</span>
-                <div className="flex gap-2">
+              <div className="flex min-w-0 flex-wrap items-center justify-center gap-2">
+                <span className="shrink-0 whitespace-nowrap text-xs font-medium text-gray-500">类别</span>
+                <div className="flex flex-wrap justify-center gap-2">
                   {[
                     { value: 'size', label: '大小' },
                     { value: 'length', label: '长短' },
@@ -3703,9 +3795,9 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
                       key={cat.value}
                       onClick={() => handleSequencingConfigChange('category', cat.value)}
                       disabled={sequencingConfig.autoMode}
-                      className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                      className={`min-w-[3.5rem] whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
                         sequencingConfig.category === cat.value
-                          ? 'bg-indigo-600 text-white shadow-md'
+                          ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-200'
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       } ${sequencingConfig.autoMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
@@ -3716,9 +3808,9 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
               </div>
               
               {/* 难度选择器（禁用） */}
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600 font-medium">难度：</span>
-                <div className="flex gap-2">
+              <div className="flex min-w-0 flex-wrap items-center justify-center gap-2">
+                <span className="shrink-0 whitespace-nowrap text-xs font-medium text-gray-500">难度</span>
+                <div className="flex flex-wrap justify-center gap-2">
                   {[
                     { value: 2, label: '两者' },
                     { value: 3, label: '三者', disabled: true },
@@ -3727,7 +3819,7 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
                     <button
                       key={diff.value}
                       disabled={true}
-                      className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                      className={`min-w-[3.5rem] whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
                         sequencingConfig.difficulty === diff.value
                           ? 'bg-indigo-600 text-white shadow-md'
                           : 'bg-gray-100 text-gray-700'
@@ -3740,9 +3832,9 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
               </div>
               
               {/* 规则选择器 */}
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600 font-medium">规则：</span>
-                <div className="flex gap-2">
+              <div className="flex min-w-0 flex-wrap items-center justify-center gap-2">
+                <span className="shrink-0 whitespace-nowrap text-xs font-medium text-gray-500">规则</span>
+                <div className="flex flex-wrap justify-center gap-2">
                   {(() => {
                     const ruleMap: Record<string, Array<{value: string, label: string}>> = {
                       size: [{ value: 'bigger', label: '选大的' }, { value: 'smaller', label: '选小的' }],
@@ -3756,9 +3848,9 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
                         key={rule.value}
                         onClick={() => handleSequencingConfigChange('rule', rule.value)}
                         disabled={sequencingConfig.autoMode}
-                        className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                        className={`min-w-[4.25rem] whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
                           sequencingConfig.rule === rule.value
-                            ? 'bg-indigo-600 text-white shadow-md'
+                            ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-200'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         } ${sequencingConfig.autoMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
@@ -3770,84 +3862,73 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
               </div>
             </div>
             
-            {/* 第二行：提示/状态 + 统计区 */}
-            <div className="flex items-center gap-8 px-4">
-              {/* 提示按钮 */}
-              <button
-                onClick={handleSequencingHint}
-                disabled={!sequencingGameStarted || interactionControlsLocked}
-                className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                💡 提示
-              </button>
-              
+            {/* 第二行：状态 + 统计区 */}
+            <div className="flex flex-wrap items-center gap-4 border-t border-gray-100 pt-4">
               {/* 游戏状态指示 */}
               {sequencingGameStarted && (
-                <div className="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-lg">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                  <span className="text-green-700 font-medium">游戏进行中</span>
-                </div>
-              )}
-              
-              {/* 统计数据 */}
-              {[
-                { key: 'size', label: '大小' },
-                { key: 'length', label: '长短' },
-                { key: 'height', label: '高矮' },
-                { key: 'count', label: '多少' }
-              ].map((cat) => {
-                const stats = sequencingStats[cat.key as keyof typeof sequencingStats];
-                console.log(`渲染统计 ${cat.label}:`, stats); // 调试日志
-                const total = stats.correct + stats.wrong;
-                const accuracy = total > 0 ? ((stats.correct / total) * 100).toFixed(0) : '0';
-                return (
-                  <div key={cat.key} className="flex items-center gap-3">
-                    <span className="text-gray-600 font-medium min-w-[40px]">{cat.label}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-green-600 font-bold">✓{stats.correct}</span>
-                      <span className="text-red-500 font-bold">✗{stats.wrong}</span>
-                      {total > 0 && (
-                        <span className={`text-sm font-medium ${
-                          parseInt(accuracy) >= 80 ? 'text-green-600' :
-                          parseInt(accuracy) >= 60 ? 'text-yellow-600' : 'text-red-500'
-                        }`}>
-                          ({accuracy}%)
-                        </span>
-                      )}
-                    </div>
+                <div className="flex flex-[1_1_140px] items-center justify-center gap-2 2xl:justify-start">
+                  <div className="flex shrink-0 items-center gap-2">
+                    <div className="h-2 w-2 shrink-0 rounded-full bg-green-500 animate-pulse"></div>
+                    <span className="whitespace-nowrap text-xs font-medium text-green-700">游戏进行中</span>
                   </div>
-                );
-              })}
-              
-              {/* 当前进度 */}
-              {sequencingStatus && (
-                <div className="ml-auto flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-lg">
-                  <span className="text-indigo-700 font-bold text-lg">
-                    {sequencingStatus.currentQuestion}/{sequencingStatus.totalQuestions}
-                  </span>
-                  <span className="text-indigo-600 text-sm">题</span>
                 </div>
               )}
+
+              {/* 统计数据：无背景，仅以文字层级呈现 */}
+              <div className="grid min-w-0 flex-[1_1_620px] grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
+                {[
+                  { key: 'size', label: '大小' },
+                  { key: 'length', label: '长短' },
+                  { key: 'height', label: '高矮' },
+                  { key: 'count', label: '多少' }
+                ].map((cat) => {
+                  const stats = sequencingStats[cat.key as keyof typeof sequencingStats];
+                  const total = stats.correct + stats.wrong;
+                  const accuracy = total > 0 ? Math.round((stats.correct / total) * 100) : null;
+                  return (
+                    <div key={cat.key} className="min-w-0 text-center">
+                      <div className={`whitespace-nowrap text-2xl font-bold ${
+                        accuracy == null ? 'text-gray-400' :
+                        accuracy >= 80 ? 'text-green-600' :
+                        accuracy >= 60 ? 'text-amber-600' : 'text-red-500'
+                      }`}>
+                        {accuracy == null ? '--' : `${accuracy}%`}
+                      </div>
+                      <div className="mt-0.5 whitespace-nowrap text-[11px] text-gray-500">{cat.label}</div>
+                    </div>
+                  );
+                })}
+
+                {/* 当前进度 */}
+                {sequencingStatus && (
+                  <div className="col-span-2 min-w-0 text-center sm:col-span-1">
+                    <div className="whitespace-nowrap text-2xl font-bold text-indigo-600">
+                      {sequencingStatus.currentQuestion}/{sequencingStatus.totalQuestions}
+                    </div>
+                    <div className="mt-0.5 whitespace-nowrap text-[11px] font-medium text-gray-600">当前进度</div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
         
         {/* 配对课程专用控制面板 */}
         {currentCourse?.type === 'pairing' && (
-          <div className="bg-white rounded-2xl p-6 mx-6 mt-6 shadow-lg border border-gray-200">
-            <div className="flex items-center justify-between">
-              {/* 左侧：难度控制和游戏状态 */}
-              <div className="flex items-center gap-6">
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-600 font-medium">难度设置：</span>
-                  <div className="flex gap-2">
+          <div className="bg-white rounded-2xl p-4 sm:p-5 mx-4 sm:mx-6 mt-6 shadow-lg border border-gray-200">
+            <div className="flex flex-wrap items-center gap-4 xl:gap-5">
+              {/* 难度控制：空间不足时整组换行，避免文字被逐字挤压 */}
+              <div className="flex min-w-0 flex-[1_1_390px] flex-wrap items-center justify-center gap-3 2xl:justify-start">
+                <div className="flex min-w-0 flex-wrap items-center justify-center gap-2 2xl:justify-start">
+                  <span className="shrink-0 whitespace-nowrap text-xs font-medium text-gray-500">难度设置</span>
+                  <div className="flex flex-wrap gap-2">
                     {[2, 3, 4, 5].map((level) => (
                       <button
                         key={level}
                         onClick={() => handleSetMatchingDifficulty(level)}
-                        className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                        className={`min-w-[3.5rem] whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
                           matchingDifficulty === level
-                            ? 'bg-indigo-600 text-white shadow-md'
+                            ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-200'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         }`}
                       >
@@ -3859,58 +3940,45 @@ export function ControlPage({ onBack, onFinish, onViewReport, selectedCourses, s
                 
                 {/* 游戏状态指示 */}
                 {matchingGameStarted && (
-                  <div className="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-lg">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-green-700 font-medium">游戏进行中</span>
+                  <div className="flex shrink-0 items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+                    <div className="h-2 w-2 shrink-0 rounded-full bg-green-500 animate-pulse"></div>
+                    <span className="whitespace-nowrap text-xs font-medium text-green-700">游戏进行中</span>
                   </div>
                 )}
               </div>
 
-              {/* 中间：游戏状态 */}
+              {/* 课堂数据：采用响应式网格，标签始终保持横向完整显示 */}
               {matchingStatus && (
-                <div className="flex items-center gap-8 px-8 border-l border-r border-gray-200">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-indigo-600">
+                <div className="grid min-w-0 flex-[1_1_420px] grid-cols-2 gap-2 sm:grid-cols-3">
+                  <div className="min-w-0 px-2 py-2 text-center">
+                    <div className="whitespace-nowrap text-2xl font-bold text-indigo-600">
                       {matchingStatus.currentQuestion}/{matchingStatus.totalQuestions}
                     </div>
-                    <div className="text-xs text-gray-500">题目进度</div>
+                    <div className="mt-0.5 whitespace-nowrap text-[11px] text-gray-500">题目进度</div>
                   </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600">
-                      {matchingStatus.correctCount}
-                    </div>
-                    <div className="text-xs text-gray-500">正确</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-red-500">
-                      {matchingStatus.wrongCount}
-                    </div>
-                    <div className="text-xs text-gray-500">错误</div>
-                  </div>
-                  <div className="text-center">
-                    <div className={`text-xl font-bold ${
+                  <div className="min-w-0 px-2 py-2 text-center">
+                    <div className={`whitespace-nowrap text-xl font-bold ${
                       matchingStatus.isSimplifiedMode ? 'text-orange-500' : 'text-gray-600'
                     }`}>
                       {matchingStatus.currentDifficulty}选1
                       {matchingStatus.isSimplifiedMode && (
-                        <span className="text-xs ml-1">(简化)</span>
+                        <span className="ml-1 text-[10px]">(简化)</span>
                       )}
                     </div>
-                    <div className="text-xs text-gray-500">当前难度</div>
+                    <div className="mt-0.5 whitespace-nowrap text-[11px] text-gray-500">当前难度</div>
                   </div>
-                </div>
-              )}
-
-              {/* 右侧：正确率 */}
-              {matchingStatus && matchingStatus.currentQuestion > 0 && (
-                <div className="text-center">
-                  <div className={`text-3xl font-bold ${
-                    (matchingStatus.correctCount / matchingStatus.currentQuestion) >= 0.8 ? 'text-green-600' :
-                    (matchingStatus.correctCount / matchingStatus.currentQuestion) >= 0.6 ? 'text-yellow-600' : 'text-red-500'
-                  }`}>
-                    {((matchingStatus.correctCount / matchingStatus.currentQuestion) * 100).toFixed(0)}%
+                  <div className="col-span-2 min-w-0 px-2 py-2 text-center sm:col-span-1">
+                    <div className={`whitespace-nowrap text-3xl font-bold ${
+                      matchingStatus.currentQuestion <= 0 ? 'text-gray-400' :
+                      (matchingStatus.correctCount / matchingStatus.currentQuestion) >= 0.8 ? 'text-green-600' :
+                      (matchingStatus.correctCount / matchingStatus.currentQuestion) >= 0.6 ? 'text-amber-600' : 'text-red-500'
+                    }`}>
+                      {matchingStatus.currentQuestion > 0
+                        ? `${((matchingStatus.correctCount / matchingStatus.currentQuestion) * 100).toFixed(0)}%`
+                        : '--'}
+                    </div>
+                    <div className="mt-0.5 whitespace-nowrap text-[11px] font-medium text-gray-600">正确率</div>
                   </div>
-                  <div className="text-xs text-gray-500">正确率</div>
                 </div>
               )}
             </div>

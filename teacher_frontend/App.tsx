@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { lazy, Suspense, useState, useRef, useCallback, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { LoginPage } from './components/LoginPage';
 import { StudentInfoPage } from './components/StudentInfoPage';
@@ -11,6 +11,11 @@ import {
 } from './components/TrainingReadinessDialog';
 
 type PageType = 'login' | 'studentInfo' | 'courseSelection' | 'control' | 'report';
+const DevControlPagePreview = import.meta.env.DEV
+  ? lazy(() => import('./components/ControlPagePreview').then((module) => ({
+      default: module.ControlPagePreview,
+    })))
+  : null;
 const PAGE_TYPES = new Set<PageType>([
   'login',
   'studentInfo',
@@ -224,7 +229,7 @@ function disposeTeacherSocket(socket: Socket | null): void {
 const initialTeacher = loadTeacherSession();
 const initialNav = loadNavSnapshot(!!initialTeacher);
 
-export default function App() {
+function TeacherApp() {
   const [currentPage, setCurrentPage] = useState<PageType>(initialNav.currentPage);
   const [selectedStudent, setSelectedStudent] = useState<string | null>(initialNav.selectedStudent);
   const [assessmentMode, setAssessmentMode] = useState(initialNav.assessmentMode);
@@ -634,4 +639,20 @@ export default function App() {
       />
     </div>
   );
+}
+
+export default function App() {
+  const preview = import.meta.env.DEV
+    ? new URLSearchParams(window.location.search).get('preview')
+    : null;
+
+  if (preview === 'control' && DevControlPagePreview) {
+    return (
+      <Suspense fallback={null}>
+        <DevControlPagePreview />
+      </Suspense>
+    );
+  }
+
+  return <TeacherApp />;
 }
