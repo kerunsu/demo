@@ -10,7 +10,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from app import app  # noqa: E402
+from app import app, create_app  # noqa: E402
 from database.models import (  # noqa: E402
     db,
     Teacher,
@@ -19,6 +19,11 @@ from database.models import (  # noqa: E402
     Course,
     CourseItem
 )
+
+
+if app is None:
+    app, _socketio = create_app()
+    app.static_folder = os.path.join(project_root, 'static')
 
 
 def init_database():

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, Puzzle, Palette, Music, Blocks, Brain, ArrowLeft, Users } from 'lucide-react';
+import { BookOpen, Puzzle, Palette, Music, Blocks, Brain, ArrowLeft, Users, Sparkles, Check } from 'lucide-react';
 
 interface CourseSelectionPageProps {
   onStart: (payload: {
@@ -28,6 +28,8 @@ const courseTypeMap: Record<string, { name: string; icon: typeof Brain }> = {
 // 默认图标
 const DefaultIcon = Brain;
 const DEFAULT_ITEM_IMAGE = 'https://images.unsplash.com/photo-1759159482847-78aadfcbeb85?w=300&h=200&fit=crop';
+const QUICK_PRESET_COURSE_IDS = [2, 3, 9, 10, 11] as const;
+const QUICK_PRESET_VIEW_ID = 'quick-preset';
 
 interface CourseItem {
   id: number;
@@ -112,6 +114,23 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
         });
 
         setCategories(categoryArray);
+        if (mode === 'assessment') {
+          const presetCourses = QUICK_PRESET_COURSE_IDS
+            .map(courseId => data.find(course => course.id === courseId))
+            .filter((course): course is Course => Boolean(course));
+          const presetReady = presetCourses.length === QUICK_PRESET_COURSE_IDS.length
+            && presetCourses.every(course => course.items.length > 0);
+
+          if (presetReady) {
+            const presetItems = new Map<string, Set<number>>();
+            presetCourses.forEach(course => {
+              presetItems.set(course.id.toString(), new Set(course.items.map(item => item.id)));
+            });
+            setSelectedItems(presetItems);
+            setSelectedCategory(QUICK_PRESET_VIEW_ID);
+            return;
+          }
+        }
         if (categoryArray.length > 0) {
           setSelectedCategory(categoryArray[0].id);
         }
@@ -124,9 +143,39 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
     };
 
     fetchCourses();
-  }, []);
+  }, [mode]);
 
-  const currentCategory = categories.find(c => c.id === selectedCategory);
+  const quickPresetCourses = QUICK_PRESET_COURSE_IDS
+    .map(courseId => courses.find(course => course.id === courseId))
+    .filter((course): course is Course => Boolean(course));
+  const currentCategory = selectedCategory === QUICK_PRESET_VIEW_ID
+    ? {
+        id: QUICK_PRESET_VIEW_ID,
+        name: '快速课程方案',
+        icon: Sparkles,
+        courses: quickPresetCourses,
+      }
+    : categories.find(category => category.id === selectedCategory);
+  const quickPresetReady = quickPresetCourses.length === QUICK_PRESET_COURSE_IDS.length
+    && quickPresetCourses.every(course => course.items.length > 0);
+  const quickPresetApplied = quickPresetReady
+    && selectedItems.size === QUICK_PRESET_COURSE_IDS.length
+    && quickPresetCourses.every(course => {
+      const itemSet = selectedItems.get(course.id.toString());
+      return itemSet?.size === course.items.length
+        && course.items.every(item => itemSet.has(item.id));
+    });
+
+  const applyQuickPreset = () => {
+    if (!quickPresetReady) return;
+
+    const presetItems = new Map<string, Set<number>>();
+    quickPresetCourses.forEach(course => {
+      presetItems.set(course.id.toString(), new Set(course.items.map(item => item.id)));
+    });
+    setSelectedItems(presetItems);
+    setSelectedCategory(QUICK_PRESET_VIEW_ID);
+  };
 
   // 切换课程项的选择状态
   const toggleItem = (courseId: number, itemId: number) => {
@@ -210,11 +259,11 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
     }> = [];
 
     selectedItems.forEach((itemSet, courseId) => {
+      const course = courses.find((candidate) => String(candidate.id) === String(courseId));
       coursesArray.push({
-        categoryId: selectedCategory,
+        categoryId: course?.type || selectedCategory,
         courseId: courseId,
       });
-      const course = courses.find((c) => String(c.id) === String(courseId));
       const courseType = course?.type || '';
       const courseFile = course?.file;
       itemSet.forEach((itemId) => {
@@ -293,6 +342,28 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
             </button>
             <h2 className="text-gray-900">课程类别</h2>
           </div>
+        </div>
+        <div className="p-4 border-b border-gray-200">
+          <button
+            type="button"
+            onClick={applyQuickPreset}
+            disabled={!quickPresetReady}
+            title={quickPresetReady ? '选择预设课程组合' : '预设课程数据不完整'}
+            className={`w-full min-h-16 flex items-center gap-3 p-3 rounded-lg border-2 text-left transition-colors ${
+              selectedCategory === QUICK_PRESET_VIEW_ID
+                ? 'bg-emerald-50 border-emerald-500'
+                : quickPresetReady
+                  ? 'bg-white border-gray-200 hover:border-emerald-400 hover:bg-emerald-50'
+                  : 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-60'
+            }`}
+          >
+            <Sparkles className={`w-5 h-5 shrink-0 ${selectedCategory === QUICK_PRESET_VIEW_ID ? 'text-emerald-600' : 'text-gray-600'}`} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium text-gray-900">快速课程方案</span>
+              <span className="block text-xs text-gray-500">命名、拟声、配对、排序、社交</span>
+            </span>
+            {quickPresetApplied && <Check className="w-5 h-5 shrink-0 text-emerald-600" />}
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto p-6 pt-4">
           <div className="space-y-3">
