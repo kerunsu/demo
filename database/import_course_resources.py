@@ -149,17 +149,24 @@ def import_to_database(items: list, dry_run: bool = False):
             
             # 导入课程项
             for item_data in course_items:
-                # 检查是否已存在
+                # 资源目录是稳定标识；显示名称可能因标注纠错而变化。
+                # 先按目录查找，避免改名时新增重复课程项；名称仅兼容旧数据。
                 existing_item = CourseItem.query.filter_by(
                     course_id=course.id,
-                    name=item_data['name']
+                    media_file=item_data['folder_path'],
                 ).first()
+                if existing_item is None:
+                    existing_item = CourseItem.query.filter_by(
+                        course_id=course.id,
+                        name=item_data['name'],
+                    ).first()
                 
                 if existing_item:
                     # 更新现有记录
                     if dry_run:
                         print(f"[DRY RUN] 将更新课程项: {item_data['name']}")
                     else:
+                        existing_item.name = item_data['name']
                         existing_item.icon = item_data['icon_path']
                         existing_item.type = 'image'
                         existing_item.media_file = item_data['folder_path']

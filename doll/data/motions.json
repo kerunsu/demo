@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "updatedAt": "2026-08-08T10:10:16.022441+00:00",
+  "updatedAt": "2026-08-21T06:54:58.825202+00:00",
   "motions": {
     "惊讶/鼓励": [
       {
@@ -172,102 +172,102 @@
       {
         "time": 380,
         "pose": {
-          "pitch": 208,
+          "pitch": 170,
           "yaw": 160,
           "armL": 320,
           "armR": 50
         },
-        "moveMs": 260
+        "moveMs": 620
       },
       {
         "time": 420,
         "pose": {
-          "pitch": 208,
+          "pitch": 170,
           "yaw": 160,
-          "armL": 275,
-          "armR": 95
+          "armL": 288,
+          "armR": 82
         },
-        "moveMs": 320
+        "moveMs": 620
       },
       {
-        "time": 860,
+        "time": 1160,
         "pose": {
-          "pitch": 208,
+          "pitch": 170,
           "yaw": 160,
           "armL": 320,
           "armR": 50
         },
-        "moveMs": 420
+        "moveMs": 520
       },
       {
-        "time": 880,
+        "time": 1400,
         "pose": {
-          "pitch": 200,
+          "pitch": 170,
           "yaw": 160,
           "armL": 320,
-          "armR": 50
+          "armR": 82
         },
-        "moveMs": 380
-      },
-      {
-        "time": 1320,
-        "pose": {
-          "pitch": 208,
-          "yaw": 160,
-          "armL": 320,
-          "armR": 50
-        },
-        "moveMs": 260
-      },
-      {
-        "time": 1380,
-        "pose": {
-          "pitch": 208,
-          "yaw": 160,
-          "armL": 275,
-          "armR": 50
-        },
-        "moveMs": 300
+        "moveMs": 620
       },
       {
         "time": 1420,
         "pose": {
-          "pitch": 208,
+          "pitch": 170,
           "yaw": 160,
-          "armL": 275,
-          "armR": 95
+          "armL": 288,
+          "armR": 82
         },
-        "moveMs": 300
+        "moveMs": 620
       },
       {
-        "time": 1700,
+        "time": 1820,
         "pose": {
-          "pitch": 200,
+          "pitch": 180,
           "yaw": 160,
-          "armL": 275,
-          "armR": 95
+          "armL": 288,
+          "armR": 82
         },
-        "moveMs": 380
+        "moveMs": 620
       },
       {
-        "time": 1760,
+        "time": 2140,
         "pose": {
-          "pitch": 200,
+          "pitch": 180,
           "yaw": 160,
-          "armL": 320,
-          "armR": 95
+          "armL": 288,
+          "armR": 50
         },
-        "moveMs": 380
+        "moveMs": 520
       },
       {
-        "time": 1800,
+        "time": 2160,
         "pose": {
-          "pitch": 200,
+          "pitch": 180,
           "yaw": 160,
           "armL": 320,
           "armR": 50
         },
-        "moveMs": 380
+        "moveMs": 520
+      },
+      {
+        "time": 2520,
+        "pose": {
+          "pitch": 180,
+          "yaw": 160,
+          "armL": 320,
+          "armR": 82
+        },
+        "moveMs": 620
+      },
+      {
+        "time": 2560,
+        "pose": {
+          "pitch": 200,
+          "yaw": 160,
+          "armL": 288,
+          "armR": 82
+        },
+        "moveMs": 620
       }
     ],
     "04-摇头再来一次": [
@@ -483,7 +483,7 @@
           "pitch": 218,
           "yaw": 160,
           "armL": 320,
-          "armR": 95
+          "armR": 70
         },
         "moveMs": 320
       },
@@ -493,19 +493,9 @@
           "pitch": 200,
           "yaw": 160,
           "armL": 320,
-          "armR": 95
+          "armR": 70
         },
         "moveMs": 420
-      },
-      {
-        "time": 1180,
-        "pose": {
-          "pitch": 200,
-          "yaw": 160,
-          "armL": 320,
-          "armR": 50
-        },
-        "moveMs": 440
       }
     ],
     "05-吸引注意01": [
@@ -600,7 +590,7 @@
       "sourceFormat": "dollser-motion",
       "sourceVersion": 2,
       "durationMs": 4249,
-      "motionDurationMs": 2580,
+      "motionDurationMs": 4000,
       "motionStartTime": 0,
       "expression": {
         "mediaId": "兴奋 (1).mp4",

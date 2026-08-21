@@ -2,7 +2,7 @@
   "version": 2,
   "format": "dollser-motion",
   "armBaselineVersion": 2,
-  "updatedAt": "2026-07-17T11:49:54.831Z",
+  "updatedAt": "2026-08-21T05:34:31.615Z",
   "name": "02-提问",
   "durationMs": 2120,
   "motionDurationMs": 2120,
@@ -27,7 +27,7 @@
       "actionId": "child-02-02",
       "time": 240,
       "axis": "armR",
-      "angle": 95,
+      "angle": 70,
       "moveMs": 320,
       "label": "右手邀请回答",
       "phase": "move"
@@ -39,15 +39,6 @@
       "angle": 200,
       "moveMs": 420,
       "label": "轻微前倾关注 回中位",
-      "phase": "return"
-    },
-    {
-      "actionId": "child-02-02",
-      "time": 1180,
-      "axis": "armR",
-      "angle": 50,
-      "moveMs": 440,
-      "label": "右手邀请回答 回中位",
       "phase": "return"
     }
   ],

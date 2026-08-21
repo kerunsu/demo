@@ -204,7 +204,7 @@
     "id": "preset-child-01",
     "name": "03-表扬",
     "notes": "双臂轻轻上扬并做一次小幅庆祝摆动，头部轻点确认，最后自然回中。 设计理由：表扬动作需要明显但不过度兴奋。双臂上扬传达积极情绪，点头表示认可；幅度保持中等，避免儿童感到突然或压迫。",
-    "durationMs": 2580,
+    "durationMs": 4000,
     "neutral": 200,
     "armBaselineVersion": 2,
     "centers": {
@@ -219,81 +219,117 @@
         "axis": "arml",
         "label": "左臂上扬",
         "startMs": 420,
-        "angle": 275,
-        "moveMs": 320,
-        "requestedMoveMs": 320,
+        "angle": 288,
+        "moveMs": 620,
+        "requestedMoveMs": 620,
         "holdMs": 120,
         "returnToCenter": true,
-        "returnMoveMs": 420
+        "returnMoveMs": 520
+      },
+      {
+        "id": "action-1787290305568-bf7172",
+        "axis": "arml",
+        "label": "左臂上扬 副本",
+        "startMs": 420,
+        "angle": 288,
+        "moveMs": 620,
+        "requestedMoveMs": 620,
+        "holdMs": 120,
+        "returnToCenter": true,
+        "returnMoveMs": 520
       },
       {
         "id": "child-01-02",
         "axis": "armr",
         "label": "右臂上扬",
         "startMs": 420,
-        "angle": 95,
-        "moveMs": 320,
-        "requestedMoveMs": 320,
+        "angle": 82,
+        "moveMs": 620,
+        "requestedMoveMs": 620,
         "holdMs": 120,
         "returnToCenter": true,
-        "returnMoveMs": 420
+        "returnMoveMs": 520
       },
       {
         "id": "child-01-03",
         "axis": "pitch",
         "label": "轻点头确认",
         "startMs": 380,
-        "angle": 208,
-        "moveMs": 260,
-        "requestedMoveMs": 260,
-        "holdMs": 240,
-        "returnToCenter": true,
-        "returnMoveMs": 380
+        "angle": 170,
+        "moveMs": 620,
+        "requestedMoveMs": 620,
+        "holdMs": 0,
+        "returnToCenter": false,
+        "returnMoveMs": 0
       },
       {
-        "id": "child-01-04",
+        "id": "action-1787290354516-ac2e65",
         "axis": "arml",
-        "label": "左臂小幅回弹",
-        "startMs": 1380,
-        "angle": 275,
-        "moveMs": 300,
-        "requestedMoveMs": 300,
-        "holdMs": 80,
+        "label": "左臂上扬 副本 副本",
+        "startMs": 1420,
+        "angle": 288,
+        "moveMs": 620,
+        "requestedMoveMs": 620,
+        "holdMs": 120,
         "returnToCenter": true,
-        "returnMoveMs": 380
+        "returnMoveMs": 520
       },
       {
-        "id": "child-01-05",
+        "id": "action-1787290360737-56e10d",
         "axis": "armr",
-        "label": "右臂小幅回弹",
-        "startMs": 1420,
-        "angle": 95,
-        "moveMs": 300,
-        "requestedMoveMs": 300,
-        "holdMs": 80,
+        "label": "右臂上扬 副本",
+        "startMs": 1400,
+        "angle": 82,
+        "moveMs": 620,
+        "requestedMoveMs": 620,
+        "holdMs": 120,
         "returnToCenter": true,
-        "returnMoveMs": 380
+        "returnMoveMs": 520
       },
       {
         "id": "child-01-06",
         "axis": "pitch",
         "label": "回看孩子",
-        "startMs": 1320,
-        "angle": 208,
-        "moveMs": 260,
-        "requestedMoveMs": 260,
+        "startMs": 1820,
+        "angle": 180,
+        "moveMs": 620,
+        "requestedMoveMs": 620,
         "holdMs": 120,
         "returnToCenter": true,
-        "returnMoveMs": 380
+        "returnMoveMs": 520
+      },
+      {
+        "id": "child-01-05",
+        "axis": "armr",
+        "label": "右臂小幅回弹",
+        "startMs": 2520,
+        "angle": 82,
+        "moveMs": 620,
+        "requestedMoveMs": 620,
+        "holdMs": 0,
+        "returnToCenter": false,
+        "returnMoveMs": 0
+      },
+      {
+        "id": "action-1787290329410-20a72d",
+        "axis": "arml",
+        "label": "ArmL 动作",
+        "startMs": 2560,
+        "angle": 288,
+        "moveMs": 620,
+        "requestedMoveMs": 620,
+        "holdMs": 0,
+        "returnToCenter": false,
+        "returnMoveMs": 0
       }
     ],
     "expression": {
       "mediaId": "兴奋 (1).mp4",
       "offsetMs": 0,
-      "durationMs": 2580,
+      "durationMs": 4249,
       "loop": true
     },
-    "updatedAt": "2026-07-17T03:35:33.101Z"
+    "updatedAt": "2026-08-21T05:34:25.673Z"
   },
   {
     "id": "preset-child-02",
@@ -326,12 +362,12 @@
         "axis": "armr",
         "label": "右手邀请回答",
         "startMs": 240,
-        "angle": 95,
+        "angle": 70,
         "moveMs": 320,
         "requestedMoveMs": 320,
-        "holdMs": 620,
-        "returnToCenter": true,
-        "returnMoveMs": 440
+        "holdMs": 0,
+        "returnToCenter": false,
+        "returnMoveMs": 0
       }
     ],
     "expression": {
@@ -340,7 +376,7 @@
       "durationMs": 2120,
       "loop": true
     },
-    "updatedAt": "2026-07-18T12:21:36.269Z"
+    "updatedAt": "2026-08-21T05:34:31.615Z"
   },
   {
     "id": "preset-child-11",
