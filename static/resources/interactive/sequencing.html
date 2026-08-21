@@ -595,6 +595,7 @@
         // 自动模式：类别队列
         this.categoryQueue = [];
         this.currentCategoryCount = 0;
+        this.pendingConfig = null;
         
         // 图片数据
         this.imageGroups = {};
@@ -617,14 +618,46 @@
         this.optionsGrid = document.getElementById('optionsGrid');
       }
       
-      setConfig(config) {
+      applyConfig(config) {
         if (config.autoMode !== undefined) this.autoMode = config.autoMode;
+        if (config.difficulty !== undefined) this.difficulty = config.difficulty;
         if (!this.autoMode) {
           // 手动模式：使用教师设置
           if (config.category) this.category = config.category;
           if (config.rule) this.rule = config.rule;
         }
         debugLog(`配置已更新: auto=${this.autoMode}, category=${this.category}, rule=${this.rule}`);
+      }
+
+      setConfig(config) {
+        if (!this.isGameActive) {
+          this.applyConfig(config);
+          return;
+        }
+
+        // 当前题的类别和规则必须保持稳定；教师配置统一在下一题生成前应用。
+        this.pendingConfig = { ...(this.pendingConfig || {}), ...config };
+        debugLog(`配置将在下一题生效: ${JSON.stringify(this.pendingConfig)}`);
+      }
+
+      async applyPendingConfig() {
+        if (!this.pendingConfig) return;
+
+        const config = this.pendingConfig;
+        this.pendingConfig = null;
+        const previousCategory = this.category;
+        const wasAutoMode = this.autoMode;
+        this.applyConfig(config);
+
+        if (!wasAutoMode && this.autoMode) {
+          this.categoryQueue = this.shuffleArray(['size', 'length', 'height', 'count']);
+          this.category = this.categoryQueue[0];
+          this.currentCategoryCount = 0;
+        }
+
+        if (this.category !== previousCategory) {
+          await this.loadImages();
+        }
       }
       
       async startGame() {
@@ -695,6 +728,8 @@
       async generateQuestion() {
         // 清除提示效果
         this.clearHintEffects();
+
+        await this.applyPendingConfig();
         
         // 自动模式：每4题换类别
         if (this.autoMode) {

@@ -47,6 +47,26 @@ The Server configuration console exposes device and recording operations as a
 top-level page at `GET /server/config/devices`; the historical
 `/server/config/content?view=phase5` browser URL redirects there.
 
+During an active ordering question, `sequencing_set_config` stages the complete
+teacher configuration without changing the category, rule, or scoring context
+of the question already on screen. The child applies the staged configuration
+before generating the next question and reloads the selected category's image
+set when the category changes. The Server remains a session-room relay for this
+event and does not persist the staged configuration.
+
+During an active pairing question, `matching_set_difficulty` stages the
+teacher-selected option count (`2..5`) without changing the cards already on
+screen. The child applies that count before generating the next question; an
+explicit teacher selection takes precedence over automatic and simplified
+difficulty state. The Server only validates control access and relays the event.
+
+After an accepted praise request for a non-interactive course, the teacher
+rating dialog opens within one second of the original request and does not wait
+for robot speech, motion, expression, or child animation to finish. Those
+outputs continue atomically; if the rating is submitted early, the next course
+resource remains queued until the active praise behavior ends. Per-question
+praise in pairing and ordering courses never opens the course rating dialog.
+
 ## Versioned additive APIs
 
 - `/api/v2/capture/devices` — configure/discover 0..N device profiles and freeze

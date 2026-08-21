@@ -116,6 +116,7 @@ interface PendingPlayRequest {
   itemIndex: number;
   studentId: string;
   trainingSessionId: string | null;
+  requestedAtMs: number;
   payload: Record<string, any>;
   timeoutId: number | null;
   retryCount: number;
@@ -469,6 +470,7 @@ export function ControlPage({
     itemIndex: number;
     sessionId: string | null;
   } | null>(null);
+  const praiseRatingTimerRef = useRef<number | null>(null);
   const delayedTimersRef = useRef<Set<number>>(new Set());
   const finalizePromiseRef = useRef<Promise<string | null> | null>(null);
   const finalizeOperationIdRef = useRef<string | null>(null);
@@ -662,17 +664,6 @@ export function ControlPage({
       }
     }
 
-    const praiseAdvance = pendingPraiseAdvanceRef.current;
-    if (!praiseAdvance) return;
-    pendingPraiseAdvanceRef.current = null;
-    if (
-      currentCourseIndexRef.current === praiseAdvance.courseIndex &&
-      currentItemIndexRef.current === praiseAdvance.itemIndex &&
-      (!praiseAdvance.sessionId ||
-        currentSessionIdRef.current === praiseAdvance.sessionId)
-    ) {
-      handleNextRef.current('praise_end');
-    }
   }, []);
 
   const releasePlaybackGate = useCallback((
@@ -865,12 +856,16 @@ export function ControlPage({
     cancelPendingGameStartsRef.current();
     contentRequestRef.current = null;
     deferredContentRetryRef.current = null;
+    clearScheduledTimeout(praiseRatingTimerRef.current);
+    praiseRatingTimerRef.current = null;
+    praiseRequestContextRef.current = null;
     pendingPraiseAdvanceRef.current = null;
     failedPlayRetryRef.current = null;
     setHasFailedPlayback(false);
   }, [
     cancelAutoQuestionWait,
     clearContentResourceWait,
+    clearScheduledTimeout,
     currentCourseIndex,
     currentItemIndex,
     selectedCourseItems,
@@ -1614,12 +1609,32 @@ export function ControlPage({
           contentRequestRef.current.status = 'accepted';
         }
         if (pending.intent === 'praise') {
-          praiseRequestContextRef.current = {
+          const praiseContext = {
             requestId,
             courseIndex: pending.courseIndex,
             itemIndex: pending.itemIndex,
             sessionId: ackSessionId,
           };
+          const courseType = selectedCourseItemsRef.current[pending.courseIndex]?.course?.type;
+          if (courseType !== 'pairing' && courseType !== 'ordering') {
+            praiseRequestContextRef.current = praiseContext;
+            pendingPraiseAdvanceRef.current = praiseContext;
+            clearScheduledTimeout(praiseRatingTimerRef.current);
+            const elapsedMs = Date.now() - pending.requestedAtMs;
+            praiseRatingTimerRef.current = scheduleTimeout(() => {
+              praiseRatingTimerRef.current = null;
+              const scheduled = pendingPraiseAdvanceRef.current;
+              if (!scheduled || scheduled.requestId !== requestId) return;
+              pendingPraiseAdvanceRef.current = null;
+              if (
+                currentCourseIndexRef.current === scheduled.courseIndex &&
+                currentItemIndexRef.current === scheduled.itemIndex &&
+                (!scheduled.sessionId || currentSessionIdRef.current === scheduled.sessionId)
+              ) {
+                handleNextRef.current('praise_end');
+              }
+            }, Math.max(0, 800 - elapsedMs));
+          }
         }
 
         if (remainingMs > 0) {
@@ -1786,6 +1801,8 @@ export function ControlPage({
             pendingPraiseAdvanceRef.current?.requestId === praiseContext?.requestId
           ) {
             pendingPraiseAdvanceRef.current = null;
+            clearScheduledTimeout(praiseRatingTimerRef.current);
+            praiseRatingTimerRef.current = null;
           }
         }
 
@@ -2133,7 +2150,7 @@ export function ControlPage({
         playCurrentItemRef.current({ praise: true });
       });
 
-      // 表扬视频结束事件监听
+      // 表扬视频结束仅负责清理播放状态；评分在请求接受后独立计时。
       socket.on('behavior_animation_ended', (data: {
         sessionId: string;
         requestId?: string;
@@ -2162,28 +2179,17 @@ export function ControlPage({
           praiseRequestContextRef.current = null;
           if (pendingPraiseAdvanceRef.current?.requestId === praiseContext.requestId) {
             pendingPraiseAdvanceRef.current = null;
+            clearScheduledTimeout(praiseRatingTimerRef.current);
+            praiseRatingTimerRef.current = null;
           }
           setPlaybackNotice(
-            `表扬动画未完整播放（${data?.reason || animationStatus}），已停留在当前课点`,
+            advanceLockRef.current
+              ? `表扬动画未完整播放（${data?.reason || animationStatus}），评分流程已开启`
+              : `表扬动画未完整播放（${data?.reason || animationStatus}），已停留在当前课点`,
           );
           return;
         }
-        const selected = selectedCourseItemsRef.current;
-        const courseIdx = currentCourseIndexRef.current;
-        const current = selected?.[courseIdx];
-
-        // 配对/排序课程：表扬应当仅触发音频，不应进入“表扬视频结束 -> 自动下一题”链路。
-        // 这里做兜底，避免互动课的自动反馈动画结束事件导致跳题。
-        const currentType = current?.course?.type;
-        if (currentType === 'pairing' || currentType === 'ordering') {
-          console.log('🛡️ 忽略交互课的 behavior_animation_ended:', currentType);
-          return;
-        }
-
-        // 自动切换到下一个
         praiseRequestContextRef.current = null;
-        pendingPraiseAdvanceRef.current = praiseContext;
-        scheduleTimeout(flushDeferredAutoQuestion, 0);
       });
       
       return socket;
@@ -2214,6 +2220,7 @@ export function ControlPage({
       contentRequestRef.current = null;
       praiseRequestContextRef.current = null;
       pendingPraiseAdvanceRef.current = null;
+      praiseRatingTimerRef.current = null;
       deferredManualPlayRef.current = null;
       const leavingTrainingId = trainingSessionIdRef.current;
       const leavingStudentId = selectedStudentRef.current
@@ -2296,43 +2303,46 @@ export function ControlPage({
 
   // 排序游戏：自动模式切换
   const handleSequencingAutoModeChange = useCallback((autoMode: boolean) => {
-    setSequencingConfig(prev => ({ ...prev, autoMode }));
+    const nextConfig = { ...sequencingConfigRef.current, autoMode };
+    sequencingConfigRef.current = nextConfig;
+    setSequencingConfig(nextConfig);
     console.log(`📊 设置排序游戏自动模式: ${autoMode ? '开启' : '关闭'}`);
     
     if (socketRef.current?.connected) {
       socketRef.current.emit('sequencing_set_config', {
         sessionId: currentSessionId,
-        autoMode,
-        category: sequencingConfig.category,
-        difficulty: sequencingConfig.difficulty,
-        rule: sequencingConfig.rule
+        ...nextConfig
       });
     }
-  }, [currentSessionId, sequencingConfig]);
+  }, [currentSessionId]);
 
   // 排序游戏：配置变更（类别或规则）
   const handleSequencingConfigChange = useCallback((key: string, value: string | number) => {
-    setSequencingConfig(prev => {
-      const newConfig = { ...prev, [key]: value };
-      
-      // 如果改变了类别，需要根据类别更新默认规则
-      if (key === 'category') {
-        const defaultRules: Record<string, string> = {
-          size: 'bigger',
-          length: 'longer',
-          height: 'taller',
-          count: 'more'
-        };
-        newConfig.rule = defaultRules[value as string] || 'bigger';
-      }
-      
-      return newConfig;
-    });
+    const nextConfig = { ...sequencingConfigRef.current, [key]: value };
+
+    // 切换类别时同时选择该类别的默认规则，保证下一题的图片与题干一致。
+    if (key === 'category') {
+      const defaultRules: Record<string, string> = {
+        size: 'bigger',
+        length: 'longer',
+        height: 'taller',
+        count: 'more'
+      };
+      nextConfig.rule = defaultRules[value as string] || 'bigger';
+    }
+
+    sequencingConfigRef.current = nextConfig;
+    setSequencingConfig(nextConfig);
     
     console.log(`📊 排序游戏配置变更: ${key}=${value}`);
-    
-    // 不立即发送，等点击"下一个"时生效
-  }, []);
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('sequencing_set_config', {
+        sessionId: currentSessionId,
+        ...nextConfig
+      });
+    }
+  }, [currentSessionId]);
 
   // 排序游戏：发送提示
   const handleSequencingHint = useCallback(() => {
@@ -2395,6 +2405,7 @@ export function ControlPage({
 
   // 配对游戏：设置难度
   const handleSetMatchingDifficulty = useCallback((level: number) => {
+    matchingDifficultyRef.current = level;
     setMatchingDifficulty(level);
     console.log(`🎮 设置配对游戏难度: ${level}选1`);
     
@@ -2543,10 +2554,16 @@ export function ControlPage({
         );
         return;
       }
+      deferredContentRetryRef.current = {
+        requestId: createClientRequestId('play-content-deferred'),
+        courseIndex,
+        itemIndex,
+        retryCount: Math.max(0, options.retryCount || 0),
+      };
       setPlaybackNotice(
         playbackPhaseRef.current === 'pending'
           ? '正在确认上一条操作，请稍候'
-          : '上一条语音、动作和表情仍在完整播放',
+          : '上一条语音、动作和表情仍在完整播放，新课点将在结束后加载',
       );
       return;
     }
@@ -2616,6 +2633,7 @@ export function ControlPage({
       itemIndex,
       studentId: String(studentId),
       trainingSessionId: trainingSessionIdRef.current,
+      requestedAtMs: Date.now(),
       payload: playData,
       timeoutId: null,
       retryCount: Math.max(0, options.retryCount || 0),
@@ -2930,9 +2948,12 @@ export function ControlPage({
       return;
     }
     if (
-      playbackPhaseRef.current !== 'idle' ||
-      audioPlayingRef.current ||
-      awaitingResourceReadyRef.current
+      source !== 'praise_end' &&
+      (
+        playbackPhaseRef.current !== 'idle' ||
+        audioPlayingRef.current ||
+        awaitingResourceReadyRef.current
+      )
     ) {
       setPlaybackNotice('请等待当前语音、动作和表情完整播放后再进入下一项');
       return;

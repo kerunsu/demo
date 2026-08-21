@@ -170,3 +170,90 @@ def test_teacher_waits_for_correlated_resource_ready_and_replays_after_reconnect
     assert "socketRef.current.emit('freeze_course_frame'" in control
     assert "!socketRef.current?.connected ||" in control
     assert "scheduleTimeout(flushDeferredAutoQuestion, 0);" in control
+
+
+def test_ordering_teacher_config_is_applied_atomically_on_the_next_question():
+    control = _read("teacher_frontend/components/ControlPage.tsx")
+    ordering = _read("static/resources/interactive/sequencing.html")
+
+    config_handler = control[
+        control.index("const handleSequencingConfigChange") :
+        control.index("// 排序游戏：发送提示")
+    ]
+    assert "sequencingConfigRef.current = nextConfig" in config_handler
+    assert "socketRef.current.emit('sequencing_set_config'" in config_handler
+    assert "...nextConfig" in config_handler
+
+    set_config = ordering[
+        ordering.index("setConfig(config)") :
+        ordering.index("async startGame()")
+    ]
+    generate = ordering[
+        ordering.index("async generateQuestion()") :
+        ordering.index("getRandomRule()")
+    ]
+    assert "this.pendingConfig = {" in set_config
+    assert "await this.applyPendingConfig();" in generate
+    assert generate.index("await this.applyPendingConfig();") < generate.index(
+        "if (this.autoMode)"
+    )
+    assert "await this.loadImages();" in set_config
+
+
+def test_matching_teacher_difficulty_overrides_simplified_mode_on_next_question():
+    control = _read("teacher_frontend/components/ControlPage.tsx")
+    matching = _read("static/resources/interactive/matching.html")
+
+    difficulty_handler = control[
+        control.index("const handleSetMatchingDifficulty") :
+        control.index("// 配对游戏：启动游戏")
+    ]
+    assert "matchingDifficultyRef.current = level" in difficulty_handler
+    assert "socketRef.current.emit('matching_set_difficulty'" in difficulty_handler
+
+    apply_difficulty = matching[
+        matching.index("applyTeacherDifficulty()") :
+        matching.index("async startGame()")
+    ]
+    next_question = matching[
+        matching.index("      nextQuestion() {") :
+        matching.index("      generateQuestion() {")
+    ]
+    assert "this.autoDifficulty = this.teacherDifficulty" in apply_difficulty
+    assert "this.isSimplifiedMode = false" in apply_difficulty
+    assert "this.questionsInCurrentLevel = 0" in apply_difficulty
+    assert "this.applyTeacherDifficulty();" in next_question
+    assert next_question.index("this.applyTeacherDifficulty();") < next_question.index(
+        "this.generateQuestion();"
+    )
+
+
+def test_teacher_rating_opens_within_one_second_without_interrupting_praise():
+    control = _read("teacher_frontend/components/ControlPage.tsx")
+
+    ack_handler = control[
+        control.index("socket.on('play_resource_ack'") :
+        control.index("socket.on('audio_status_update'")
+    ]
+    assert "requestedAtMs: Date.now()" in control
+    assert "courseType !== 'pairing' && courseType !== 'ordering'" in ack_handler
+    assert "Math.max(0, 800 - elapsedMs)" in ack_handler
+    assert "handleNextRef.current('praise_end')" in ack_handler
+
+    request_advance = control[
+        control.index("const requestAdvance") :
+        control.index("useEffect(() => {\n    handleNextRef.current = requestAdvance")
+    ]
+    assert "source !== 'praise_end'" in request_advance
+
+    animation_start = control.index("socket.on('behavior_animation_ended'")
+    animation_end = control[animation_start : control.index("return socket;", animation_start)]
+    assert "handleNextRef.current('praise_end')" not in animation_end
+    assert "pendingPraiseAdvanceRef.current = praiseContext" not in animation_end
+
+    busy_content = control[
+        control.index("if (\n      playbackPhaseRef.current !== 'idle'") :
+        control.index("// 验证studentId是否存在")
+    ]
+    assert "play-content-deferred" in busy_content
+    assert "deferredContentRetryRef.current" in busy_content

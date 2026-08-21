@@ -849,8 +849,26 @@
       // ==================== 教师端控制方法 ====================
       
       setTeacherDifficulty(level) {
-        this.teacherDifficulty = level;
-        debugLog(`教师设置难度: ${level}选1 (下一题生效)`);
+        const normalizedLevel = Number(level);
+        if (!Number.isInteger(normalizedLevel) || normalizedLevel < 2 || normalizedLevel > 5) {
+          debugLog(`忽略无效教师难度: ${level}`);
+          return;
+        }
+        this.teacherDifficulty = normalizedLevel;
+        debugLog(`教师设置难度: ${normalizedLevel}选1 (下一题生效)`);
+      }
+
+      applyTeacherDifficulty() {
+        if (this.teacherDifficulty === null) return false;
+
+        this.baseDifficulty = this.teacherDifficulty;
+        this.autoDifficulty = this.teacherDifficulty;
+        this.teacherDifficulty = null;
+        this.isSimplifiedMode = false;
+        this.questionsInCurrentLevel = 0;
+        this.consecutiveWrongInLevel1 = 0;
+        debugLog(`应用教师难度: ${this.baseDifficulty}选1`);
+        return true;
       }
       
       async startGame() {
@@ -889,11 +907,7 @@
         this.responseTimesMs = [];
         
         // 应用教师设置的难度
-        if (this.teacherDifficulty !== null) {
-          this.baseDifficulty = this.teacherDifficulty;
-          this.autoDifficulty = this.teacherDifficulty;
-          this.teacherDifficulty = null;
-        }
+        this.applyTeacherDifficulty();
         
         // 隐藏等待遮罩
         document.getElementById('gameOverlay').classList.add('hidden');
@@ -966,13 +980,8 @@
         this.hasAnsweredWrong = false; // 重置当前题目的错误标记
         this.wrongAttemptsThisQuestion = 0;
         
-        // 如果教师设置了新难度，在这里应用
-        if (this.teacherDifficulty !== null) {
-          this.baseDifficulty = this.teacherDifficulty;
-          this.autoDifficulty = this.teacherDifficulty;
-          this.teacherDifficulty = null;
-          debugLog(`应用教师难度: ${this.baseDifficulty}选1`);
-        }
+        // 教师选择优先于自动调节/简化模式，并从本题开始生效。
+        this.applyTeacherDifficulty();
         
         this.generateQuestion();
       }
