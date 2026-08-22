@@ -52,7 +52,13 @@ teacher configuration without changing the category, rule, or scoring context
 of the question already on screen. The child applies the staged configuration
 before generating the next question and reloads the selected category's image
 set when the category changes. The Server remains a session-room relay for this
-event and does not persist the staged configuration.
+event and does not persist the staged configuration. The child's
+`sequencing_question_ready` payload is the fact source for the visible
+question; a teacher re-ask uses that active category and rule rather than the
+staged next-question configuration. In the deployed child page, the authorized
+top-level child Socket receives interactive control events and relays them to
+the committed iframe with `postMessage`; embedded matching/ordering iframes do
+not claim the session's single child-owner lease with a second Socket.
 
 During an active pairing question, `matching_set_difficulty` stages the
 teacher-selected option count (`2..5`) without changing the cards already on

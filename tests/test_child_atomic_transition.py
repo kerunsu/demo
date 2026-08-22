@@ -199,6 +199,73 @@ def test_ordering_teacher_config_is_applied_atomically_on_the_next_question():
     )
     assert "await this.loadImages();" in set_config
 
+    question_ready = control[
+        control.index("socket.on('sequencing_question_ready'") :
+        control.index("socket.on('sequencing_game_end'")
+    ]
+    assert "sequencingActiveQuestionRef.current =" in question_ready
+    assert "setSequencingStatus" in question_ready
+
+    play = control[
+        control.index("const playCurrentItem = useCallback") :
+        control.index("const retryFailedPlayback")
+    ]
+    assert "!isContent" in play
+    assert "sequencingActiveQuestionRef.current" in play
+    assert "category: orderingQuestionConfig.category" in play
+    assert "rule: orderingQuestionConfig.rule" in play
+    assert "下一题类别" in control
+    assert "下一题规则" in control
+
+
+def test_interactive_controls_use_authorized_parent_socket_bridge():
+    child = _read("static/js/child.js")
+    matching = _read("static/resources/interactive/matching.html")
+    sequencing = _read("static/resources/interactive/sequencing.html")
+    template = _read("templates/child.html")
+    events = _read("app/sockets/events.py")
+
+    for event_name in (
+        "matching_set_difficulty",
+        "matching_hint",
+        "sequencing_set_config",
+        "sequencing_hint",
+    ):
+        assert f'"{event_name}"' in child
+    assert 'type: "interactive_control"' in child
+    assert "relayInteractiveControl(eventName" in child
+    assert 'frame.dataset.pageContextActive !== "true"' in child
+    assert "}, window.location.origin);" in child
+    assert 'child.js?v=20260822-interactive-control-v4' in template
+
+    for page, prefix, apply_name in (
+        (matching, "matching_", "applyMatchingControl"),
+        (sequencing, "sequencing_", "applySequencingControl"),
+    ):
+        assert "const isEmbeddedInteractiveFrame" in page
+        assert "message.type !== 'interactive_control'" in page
+        assert "event.origin !== window.location.origin" in page
+        assert f"eventName.startsWith('{prefix}')" in page
+        assert apply_name in page
+        assert "sessionId && !isEmbeddedInteractiveFrame" in page
+        assert "pendingInteractiveControls" in page
+
+    matching_start = matching[
+        matching.index("function applyMatchingControl") :
+        matching.index("window.addEventListener('message'")
+    ]
+    ordering_start = sequencing[
+        sequencing.index("function applySequencingControl") :
+        sequencing.index("window.addEventListener('message'")
+    ]
+    assert "flushQuestionReady()" in matching_start
+    assert "emitQuestionReady()" not in matching_start
+    assert "flushQuestionReady()" in ordering_start
+    assert "emitQuestionReady()" not in ordering_start
+
+    # The bridge must not weaken the one-owner child session rule.
+    assert "_claim_child_session_owner" in events
+
 
 def test_matching_teacher_difficulty_overrides_simplified_mode_on_next_question():
     control = _read("teacher_frontend/components/ControlPage.tsx")

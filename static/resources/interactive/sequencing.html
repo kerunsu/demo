@@ -522,13 +522,68 @@
       return `${side}${name}${degree}`;
     }
 
+    const isEmbeddedInteractiveFrame = window.parent && window.parent !== window;
+    const pendingInteractiveControls = [];
+
+    function applySequencingControl(eventName, data = {}) {
+      const activeSessionId = String(sessionId || '');
+      const eventSessionId = String(data.sessionId || data.session_id || '');
+      if (activeSessionId && eventSessionId && activeSessionId !== eventSessionId) {
+        debugLog(`忽略其他会话的 ${eventName}: ${eventSessionId}`);
+        return;
+      }
+      if (!window.game) {
+        pendingInteractiveControls.push({ eventName, data });
+        return;
+      }
+      if (eventName === 'sequencing_set_config') {
+        debugLog(`收到配置: ${JSON.stringify(data)}`);
+        window.game.setConfig(data);
+        return;
+      }
+      if (eventName === 'sequencing_start') {
+        debugLog('收到启动指令');
+        if (!window.game.isGameActive) {
+          window.game.startGame();
+        } else if (typeof window.game.flushQuestionReady === 'function') {
+          window.game.flushQuestionReady();
+        }
+        return;
+      }
+      if (eventName === 'sequencing_next') {
+        debugLog('收到下一题指令');
+        window.game.nextQuestion();
+        return;
+      }
+      if (eventName === 'sequencing_hint') {
+        debugLog('收到提示指令');
+        window.game.showHint();
+      }
+    }
+
+    window.addEventListener('message', (event) => {
+      const message = event && event.data;
+      if (
+        !isEmbeddedInteractiveFrame ||
+        event.source !== window.parent ||
+        event.origin !== window.location.origin ||
+        !message ||
+        message.type !== 'interactive_control'
+      ) {
+        return;
+      }
+      const eventName = String(message.eventName || '');
+      if (!eventName.startsWith('sequencing_')) return;
+      applySequencingControl(eventName, message.payload || {});
+    });
+
     // ==================== Socket 初始化 ====================
     function initSocket() {
       socket = io();
       
       socket.on('connect', () => {
         debugLog(`Socket已连接: ${socket.id}`);
-        if (sessionId) {
+        if (sessionId && !isEmbeddedInteractiveFrame) {
           socket.emit('join_session', { sessionId, role: 'child' });
           debugLog(`加入房间: ${sessionId}`);
         }
@@ -541,31 +596,22 @@
       
       // 监听教师端启动游戏
       socket.on('sequencing_start', (data) => {
-        debugLog('收到启动指令');
-        if (!game.isGameActive) {
-          game.startGame();
-        } else if (typeof game.emitQuestionReady === 'function') {
-          // Hard rule: already on an item → force-ask
-          game.emitQuestionReady();
-        }
+        if (!isEmbeddedInteractiveFrame) applySequencingControl('sequencing_start', data);
       });
       
       // 监听教师端设置配置
       socket.on('sequencing_set_config', (data) => {
-        debugLog(`收到配置: ${JSON.stringify(data)}`);
-        game.setConfig(data);
+        if (!isEmbeddedInteractiveFrame) applySequencingControl('sequencing_set_config', data);
       });
       
       // 监听教师端下一题
       socket.on('sequencing_next', (data) => {
-        debugLog('收到下一题指令');
-        game.nextQuestion();
+        if (!isEmbeddedInteractiveFrame) applySequencingControl('sequencing_next', data);
       });
       
       // 监听教师端提示指令
       socket.on('sequencing_hint', (data) => {
-        debugLog('收到提示指令');
-        game.showHint();
+        if (!isEmbeddedInteractiveFrame) applySequencingControl('sequencing_hint', data);
       });
     }
 
@@ -1170,8 +1216,14 @@
       
       // 创建游戏实例
       window.game = new SequencingGame();
+      while (pendingInteractiveControls.length > 0) {
+        const command = pendingInteractiveControls.shift();
+        applySequencingControl(command.eventName, command.data);
+      }
       debugLog('排序游戏初始化完成，自动启动');
-      window.game.startGame();
+      if (!window.game.isGameActive) {
+        window.game.startGame();
+      }
     });
   </script>
 </body>

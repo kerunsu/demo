@@ -657,6 +657,66 @@
       return `第${fallbackIndex + 1}张`;
     }
 
+    const isEmbeddedInteractiveFrame = window.parent && window.parent !== window;
+    const pendingInteractiveControls = [];
+
+    function applyMatchingControl(eventName, data = {}) {
+      const activeSessionId = String(sessionId || '');
+      const eventSessionId = String(data.sessionId || data.session_id || '');
+      if (activeSessionId && eventSessionId && activeSessionId !== eventSessionId) {
+        debugLog(`忽略其他会话的 ${eventName}: ${eventSessionId}`);
+        return;
+      }
+      if (!window.matchingGame) {
+        pendingInteractiveControls.push({ eventName, data });
+        return;
+      }
+      if (eventName === 'matching_set_difficulty') {
+        const difficulty = data.difficulty;
+        debugLog(`收到难度设置: ${difficulty}选1`);
+        window.matchingGame.setTeacherDifficulty(difficulty);
+        return;
+      }
+      if (eventName === 'matching_start') {
+        debugLog('收到启动游戏指令');
+        if (!window.matchingGame.isGameActive) {
+          window.matchingGame.startGame();
+        } else if (typeof window.matchingGame.flushQuestionReady === 'function') {
+          window.matchingGame.flushQuestionReady();
+        }
+        return;
+      }
+      if (eventName === 'matching_next') {
+        debugLog('收到下一题指令');
+        if (window.matchingGame.isGameActive) {
+          window.matchingGame.forceNextQuestion();
+        }
+        return;
+      }
+      if (eventName === 'matching_hint') {
+        debugLog('收到提示指令');
+        if (window.matchingGame.isGameActive) {
+          window.matchingGame.showHint();
+        }
+      }
+    }
+
+    window.addEventListener('message', (event) => {
+      const message = event && event.data;
+      if (
+        !isEmbeddedInteractiveFrame ||
+        event.source !== window.parent ||
+        event.origin !== window.location.origin ||
+        !message ||
+        message.type !== 'interactive_control'
+      ) {
+        return;
+      }
+      const eventName = String(message.eventName || '');
+      if (!eventName.startsWith('matching_')) return;
+      applyMatchingControl(eventName, message.payload || {});
+    });
+
     // ==================== Socket 初始化 ====================
     function initSocket() {
       socket = io();
@@ -665,7 +725,7 @@
         debugLog('Socket连接成功');
         
         // 如果有 sessionId，加入对应房间
-        if (sessionId) {
+        if (sessionId && !isEmbeddedInteractiveFrame) {
           socket.emit('join_session', { sessionId: sessionId, role: 'child' });
           debugLog(`加入会话房间: ${sessionId}`);
         }
@@ -681,42 +741,22 @@
       
       // 监听教师端启动游戏
       socket.on('matching_start', (data) => {
-        debugLog('收到启动游戏指令');
-        if (window.matchingGame && !window.matchingGame.isGameActive) {
-          window.matchingGame.startGame();
-        } else if (
-          window.matchingGame &&
-          window.matchingGame.isGameActive &&
-          typeof window.matchingGame.emitQuestionReady === 'function'
-        ) {
-          // Hard rule: already on an item → force-ask (not only pending flush)
-          window.matchingGame.emitQuestionReady();
-        }
+        if (!isEmbeddedInteractiveFrame) applyMatchingControl('matching_start', data);
       });
       
       // 监听教师端设置难度
       socket.on('matching_set_difficulty', (data) => {
-        const difficulty = data.difficulty;
-        debugLog(`收到难度设置: ${difficulty}选1`);
-        if (window.matchingGame) {
-          window.matchingGame.setTeacherDifficulty(difficulty);
-        }
+        if (!isEmbeddedInteractiveFrame) applyMatchingControl('matching_set_difficulty', data);
       });
       
       // 监听教师端下一题
       socket.on('matching_next', (data) => {
-        debugLog('收到下一题指令');
-        if (window.matchingGame && window.matchingGame.isGameActive) {
-          window.matchingGame.forceNextQuestion();
-        }
+        if (!isEmbeddedInteractiveFrame) applyMatchingControl('matching_next', data);
       });
       
       // 监听教师端提示指令
       socket.on('matching_hint', (data) => {
-        debugLog('收到提示指令');
-        if (window.matchingGame && window.matchingGame.isGameActive) {
-          window.matchingGame.showHint();
-        }
+        if (!isEmbeddedInteractiveFrame) applyMatchingControl('matching_hint', data);
       });
       
       // 监听 play_resource（兼容旧版本）
@@ -1457,8 +1497,14 @@
       
       // 初始化游戏
       window.matchingGame = new MatchingGame();
+      while (pendingInteractiveControls.length > 0) {
+        const command = pendingInteractiveControls.shift();
+        applyMatchingControl(command.eventName, command.data);
+      }
       debugLog('配对游戏初始化完成，自动启动');
-      await window.matchingGame.startGame();
+      if (!window.matchingGame.isGameActive) {
+        await window.matchingGame.startGame();
+      }
     });
   </script>
 </body>

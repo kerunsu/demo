@@ -15,6 +15,45 @@ if (socket && !window.socket) {
   window.socket = socket;
 }
 
+// Interactive iframes have their own Socket.IO connection, but they must not
+// claim the training session's single child-owner lease. Teacher controls are
+// received by this authorized top-level child socket and bridged to the
+// committed iframe instead.
+const INTERACTIVE_CONTROL_EVENTS = [
+  "matching_start",
+  "matching_set_difficulty",
+  "matching_next",
+  "matching_hint",
+  "sequencing_start",
+  "sequencing_set_config",
+  "sequencing_next",
+  "sequencing_hint",
+];
+
+function relayInteractiveControl(eventName, payload) {
+  const frame = document.getElementById("interactive");
+  if (
+    !frame ||
+    !frame.contentWindow ||
+    frame.dataset.pageContextActive !== "true"
+  ) {
+    console.warn("🎮 [child.js] 忽略非当前互动页控制:", eventName);
+    return;
+  }
+  frame.contentWindow.postMessage({
+    type: "interactive_control",
+    eventName,
+    payload: payload && typeof payload === "object" ? payload : {},
+  }, window.location.origin);
+  console.log("🎮 [child.js] 已转发互动页控制:", eventName);
+}
+
+if (socket) {
+  INTERACTIVE_CONTROL_EVENTS.forEach((eventName) => {
+    socket.on(eventName, (payload) => relayInteractiveControl(eventName, payload));
+  });
+}
+
 // ======================
 // 视频/音频录制和传输
 // ======================
@@ -3087,5 +3126,3 @@ function playBehaviorAnimation(videoPath, payload = {}) {
   if (behaviorAnimationEl.readyState >= 2) Promise.resolve().then(onReady);
   return true;
 }
-
-

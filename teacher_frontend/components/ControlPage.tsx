@@ -378,6 +378,13 @@ export function ControlPage({
   
   // 使用ref保存最新的配置值（解决闭包问题）
   const sequencingConfigRef = useRef(sequencingConfig);
+  // 儿童端已经展示的题目。教师选择的 sequencingConfig 只代表下一题，
+  // 当前题的再次提问/提示必须使用这个快照，不能提前使用待生效配置。
+  const sequencingActiveQuestionRef = useRef<{
+    category: string;
+    rule: string;
+    questionIndex: number | null;
+  } | null>(null);
   const matchingDifficultyRef = useRef(matchingDifficulty);
   const handleNextRef = useRef<(source?: AdvanceSource) => void>(() => {});
   const playCurrentItemRef = useRef<(
@@ -854,6 +861,7 @@ export function ControlPage({
     cancelAutoQuestionWait();
     clearContentResourceWait();
     cancelPendingGameStartsRef.current();
+    sequencingActiveQuestionRef.current = null;
     contentRequestRef.current = null;
     deferredContentRetryRef.current = null;
     clearScheduledTimeout(praiseRatingTimerRef.current);
@@ -2016,6 +2024,16 @@ export function ControlPage({
       socket.on('sequencing_status_update', (data: any) => {
         if (!eventMatchesCurrentSession(data)) return;
         console.log('📊 排序游戏状态更新:', data);
+
+        if (data.category && data.rule) {
+          sequencingActiveQuestionRef.current = {
+            category: String(data.category),
+            rule: String(data.rule),
+            questionIndex: Number.isFinite(Number(data.questionIndex))
+              ? Number(data.questionIndex)
+              : null,
+          };
+        }
         
         // 兼容旧字段名 categoryStats 和新字段名 stats
         const statsData = data.stats || data.categoryStats;
@@ -2055,6 +2073,39 @@ export function ControlPage({
             rule: data.rule
           }));
         }
+      });
+
+      // 以儿童端实际完成渲染的新题为事实源。教师面板中的类别/规则可能
+      // 已经是下一题的待生效配置，不能用它覆盖当前题的语音上下文。
+      socket.on('sequencing_question_ready', (data: any) => {
+        if (!eventMatchesCurrentSession(data)) return;
+        const pageContext = data?.pageContext && typeof data.pageContext === 'object'
+          ? data.pageContext
+          : {};
+        const category = String(data?.category || pageContext.category || '').trim();
+        const rule = String(data?.rule || pageContext.rule || '').trim();
+        if (!category || !rule) return;
+
+        const parsedQuestionIndex = Number(
+          data?.questionIndex ?? pageContext.questionIndex,
+        );
+        const parsedTotalQuestions = Number(pageContext.totalQuestions);
+        const questionIndex = Number.isFinite(parsedQuestionIndex)
+          ? parsedQuestionIndex
+          : null;
+        sequencingActiveQuestionRef.current = {
+          category,
+          rule,
+          questionIndex,
+        };
+        setSequencingStatus((previous) => ({
+          currentQuestion: questionIndex ?? previous?.currentQuestion ?? 0,
+          totalQuestions: Number.isFinite(parsedTotalQuestions)
+            ? parsedTotalQuestions
+            : previous?.totalQuestions ?? 16,
+          category,
+          rule,
+        }));
       });
       
       socket.on('sequencing_game_end', (data: any) => {
@@ -2598,6 +2649,12 @@ export function ControlPage({
       targetText: item?.speechTarget || item?.name || selectedItem.course.title,  // speech_target 优先，空则回退 name
     };
 
+    const orderingQuestionConfig = (
+      selectedItem.course.type === 'ordering' && !isContent
+        ? sequencingActiveQuestionRef.current
+        : null
+    ) || sequencingConfigRef.current;
+
     const requestId = options.requestId || createClientRequestId(`play-${intent}`);
     const playData = {
       action: "play",
@@ -2608,8 +2665,8 @@ export function ControlPage({
       courseType: selectedItem.course.type,  // 添加课程类型
       ...(selectedItem.course.type === 'ordering'
         ? {
-            category: sequencingConfigRef.current.category,
-            rule: sequencingConfigRef.current.rule,
+            category: orderingQuestionConfig.category,
+            rule: orderingQuestionConfig.rule,
           }
         : {}),
       questionIndex: itemIndex,
@@ -3804,7 +3861,7 @@ export function ControlPage({
               
               {/* 类别选择器 */}
               <div className="flex min-w-0 flex-wrap items-center justify-center gap-2">
-                <span className="shrink-0 whitespace-nowrap text-xs font-medium text-gray-500">类别</span>
+                <span className="shrink-0 whitespace-nowrap text-xs font-medium text-gray-500">下一题类别</span>
                 <div className="flex flex-wrap justify-center gap-2">
                   {[
                     { value: 'size', label: '大小' },
@@ -3854,7 +3911,7 @@ export function ControlPage({
               
               {/* 规则选择器 */}
               <div className="flex min-w-0 flex-wrap items-center justify-center gap-2">
-                <span className="shrink-0 whitespace-nowrap text-xs font-medium text-gray-500">规则</span>
+                <span className="shrink-0 whitespace-nowrap text-xs font-medium text-gray-500">下一题规则</span>
                 <div className="flex flex-wrap justify-center gap-2">
                   {(() => {
                     const ruleMap: Record<string, Array<{value: string, label: string}>> = {
