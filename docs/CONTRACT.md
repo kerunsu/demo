@@ -58,6 +58,17 @@ console manages a per-course-type enabled phrase set through
 at least one enabled phrase; ordering rule questions keep separate variants.
 虚拟的“全局注意力互动”组单独提供可选择、可新增的 `attention` 和 `reward`
 话术槽。
+
+教师端课程预设的共享事实源是 `config/course_presets.json`（schema v1），
+不再在教师前端硬编码课程组合。配置中心通过
+`GET/POST /api/config/course-presets`、
+`PUT/DELETE /api/config/course-presets/<presetId>` 管理有序的 `courseIds`、名称、
+说明和唯一的 `defaultPresetId`。写入时课程必须存在且至少包含一个课点；读取时
+若课程后来被删除或清空，预设返回 `available=false`，教师端不得应用。接口始终
+返回当前课程目录，因此预设只保存课程身份与顺序，不复制会过期的课点列表。
+评估选课页自动应用可用的默认预设；评估和干预选课页都提供预设下拉框，选中后
+按预设顺序展开每门课程当前的全部课点。手动增删课点会退出“预设已应用”状态，
+但不会修改 Server 端预设。
 The Server configuration console exposes device and recording operations as a
 top-level page at `GET /server/config/devices`; the historical
 `/server/config/content?view=phase5` browser URL redirects there.

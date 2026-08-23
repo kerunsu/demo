@@ -6,6 +6,9 @@
   training sessions/details and report records. Existing databases are read
   and upgraded in place; reset is never a normal deployment operation.
 - Read-only content catalog: CSV/YAML/JSON/static media and audio manifests.
+- Teacher course presets: versioned `config/course_presets.json`, containing
+  one `defaultPresetId` and ordered `courseIds` per preset. It stores no copied
+  course or item payload and is replaced atomically.
 - Session directory: `static/recordings/sessions/<human-dir>/` when the
   continuous recorder has a human directory binding, otherwise the legacy
   session directory. The directory resolver owns this choice.

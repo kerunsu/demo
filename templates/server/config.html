@@ -63,6 +63,7 @@
     <div class="cc-subnav" id="cc-subnav">
       <button type="button" data-view="binding">行为绑定</button>
       <button type="button" data-view="courses">课程库</button>
+      <button type="button" data-view="presets">课程预设</button>
       <button type="button" data-view="phrases">实时话术</button>
       <button type="button" data-view="workbench" class="active">工作台</button>
       <button type="button" data-view="media">媒资库</button>
@@ -494,6 +495,84 @@
           <button type="button" class="cc-btn soft" id="btn-add-item">+ 添加课点</button>
         </div>
         <div id="cd-items"></div>
+      </div>
+    </section>
+
+    <!-- 课程预设 -->
+    <section class="cc-page" id="page-presets" data-page="presets" hidden>
+      <div class="cc-page-head">
+        <div>
+          <div class="cc-breadcrumb">交互内容 / 课程预设</div>
+          <h1 class="cc-page-title">教师端课程预设</h1>
+          <p class="cc-page-subtitle">维护常用课程组合与顺序；教师选择预设时会选中课程当前的全部课点。</p>
+        </div>
+        <div class="cc-head-actions">
+          <button type="button" class="cc-btn primary" id="btn-new-course-preset">+ 新增预设</button>
+        </div>
+      </div>
+      <div class="cc-notice info">预设只保存课程 ID 与顺序，不复制课点。课程库增加或调整课点后，教师端会自动使用最新内容。</div>
+      <div class="cc-preset-layout">
+        <aside class="cc-card cc-preset-sidebar" aria-label="课程预设列表">
+          <div class="cc-preset-sidebar-head">
+            <h2>预设列表</h2>
+            <span class="cc-tiny" id="course-preset-count">0 个</span>
+          </div>
+          <div class="cc-preset-list" id="course-preset-list"></div>
+        </aside>
+        <div class="cc-card cc-preset-editor" id="course-preset-editor">
+          <div class="cc-preset-empty" id="course-preset-empty">
+            <strong>选择一个预设开始编辑</strong>
+            <span>也可以点击“新增预设”创建新的课程组合。</span>
+          </div>
+          <div id="course-preset-form" hidden>
+            <div class="cc-preset-editor-head">
+              <div>
+                <div class="cc-tiny">预设详情</div>
+                <h2 id="course-preset-editor-title">编辑预设</h2>
+              </div>
+              <label class="cc-preset-default">
+                <input type="checkbox" id="course-preset-default" />
+                设为评估默认
+              </label>
+            </div>
+            <div class="cc-form-grid cc-preset-fields">
+              <label>
+                <span class="cc-field-label">预设名称</span>
+                <input class="cc-inp" id="course-preset-name" maxlength="80" placeholder="例如：语言能力基础评估" />
+              </label>
+              <label>
+                <span class="cc-field-label">说明</span>
+                <input class="cc-inp" id="course-preset-description" maxlength="240" placeholder="帮助教师辨认适用场景" />
+              </label>
+            </div>
+            <div class="cc-preset-columns">
+              <section>
+                <div class="cc-preset-section-head">
+                  <div>
+                    <h3>已选课程与顺序</h3>
+                    <p>教师端会按照这里的顺序进入课程。</p>
+                  </div>
+                  <span class="cc-badge primary" id="course-preset-selected-count">0 门</span>
+                </div>
+                <div class="cc-preset-selected" id="course-preset-selected"></div>
+              </section>
+              <section>
+                <div class="cc-preset-section-head">
+                  <div>
+                    <h3>可添加课程</h3>
+                    <p>从课程库加入，已选课程不会重复显示。</p>
+                  </div>
+                </div>
+                <div class="cc-preset-catalog" id="course-preset-catalog"></div>
+              </section>
+            </div>
+            <div class="cc-preset-actions">
+              <button type="button" class="cc-btn danger" id="btn-delete-course-preset">删除预设</button>
+              <span class="cc-tiny" id="course-preset-save-hint">至少选择一门包含课点的课程。</span>
+              <button type="button" class="cc-btn primary" id="btn-save-course-preset">保存预设</button>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -940,6 +1019,7 @@
   <script src="/static/js/config_content_motions.js"></script>
   <script src="/static/js/config_content_media.js"></script>
   <script src="/static/js/config_content_courses.js"></script>
+  <script src="/static/js/config_course_presets.js?v=20260824-course-presets-v1"></script>
   <script src="/static/js/config_content_phrases.js?v=20260823-engagement-v2"></script>
   <script src="/static/js/config_content_workbench.js"></script>
   <script src="/static/js/config_algo.js"></script>

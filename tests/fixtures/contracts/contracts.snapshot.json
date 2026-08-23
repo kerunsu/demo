@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "generatedAt": "2026-08-12",
-  "sourceCommit": "working-tree: realtime phrase configuration and config navigation",
+  "sourceCommit": "working-tree: Server-managed teacher course presets",
   "generation": "Python AST scan of app.py and app/**/*.py; methods omitted by decorators default to GET; blueprint prefixes applied.",
-  "routeCount": 190,
+  "routeCount": 194,
   "runtimeImplicitRouteCount": 1,
-  "runtimeUrlRuleCountObserved": 191,
+  "runtimeUrlRuleCountObserved": 195,
   "runtimeImplicitRoutes": [
     "GET /static/<path:filename>"
   ],
@@ -26,6 +26,7 @@
     "interaction_timeline_bp": "/api/v2/timeline"
   },
   "routes": [
+    "DELETE /api/config/course-presets/<preset_id>",
     "DELETE /api/config/courses/<int:course_id>",
     "DELETE /api/config/items/<int:item_id>",
     "DELETE /api/config/media",
@@ -45,6 +46,7 @@
     "GET /api/config/audio/course-defaults/<course_type>",
     "GET /api/config/audio/entries/<entry_id>",
     "GET /api/config/content/summary",
+    "GET /api/config/course-presets",
     "GET /api/config/course-types",
     "GET /api/config/courses",
     "GET /api/config/courses/<int:course_id>",
@@ -138,6 +140,7 @@
     "PATCH /api/config/courses/<int:course_id>",
     "PATCH /api/config/items/<int:item_id>",
     "PATCH /api/v2/capture/devices/<device_id>",
+    "POST /api/config/course-presets",
     "POST /api/config/courses",
     "POST /api/config/courses/<int:course_id>/items",
     "POST /api/config/media/upload",
@@ -195,6 +198,7 @@
     "POST /api/v2/timeline/events",
     "PUT /api/config/audio/course-defaults/<course_type>",
     "PUT /api/config/audio/entries/<entry_id>",
+    "PUT /api/config/course-presets/<preset_id>",
     "PUT /api/config/phrases/<intent>/<course_type>",
     "PUT /api/report/<training_session_id>/manual",
     "PUT /api/robot/animations/<path:name>/rename",

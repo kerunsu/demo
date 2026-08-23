@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, Puzzle, Palette, Music, Blocks, Brain, ArrowLeft, Users, Sparkles, Check } from 'lucide-react';
+import { BookOpen, Puzzle, Palette, Music, Blocks, Brain, ArrowLeft, Users, Sparkles } from 'lucide-react';
 
 interface CourseSelectionPageProps {
   onStart: (payload: {
@@ -28,8 +28,7 @@ const courseTypeMap: Record<string, { name: string; icon: typeof Brain }> = {
 // 默认图标
 const DefaultIcon = Brain;
 const DEFAULT_ITEM_IMAGE = 'https://images.unsplash.com/photo-1759159482847-78aadfcbeb85?w=300&h=200&fit=crop';
-const QUICK_PRESET_COURSE_IDS = [2, 3, 9, 10, 11] as const;
-const QUICK_PRESET_VIEW_ID = 'quick-preset';
+const PRESET_VIEW_PREFIX = 'course-preset:';
 
 interface CourseItem {
   id: number;
@@ -61,11 +60,48 @@ interface CourseCategory {
   courses: Course[];
 }
 
+interface CoursePreset {
+  id: string;
+  name: string;
+  description: string;
+  courseIds: number[];
+  available: boolean;
+  missingCourseIds: number[];
+  emptyCourseIds: number[];
+  isDefault: boolean;
+}
+
+interface CoursePresetResponse {
+  success: boolean;
+  defaultPresetId: string | null;
+  presets: CoursePreset[];
+}
+
+function selectionForPreset(preset: CoursePreset, allCourses: Course[]) {
+  const presetCourses = preset.courseIds
+    .map(courseId => allCourses.find(course => course.id === courseId))
+    .filter((course): course is Course => Boolean(course));
+  if (
+    presetCourses.length !== preset.courseIds.length
+    || presetCourses.some(course => course.items.length === 0)
+  ) {
+    return null;
+  }
+  const selected = new Map<string, Set<number>>();
+  presetCourses.forEach(course => {
+    selected.set(course.id.toString(), new Set(course.items.map(item => item.id)));
+  });
+  return selected;
+}
+
 export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPageProps) {
   const [courses, setCourses] = useState<Course[]>([]);
   const [categories, setCategories] = useState<CourseCategory[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedItems, setSelectedItems] = useState<Map<string, Set<number>>>(new Map()); // courseId -> Set<itemId>
+  const [presets, setPresets] = useState<CoursePreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState('');
+  const [presetError, setPresetError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,7 +110,10 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
     const fetchCourses = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/courses');
+        const [response, presetResponse] = await Promise.all([
+          fetch('/courses'),
+          fetch('/api/config/course-presets').catch(() => null),
+        ]);
         
         // 检查响应类型
         const contentType = response.headers.get('content-type');
@@ -91,6 +130,25 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
         
         const data: Course[] = await response.json();
         setCourses(data);
+
+        let presetData: CoursePresetResponse | null = null;
+        if (presetResponse?.ok) {
+          try {
+            presetData = await presetResponse.json();
+            if (!presetData?.success || !Array.isArray(presetData.presets)) {
+              presetData = null;
+            }
+          } catch (_) {
+            presetData = null;
+          }
+        }
+        if (presetData) {
+          setPresets(presetData.presets);
+          setPresetError(null);
+        } else {
+          setPresets([]);
+          setPresetError('Server 课程预设暂时不可用，仍可手动选择课程。');
+        }
 
         // 按类型分组
         const grouped = new Map<string, Course[]>();
@@ -114,20 +172,15 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
         });
 
         setCategories(categoryArray);
-        if (mode === 'assessment') {
-          const presetCourses = QUICK_PRESET_COURSE_IDS
-            .map(courseId => data.find(course => course.id === courseId))
-            .filter((course): course is Course => Boolean(course));
-          const presetReady = presetCourses.length === QUICK_PRESET_COURSE_IDS.length
-            && presetCourses.every(course => course.items.length > 0);
-
-          if (presetReady) {
-            const presetItems = new Map<string, Set<number>>();
-            presetCourses.forEach(course => {
-              presetItems.set(course.id.toString(), new Set(course.items.map(item => item.id)));
-            });
+        if (mode === 'assessment' && presetData?.defaultPresetId) {
+          const defaultPreset = presetData.presets.find(
+            preset => preset.id === presetData?.defaultPresetId,
+          );
+          const presetItems = defaultPreset ? selectionForPreset(defaultPreset, data) : null;
+          if (defaultPreset && presetItems) {
             setSelectedItems(presetItems);
-            setSelectedCategory(QUICK_PRESET_VIEW_ID);
+            setSelectedPresetId(defaultPreset.id);
+            setSelectedCategory(`${PRESET_VIEW_PREFIX}${defaultPreset.id}`);
             return;
           }
         }
@@ -145,40 +198,35 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
     fetchCourses();
   }, [mode]);
 
-  const quickPresetCourses = QUICK_PRESET_COURSE_IDS
-    .map(courseId => courses.find(course => course.id === courseId))
-    .filter((course): course is Course => Boolean(course));
-  const currentCategory = selectedCategory === QUICK_PRESET_VIEW_ID
+  const viewedPresetId = selectedCategory.startsWith(PRESET_VIEW_PREFIX)
+    ? selectedCategory.slice(PRESET_VIEW_PREFIX.length)
+    : '';
+  const viewedPreset = presets.find(preset => preset.id === viewedPresetId);
+  const currentCategory = viewedPreset
     ? {
-        id: QUICK_PRESET_VIEW_ID,
-        name: '快速课程方案',
+        id: `${PRESET_VIEW_PREFIX}${viewedPreset.id}`,
+        name: viewedPreset.name,
         icon: Sparkles,
-        courses: quickPresetCourses,
+        courses: viewedPreset.courseIds
+          .map(courseId => courses.find(course => course.id === courseId))
+          .filter((course): course is Course => Boolean(course)),
       }
     : categories.find(category => category.id === selectedCategory);
-  const quickPresetReady = quickPresetCourses.length === QUICK_PRESET_COURSE_IDS.length
-    && quickPresetCourses.every(course => course.items.length > 0);
-  const quickPresetApplied = quickPresetReady
-    && selectedItems.size === QUICK_PRESET_COURSE_IDS.length
-    && quickPresetCourses.every(course => {
-      const itemSet = selectedItems.get(course.id.toString());
-      return itemSet?.size === course.items.length
-        && course.items.every(item => itemSet.has(item.id));
-    });
+  const selectedPreset = presets.find(preset => preset.id === selectedPresetId);
 
-  const applyQuickPreset = () => {
-    if (!quickPresetReady) return;
-
-    const presetItems = new Map<string, Set<number>>();
-    quickPresetCourses.forEach(course => {
-      presetItems.set(course.id.toString(), new Set(course.items.map(item => item.id)));
-    });
+  const applyPreset = (presetId: string) => {
+    const preset = presets.find(candidate => candidate.id === presetId);
+    if (!preset) return;
+    const presetItems = selectionForPreset(preset, courses);
+    if (!presetItems) return;
     setSelectedItems(presetItems);
-    setSelectedCategory(QUICK_PRESET_VIEW_ID);
+    setSelectedPresetId(preset.id);
+    setSelectedCategory(`${PRESET_VIEW_PREFIX}${preset.id}`);
   };
 
   // 切换课程项的选择状态
   const toggleItem = (courseId: number, itemId: number) => {
+    setSelectedPresetId('');
     const newSelected = new Map(selectedItems);
     if (!newSelected.has(courseId.toString())) {
       newSelected.set(courseId.toString(), new Set());
@@ -199,6 +247,7 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
   const toggleCourse = (courseId: number) => {
     const course = courses.find(c => c.id === courseId);
     if (!course || course.items.length === 0) return;
+    setSelectedPresetId('');
 
     const newSelected = new Map(selectedItems);
     const courseKey = courseId.toString();
@@ -344,26 +393,34 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
           </div>
         </div>
         <div className="p-4 border-b border-gray-200">
-          <button
-            type="button"
-            onClick={applyQuickPreset}
-            disabled={!quickPresetReady}
-            title={quickPresetReady ? '选择预设课程组合' : '预设课程数据不完整'}
-            className={`w-full min-h-16 flex items-center gap-3 p-3 rounded-lg border-2 text-left transition-colors ${
-              selectedCategory === QUICK_PRESET_VIEW_ID
-                ? 'bg-emerald-50 border-emerald-500'
-                : quickPresetReady
-                  ? 'bg-white border-gray-200 hover:border-emerald-400 hover:bg-emerald-50'
-                  : 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-60'
-            }`}
+          <label htmlFor="course-preset" className="mb-2 flex items-center gap-2 text-xs font-semibold text-gray-600">
+            <Sparkles className="h-4 w-4 text-indigo-600" />
+            课程预设
+          </label>
+          <select
+            id="course-preset"
+            value={selectedPresetId}
+            onChange={(event) => {
+              const presetId = event.target.value;
+              if (presetId) {
+                applyPreset(presetId);
+              } else {
+                setSelectedPresetId('');
+                if (viewedPresetId && categories[0]) setSelectedCategory(categories[0].id);
+              }
+            }}
+            className="min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
           >
-            <Sparkles className={`w-5 h-5 shrink-0 ${selectedCategory === QUICK_PRESET_VIEW_ID ? 'text-emerald-600' : 'text-gray-600'}`} />
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium text-gray-900">快速课程方案</span>
-              <span className="block text-xs text-gray-500">命名、拟声、配对、排序、社交</span>
-            </span>
-            {quickPresetApplied && <Check className="w-5 h-5 shrink-0 text-emerald-600" />}
-          </button>
+            <option value="">手动选择课程</option>
+            {presets.map(preset => (
+              <option key={preset.id} value={preset.id} disabled={!preset.available}>
+                {preset.name}{preset.isDefault ? '（默认）' : ''}{!preset.available ? '（课程不完整）' : ''}
+              </option>
+            ))}
+          </select>
+          <p className={`mt-2 text-xs leading-5 ${presetError ? 'text-amber-700' : 'text-gray-500'}`}>
+            {presetError || selectedPreset?.description || '选择后会按 Server 中配置的顺序选中全部课点。'}
+          </p>
         </div>
         <div className="flex-1 overflow-y-auto p-6 pt-4">
           <div className="space-y-3">

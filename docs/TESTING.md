@@ -17,6 +17,9 @@ Required automated gates:
   profile publish/deploy/resolve/fallback;
 - realtime phrase library selection, custom additions, per-course isolation,
   non-empty slots and ordering rule variants;
+- Server-managed course preset create/edit/delete, ordered course expansion,
+  default promotion, corrupt-file fail-closed behavior, invalid/empty-course
+  rejection, and teacher/Server UI wiring to the shared API;
 - naming/onomatopoeia keyword re-arm after hints and course-answer routing that
   cannot fall through into a blocking general-dialogue behavior, while an
   explicit wake-with-remainder course miss still reaches the dialogue reply;
@@ -40,7 +43,7 @@ microphones; unplug/busy/unwritable disk/Runtime restart; long-run resource
 release; real ASR/LLM/TTS. A source test or fake protocol cannot substitute for
 these gates.
 
-Current 2026-08-24 evidence: `python -m pytest tests -q` passes 436 tests;
+Current 2026-08-24 evidence: `python -m pytest tests -q` passes 440 tests;
 teacher `npm.cmd run build` succeeds; the 8080 teacher entry and hashed assets
 return HTTP 200. The in-app browser passed the real `djt` session, student and
 course selection, one normal prepare and one double-click prepare. Both reached
@@ -49,6 +52,14 @@ the final lease file contained no lease. Browser console warnings/errors were
 empty. This is not a full class or hardware pass: the child and Runtime were
 offline, so start-course, COM3 motion, speech/expression/child synchronization,
 finish, reconnect, Runtime restart and soak scenarios remain manual gates.
+
+The Server-managed course preset addition passed real-browser checks against
+8080: the preset editor loaded the seeded five-course default, exposed ordered
+add/remove controls, and opened a new unsaved preset without mutating the
+configuration. The teacher assessment selector displayed that default in its
+dropdown and expanded the five courses to eight current items. The Vite-only
+ControlPage preview verified the revised attention/reward cards and nested
+reward-animation selector without starting a training session.
 
 The interaction-latency addition is covered by deterministic correlation,
 percentile, Markdown export, exact modality callback and Server console wiring

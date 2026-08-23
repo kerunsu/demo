@@ -65,6 +65,24 @@ currently linked course rows on every refresh. Device and recording operations
 are a top-level Configuration Center area at `/server/config/devices`, not an
 Interaction Content subview.
 
+## Teacher course presets
+
+Course presets are managed in Configuration Center -> Interaction Content ->
+Course Presets and stored in `config/course_presets.json` with
+`schemaVersion: 1`. Each preset has an immutable `id`, display `name`, optional
+`description`, and an ordered, duplicate-free `courseIds` list. The document
+has exactly one `defaultPresetId` whenever at least one preset exists. Creating
+the first preset makes it the default; deleting the default promotes the first
+remaining preset.
+
+The Server rejects a save when a selected course is missing or has no course
+items. A later course deletion or removal of all its items does not rewrite the
+preset silently: `GET /api/config/course-presets` reports `missingCourseIds`,
+`emptyCourseIds`, and `available: false`, and the teacher dropdown disables that
+preset until an operator repairs it. Writes use same-directory `fsync` and
+atomic replacement. The configuration sync package already includes this file
+through its recursive `config/` collection.
+
 ## Collaboration sync
 
 The configuration center exposes `GET /api/v2/config/sync/manifest` and
