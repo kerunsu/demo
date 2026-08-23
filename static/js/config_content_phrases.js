@@ -16,7 +16,9 @@
   }
 
   function intentLabel(intent) {
-    return { question: '提问', hint: '提示', praise: '表扬' }[intent] || intent;
+    return {
+      attention: '吸引', reward: '夸奖', question: '提问', hint: '提示', praise: '表扬'
+    }[intent] || intent;
   }
 
   async function request(url, options) {
@@ -46,7 +48,7 @@
     if (!root || !course) return;
     const selectedSets = (course.slots || []).map((slot) => new Set(slot.selected || []));
     const linkedCourses = course.courses || [];
-    root.innerHTML = `<section class="cc-card">
+    const linkage = course.globalInteraction ? '' : `<section class="cc-card">
       <div class="cc-toolbar" style="justify-content:space-between;">
         <h3 class="cc-card-title" style="margin:0;">联动课程</h3>
         <span class="cc-badge">${linkedCourses.length} 个课程</span>
@@ -55,7 +57,8 @@
       <div class="cc-phrase-courses">${linkedCourses.length
         ? linkedCourses.map((item) => `<span class="cc-badge gray" title="课程 ID ${esc(item.id)}">${esc(item.title)}</span>`).join('')
         : '<span class="cc-tiny">当前还没有该大类课程；以后新建后会自动继承这里的话术。</span>'}</div>
-    </section>` + (course.slots || [])
+    </section>`;
+    root.innerHTML = linkage + (course.slots || [])
       .map((slot, index) => {
         const selected = selectedSets[index];
         const label = slot.label || intentLabel(slot.intent);

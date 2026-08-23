@@ -63,7 +63,12 @@ shims for at least one release cycle.
 
 The current Robot Runtime package is described by
 `releases/robot/manifest.json` and `robot_runtime/VERSION`; its hash and size
-must be checked before distribution.
+must be checked before distribution. The packer publishes the complete
+`EIArt-Robot-<version>.zip` for first installation and a smaller
+`EIArt-Robot-Update-<version>.zip` for `/ui` hot update, then atomically replaces
+the manifest last. The Server refuses a package whose size, SHA-256 or embedded
+VERSION differs from the manifest. Never repair a failed release by pointing a
+new manifest at an older `latest.zip`.
 
 ## Analyzer health
 

@@ -6,9 +6,12 @@
  */
 (function (global) {
   const TARGET_SAMPLE_RATE = 16000;
-  const START_LEVEL = 0.03;
-  const SILENCE_LEVEL = 0.018;
-  const RESET_LEVEL = 0.024;
+  // Fixed low thresholds treated projector/fan noise as speech on some
+  // classroom PCs.  Keep conservative floors, then adapt to the quietest
+  // part of the last two seconds so a different microphone needs no tuning.
+  const MIN_START_LEVEL = 0.035;
+  const MIN_SILENCE_LEVEL = 0.022;
+  const MAX_NOISE_FLOOR = 0.08;
   const MIN_VOICE_MS = 180;
   const MIN_TURN_MS = 700;
   const SILENCE_END_MS = 900;
@@ -62,6 +65,9 @@
   let prerollChunks = [];
   let prerollSamples = 0;
   let captureSampleRate = TARGET_SAMPLE_RATE;
+  let noiseFloor = 0.018;
+  let recentNoiseLevels = [];
+  let lastNoiseEstimateAt = 0;
 
   let speechRec = null;
   let speechRecActive = false;
@@ -635,6 +641,27 @@
     pcmChunks = prerollChunks.map((c) => new Float32Array(c));
   }
 
+  function rememberAmbientLevel(level, now) {
+    recentNoiseLevels.push({ level, at: now });
+    const cutoff = now - 2000;
+    while (recentNoiseLevels.length && recentNoiseLevels[0].at < cutoff) {
+      recentNoiseLevels.shift();
+    }
+    if (now - lastNoiseEstimateAt < 250 || recentNoiseLevels.length < 12) return;
+    lastNoiseEstimateAt = now;
+    const sorted = recentNoiseLevels.map((entry) => entry.level).sort((a, b) => a - b);
+    const quietIndex = Math.max(0, Math.floor((sorted.length - 1) * 0.2));
+    const observed = Math.min(MAX_NOISE_FLOOR, sorted[quietIndex]);
+    noiseFloor = noiseFloor * 0.72 + observed * 0.28;
+  }
+
+  function currentVadLevels() {
+    const start = Math.min(0.16, Math.max(MIN_START_LEVEL, noiseFloor * 2.2 + 0.008));
+    const silence = Math.min(start * 0.78, Math.max(MIN_SILENCE_LEVEL, noiseFloor * 1.45 + 0.004));
+    const reset = Math.max(silence + 0.008, start * 0.82);
+    return { start, silence, reset };
+  }
+
   function prerollHasVoice() {
     if (!prerollChunks.length) return false;
     const merged = concatenateFloat32(prerollChunks);
@@ -644,7 +671,7 @@
       const value = merged[i];
       sum += value * value;
     }
-    return Math.sqrt(sum / merged.length) >= START_LEVEL * 0.7;
+    return Math.sqrt(sum / merged.length) >= currentVadLevels().start;
   }
 
   function finalizeCapturedTurn() {
@@ -703,6 +730,11 @@
     const level = Math.min(1, rmsFromTimeDomain(samples));
     const now = performance.now();
 
+    if (!capturingTurn && !asrPausedForTts && !dialogueBusy) {
+      rememberAmbientLevel(level, now);
+    }
+    const vad = currentVadLevels();
+
     if (!canCapture()) {
       if (capturingTurn) {
         // 朗读/忙时丢弃半截，避免回授进 FunASR
@@ -724,9 +756,11 @@
 
     if (!capturingTurn) {
       const prerollReady = prerollHasVoice();
-      if (prerollReady || level >= START_LEVEL) {
+      if (prerollReady || level >= vad.start) {
         voiceStartedAt = voiceStartedAt || now;
-        if (prerollReady || now - voiceStartedAt >= MIN_VOICE_MS) {
+        // The pre-roll protects the first syllable, but it must never bypass
+        // the confirmation window; that was the main source of phantom turns.
+        if (now - voiceStartedAt >= MIN_VOICE_MS) {
           capturingTurn = true;
           turnStartedAt = now;
           turnCaptureStartedAtClientMs = Date.now();
@@ -741,14 +775,14 @@
         setStatus(listenIdleStatus());
       }
     } else {
-      if (level <= SILENCE_LEVEL) {
+      if (level <= vad.silence) {
         silenceStartedAt = silenceStartedAt || now;
         silenceStartedAtClientMs = silenceStartedAtClientMs || Date.now();
         const spoken = now - (turnStartedAt || now);
         if (spoken >= MIN_TURN_MS && now - silenceStartedAt >= SILENCE_END_MS) {
           finalizeCapturedTurn();
         }
-      } else if (level >= RESET_LEVEL) {
+      } else if (level >= vad.reset) {
         silenceStartedAt = null;
         silenceStartedAtClientMs = null;
       }
@@ -762,6 +796,9 @@
       window.cancelAnimationFrame(meterFrame);
       meterFrame = null;
     }
+    recentNoiseLevels = [];
+    noiseFloor = 0.018;
+    lastNoiseEstimateAt = 0;
     if (captureNode) {
       captureNode.onaudioprocess = null;
       try {

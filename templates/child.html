@@ -70,6 +70,20 @@
 
   <script src="/static/js/common.js"></script>
   <script>
+    // Role presence is part of the page bootstrap, not the large course module.
+    // This keeps Server routing alive even if a later media/course script fails.
+    window.startClientPresenceHeartbeat?.("child", 10000);
+    window.socket?.on("connect_error", function (error) {
+      const status = document.getElementById("status");
+      if (status) status.innerText = "儿童端连接失败，正在自动重试…";
+      console.error("儿童端 Socket 连接失败:", error && error.message ? error.message : error);
+    });
+    window.socket?.on("connect", function () {
+      const status = document.getElementById("status");
+      if (status && status.innerText.indexOf("连接失败") >= 0) status.innerText = "等待中...";
+    });
+  </script>
+  <script>
     // 可按部署环境覆盖（例如设置为 https://127.0.0.1:19190）
     // Robot Runtime（媒体 + DollSer OSC，统一 19091）
     window.ROBOT_AGENT_BASE = "http://127.0.0.1:19091";
@@ -79,8 +93,8 @@
   </script>
   <script src="/static/js/browser_tts.js?v=20260810-speech-anchor-v2"></script>
   <script src="/static/js/audio_player.js?v=20260730-behavior-lock"></script>
-  <script src="/static/js/child_dialogue.js?v=20260811-dialogue-collapse"></script>
-  <script type="module" src="/static/js/child.js?v=20260823-resource-latency-v1"></script>
+  <script src="/static/js/child_dialogue.js?v=20260823-adaptive-vad-v2"></script>
+  <script type="module" src="/static/js/child.js?v=20260824-child-recovery-v1"></script>
 
 </body>
 </html>

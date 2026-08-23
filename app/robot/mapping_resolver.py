@@ -133,6 +133,10 @@ class MappingResolver:
         """
         if not aux:
             return 'silent'
+        if aux.get('attention') is True:
+            return 'attention'
+        if aux.get('reward') is True:
+            return 'reward'
         if aux.get('praise') is True:
             return 'praise'
         if aux.get('hint') is True:

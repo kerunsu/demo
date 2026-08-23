@@ -33,8 +33,11 @@ def test_animation_library_upload_reference_and_random_fallback(tmp_path, monkey
     assert animation_assets.find_animation_references("课堂选中.mp4") == ["courses.7.praise"]
     assert json.loads(map_path.read_text(encoding="utf-8"))["courses"]["7"]["praise"]["animation"] == "课堂选中.mp4"
 
+    invalid = static_root / "resources" / "Animations" / "000-invalid.mp4"
+    invalid.write_bytes(b"not-an-mp4")
     monkeypatch.setattr(animation_assets.random, "choice", lambda values: sorted(values)[0])
     assert animation_assets.resolve_animation("") == "resources/Animations/fallback.mp4"
+    assert animation_assets.resolve_animation("000-invalid.mp4", allow_random_fallback=False) is None
 
 
 def test_animation_library_rejects_bad_files_and_protects_references(tmp_path, monkeypatch):
@@ -110,7 +113,7 @@ def test_animation_rename_ui_and_api_contract():
     template = (root / "templates" / "server" / "config.html").read_text(encoding="utf-8")
     script = (root / "static" / "js" / "config_content_animations.js").read_text(encoding="utf-8")
     assert 'id="btn-rename-animation"' in template
-    assert "config_content_animations.js?v=20260823-module-guard-v1" in template
+    assert "config_content_animations.js?v=20260823-engagement-v2" in template
     assert "document.body?.dataset?.module !== 'content'" in script
     assert "/animations/${encodeURIComponent(selected)}/rename" in script
     assert "referencesUpdated" in script or "newName" in script

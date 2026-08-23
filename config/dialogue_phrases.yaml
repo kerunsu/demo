@@ -6,6 +6,22 @@
 #   MATCHING_WRONG_FEEDBACK_WITH_HINT_LINES / ORDERING_WRONG_FEEDBACK_WITH_HINT_LINES
 # 社交：social_greeting_* / social_farewell_*（browser 模式走 robot_speak_text，不依赖 MP3）
 
+attention:
+  global:
+    - "看看麦麦，这里还有一个有趣的任务。"
+    - "嗨，回来看看屏幕，我们继续吧。"
+    - "麦麦在这里，和我一起完成它吧。"
+  default:
+    - "看看麦麦，我们继续吧。"
+
+reward:
+  global:
+    - "你回来得真快，真棒！"
+    - "谢谢你认真看回来，我们继续。"
+    - "注意力回来啦，做得真好！"
+  default:
+    - "你回来得真快，真棒！"
+
 question:
   naming:
     - "你知道这是什么吗？"

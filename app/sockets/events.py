@@ -64,6 +64,7 @@ _deferred_ordering_questions: Dict[str, Dict[str, Any]] = {}
 # Latest-wins pending ask per runtime session (pairing/ordering item switch).
 _pending_interactive_questions: Dict[str, Dict[str, Any]] = {}
 _interactive_input_state: Dict[str, Dict[str, Any]] = {}
+_socketio_server = None
 
 
 def _authenticated_teacher() -> Optional[Dict[str, Any]]:
@@ -1382,6 +1383,57 @@ def _play_interactive_course_audio(
         if not robot_result.get('success'):
             robot_service.abort_behavior(resolved_behavior_id)
             return False
+        behavior_animation = None
+        child_sid = None
+        if audio_type == 'praise':
+            try:
+                resolve_animation = getattr(
+                    robot_service,
+                    'resolve_encouragement_animation',
+                    None,
+                )
+                if callable(resolve_animation):
+                    behavior_animation = resolve_animation(behavior_payload)
+                    child_sid = _child_owner_for_session(str(session_id))
+            except Exception:
+                logger.warning(
+                    '互动课鼓励动画解析失败 session=%s',
+                    session_id,
+                    exc_info=True,
+                )
+        if behavior_animation and child_sid:
+            animation_payload = {
+                **behavior_payload,
+                'protocolVersion': '1',
+                'behaviorAnimation': behavior_animation,
+                'praiseVideo': behavior_animation,
+                'behaviorStartAtMs': robot_result.get('startAtEpochMs'),
+                'startAtServerMs': robot_result.get('startAtEpochMs'),
+                'behaviorStartDelayMs': _remaining_behavior_start_delay_ms(
+                    robot_result
+                ),
+                'modality': 'childAnimation',
+            }
+            _update_play_request(
+                resolved_request_id,
+                behavior_id=resolved_behavior_id,
+                is_aux=True,
+                interaction_context={
+                    'trainingSessionId': behavior_payload.get('trainingSessionId'),
+                    'sessionId': str(session_id),
+                    'questionId': (question_data or {}).get('questionId'),
+                    'requestId': resolved_request_id,
+                    'behaviorId': resolved_behavior_id,
+                    'eventType': 'praise',
+                    'isAux': True,
+                },
+            )
+            if _socketio_server is not None:
+                _socketio_server.emit(
+                    'prepare_behavior_animation',
+                    animation_payload,
+                    to=child_sid,
+                )
         audio_delay_ms = _remaining_behavior_start_delay_ms(robot_result)
         try:
             audio_delay_ms += int(robot_service.resolve_audio_offset_ms(behavior_payload) or 0)
@@ -1418,6 +1470,19 @@ def _play_interactive_course_audio(
         ):
             robot_service.abort_behavior(resolved_behavior_id)
             return False
+        set_animation_expected = getattr(
+            robot_service,
+            'set_behavior_animation_expected',
+            None,
+        )
+        if callable(set_animation_expected):
+            if not set_animation_expected(
+                resolved_behavior_id,
+                bool(behavior_animation and child_sid),
+                session_id=str(session_id),
+            ):
+                robot_service.abort_behavior(resolved_behavior_id)
+                return False
         if audio_type == 'question':
             generation = None
             if isinstance(question_data, dict):
@@ -2629,6 +2694,9 @@ def register_socket_events(socketio):
         socketio: Flask-SocketIO实例
     """
     
+    global _socketio_server
+    _socketio_server = socketio
+
     # 注册机械臂相关事件
     register_robot_events(socketio)
 
@@ -3123,6 +3191,8 @@ def register_socket_events(socketio):
                 aux.get('question')
                 or aux.get('praise')
                 or aux.get('hint')
+                or aux.get('attention')
+                or aux.get('reward')
                 or aux.get('socialGreetingIntro')
                 or aux.get('socialGreetingPlay')
                 or aux.get('socialFarewellBye')
@@ -3385,6 +3455,8 @@ def register_socket_events(socketio):
             interaction_event_type = (
                 'question_presented' if aux_flags.get('question')
                 else 'praise' if aux_flags.get('praise')
+                else 'attention_intervention' if aux_flags.get('attention')
+                else 'attention_reward' if aux_flags.get('reward')
                 else 'hint' if aux_flags.get('hint')
                 else 'social_prompt' if any(
                     aux_flags.get(key) for key in (

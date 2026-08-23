@@ -81,9 +81,15 @@ $env:ROBOT_RELEASE_VERSION = "1.0.0"
 
 - `releases/robot/EIArt-Robot-<version>.zip`
 - `releases/robot/EIArt-Robot-latest.zip`
+- `releases/robot/EIArt-Robot-Update-<version>.zip`
+- `releases/robot/EIArt-Robot-Update-latest.zip`
 - `releases/robot/manifest.json`
 
-将上述 zip + 更新后的 `manifest.json` 拷到服务器同路径（或在能访问该目录的机器上构建后 `git` 只提交 manifest，zip 用 scp/U 盘拷贝）。zip 默认被 `.gitignore` 忽略。
+前两个是完整首次安装包，`Update` 是不含 DollSer/表情副本的日常热更新包。
+将上述 zip + 更新后的 `manifest.json` 作为同一批次拷到服务器同路径
+（或在能访问该目录的机器上构建后 `git` 只提交 manifest，zip 用 scp/U 盘拷贝）。
+zip 默认被 `.gitignore` 忽略；缺文件或任一大小、SHA-256、包内 VERSION 不一致时，
+Server 会拒绝下载，不再静默回退到不匹配的旧 `latest.zip`。
 
 若已有 `dist\RobotRuntime.exe` 只想重打 zip：
 

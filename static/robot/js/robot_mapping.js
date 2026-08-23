@@ -4,7 +4,8 @@
 // V3.2 新增：表情映射支持
 
 // 机器人行为的唯一事件分类；服务端使用同一规则做最终校验。
-const STANDARD_AUX_TYPES = ['praise', 'question', 'hint', 'silent'];
+const ENGAGEMENT_AUX_TYPES = ['attention', 'reward'];
+const STANDARD_AUX_TYPES = ['praise', 'question', 'hint', 'silent', ...ENGAGEMENT_AUX_TYPES];
 const SOCIAL_AUX_TYPES = [
   'social_greeting_intro',
   'social_greeting_play',
@@ -306,10 +307,10 @@ function allowedAuxTypesForScope(scope) {
     if (scope.type === 'item') {
         const item = course?.items?.find((i) => String(i.id) === String(scope.itemId));
         const role = String(item?.socialRole || item?.config?.socialRole || '').toLowerCase();
-        if (role === 'greeting') return ['silent', ...SOCIAL_AUX_TYPES.slice(0, 2)];
-        if (role === 'farewell') return ['silent', ...SOCIAL_AUX_TYPES.slice(2)];
+        if (role === 'greeting') return ['silent', ...ENGAGEMENT_AUX_TYPES, ...SOCIAL_AUX_TYPES.slice(0, 2)];
+        if (role === 'farewell') return ['silent', ...ENGAGEMENT_AUX_TYPES, ...SOCIAL_AUX_TYPES.slice(2)];
     }
-    return ['silent', ...SOCIAL_AUX_TYPES];
+    return ['silent', ...ENGAGEMENT_AUX_TYPES, ...SOCIAL_AUX_TYPES];
 }
 
 function updateVisibleBehaviorSlots(scope) {
@@ -381,11 +382,15 @@ function getConfigForScope(scope) {
     return empty;
 }
 
-function onAnimationChange() {
-    const select = document.getElementById('animation-praise');
+function onAnimationChange(auxType = 'praise') {
+    const select = document.getElementById(`animation-${auxType}`);
     if (!select || !currentScope) return;
     const value = String(select.value || '');
-    dirtyAuxTypes.add('praise');
+    dirtyAuxTypes.add(auxType);
+    if (currentEditingConfig) {
+        currentEditingConfig.__animation = currentEditingConfig.__animation || {};
+        currentEditingConfig.__animation[auxType] = value;
+    }
     let parent = null;
     if (currentScope.type === 'default') {
         mappingData.defaults = mappingData.defaults || {};
@@ -400,12 +405,12 @@ function onAnimationChange() {
         parent = course.items[currentScope.itemId] = course.items[currentScope.itemId] || {};
     }
     if (!parent) return;
-    const existing = parent.praise;
+    const existing = parent[auxType];
     if (Array.isArray(existing)) {
-        parent.praise = { motions: existing, emotion: '', sequence: {}, animation: value };
+        parent[auxType] = { motions: existing, emotion: '', sequence: {}, animation: value };
     } else {
-        parent.praise = existing && typeof existing === 'object' ? existing : { motions: [] };
-        parent.praise.animation = value;
+        parent[auxType] = existing && typeof existing === 'object' ? existing : { motions: [] };
+        parent[auxType].animation = value;
     }
 }
 
@@ -431,7 +436,7 @@ function renderActionSlots(config) {
         window.renderSequenceControls(config);
     }
     if (typeof window.renderAnimationBinding === 'function') {
-        window.renderAnimationBinding(config.__animation?.praise || '');
+        window.renderAnimationBinding(config.__animation || {});
     }
 }
 

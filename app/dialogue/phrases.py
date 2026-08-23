@@ -22,6 +22,8 @@ _recent: Dict[str, List[str]] = {}
 
 # 文件缺失时的内置兜底（与 dialogue_phrases.yaml 对齐）
 _BUILTIN_FALLBACK_BANK: Dict[str, Any] = {
+    "attention": {"global": ["看看麦麦，我们继续吧。"]},
+    "reward": {"global": ["你回来得真快，真棒！"]},
     "question": {"default": ["看一看屏幕。"]},
     "praise": {"default": ["真棒！"]},
     "encourage": {"default": ["没关系，再试一次。"]},
@@ -33,6 +35,8 @@ _BUILTIN_FALLBACK_BANK: Dict[str, Any] = {
 }
 
 _PICK_FALLBACK: Dict[str, str] = {
+    "attention": "看看麦麦，我们继续吧。",
+    "reward": "你回来得真快，真棒！",
     "question": "看一看屏幕。",
     "praise": "真棒！",
     "encourage": "没关系，再试一次。",

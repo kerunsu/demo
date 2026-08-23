@@ -5,6 +5,8 @@
 // 扩展全局变量
 window.emotionsData = [];
 window.currentEmotions = {
+    attention: '',
+    reward: '',
     praise: '',
     question: '',
     hint: '',

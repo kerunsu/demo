@@ -70,6 +70,7 @@ tests/_tmp_*/**
 
 # Robot Runtime release artifacts (build on Windows; copy zip to server)
 releases/robot/*.zip
+releases/robot/*.tmp
 releases/_stage_robot/
 *.spec
 RobotRuntime.spec

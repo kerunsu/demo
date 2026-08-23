@@ -1,6 +1,36 @@
 {
   "defaults": {
     "idle": "空动作",
+    "attention": {
+      "motions": [
+        "05-吸引注意01"
+      ],
+      "emotion": "v3_speak_excitedly_short.mp4",
+      "animation": "",
+      "sequence": {
+        "expressionMediaId": "",
+        "expressionDurationMs": 0,
+        "motionOffsetMs": 0,
+        "audio": {
+          "offsetMs": 0
+        }
+      }
+    },
+    "reward": {
+      "motions": [
+        "03-表扬"
+      ],
+      "emotion": "v3_speak_excitedly_short.mp4",
+      "animation": "",
+      "sequence": {
+        "expressionMediaId": "",
+        "expressionDurationMs": 0,
+        "motionOffsetMs": 0,
+        "audio": {
+          "offsetMs": 0
+        }
+      }
+    },
     "praise": {
       "motions": [
         "03-表扬"

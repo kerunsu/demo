@@ -53,7 +53,8 @@ Every line is an immutable `InteractionEvent` with correlation IDs, actor,
 server timestamp, state transition, degradation/error fields and metadata.
 Stable events include `question_presented`, `question_audio_ended`,
 `no_response`, `question_repeat`, `hint`, `reminder`, `child_response`,
-`praise`, `rating` and `next_question`; modality events use the same timeline.
+`praise`, `attention_intervention`, `attention_reward`, `rating` and
+`next_question`; modality events use the same timeline.
 
 Response latency is server-authoritative: first valid `child_response` minus
 first `question_audio_ended`, with latest-prompt latency retained separately.

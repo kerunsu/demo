@@ -295,8 +295,8 @@ def test_server_control_frontend_tracks_terminal_instead_of_trusting_http_200():
     assert "fetchWithLegacyFallback('/api/config/courses', '/api/robot/courses', 'courses')" in mapping
     assert "fetchWithLegacyFallback('/api/students', '/api/robot/students', 'students')" not in mapping
     assert "/mapping/course/${courseId}/item/${itemId}/${auxType}" in mapping
-    assert "return ['silent', ...SOCIAL_AUX_TYPES.slice(0, 2)]" in mapping
-    assert "return ['silent', ...SOCIAL_AUX_TYPES.slice(2)]" in mapping
+    assert "return ['silent', ...ENGAGEMENT_AUX_TYPES, ...SOCIAL_AUX_TYPES.slice(0, 2)]" in mapping
+    assert "return ['silent', ...ENGAGEMENT_AUX_TYPES, ...SOCIAL_AUX_TYPES.slice(2)]" in mapping
     assert "robot.lastCommand" in monitor
     assert "/api/v2/control/actions/stop-robot" in monitor
     assert "/api/v2/control/actions/stop-audio" in monitor

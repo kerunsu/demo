@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 
@@ -6,6 +7,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _read(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
+
+
+def test_child_entry_module_is_valid_javascript():
+    result = subprocess.run(
+        ["node", "--check", str(ROOT / "static/js/child.js")],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_child_resource_transition_is_staged_and_acknowledged():
@@ -239,7 +252,7 @@ def test_interactive_controls_use_authorized_parent_socket_bridge():
     assert "relayInteractiveControl(eventName" in child
     assert 'frame.dataset.pageContextActive !== "true"' in child
     assert "}, window.location.origin);" in child
-    assert 'child.js?v=20260823-resource-latency-v1' in template
+    assert 'child.js?v=20260824-child-recovery-v1' in template
 
     for page, prefix, apply_name in (
         (matching, "matching_", "applyMatchingControl"),

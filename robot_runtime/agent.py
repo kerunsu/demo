@@ -18,6 +18,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 import wave
 import webbrowser
 from collections import deque
@@ -208,6 +209,52 @@ _emotion_prewarm: Dict[str, Any] = {
     "failed": [],
     "updatedAt": 0,
 }
+
+_CHILD_PAGE_PRESENCE_TTL_MS = max(
+    8000,
+    int(os.environ.get("ROBOT_RUNTIME_CHILD_PAGE_TTL_MS", "15000")),
+)
+_child_page_lock = threading.RLock()
+_child_page_state: Dict[str, Any] = {
+    "pageId": None,
+    "url": None,
+    "visible": None,
+    "active": False,
+    "lastSeenAt": 0,
+    "lastLaunchAt": 0,
+    "lastLaunchOk": None,
+    "lastLaunchMode": None,
+    "lastLaunchError": None,
+    "launchAttempts": 0,
+}
+_child_page_watchdog_lock = threading.Lock()
+_child_page_watchdog_started = False
+
+
+def child_page_presence_status(now_ms: Optional[int] = None) -> Dict[str, Any]:
+    """Return proof that the actual robot browser page is still alive."""
+    current_ms = int(now_ms or time.time() * 1000)
+    with _child_page_lock:
+        result = dict(_child_page_state)
+    last_seen = int(result.get("lastSeenAt") or 0)
+    age_ms = max(0, current_ms - last_seen) if last_seen else None
+    result["ageMs"] = age_ms
+    result["ttlMs"] = _CHILD_PAGE_PRESENCE_TTL_MS
+    result["online"] = bool(
+        result.get("active")
+        and age_ms is not None
+        and age_ms <= _CHILD_PAGE_PRESENCE_TTL_MS
+    )
+    return result
+
+
+def _record_child_page_launch(result: Dict[str, Any]) -> None:
+    with _child_page_lock:
+        _child_page_state["lastLaunchAt"] = int(time.time() * 1000)
+        _child_page_state["lastLaunchOk"] = bool(result.get("ok"))
+        _child_page_state["lastLaunchMode"] = result.get("mode")
+        _child_page_state["lastLaunchError"] = result.get("error") or result.get("scriptError")
+        _child_page_state["launchAttempts"] = int(_child_page_state.get("launchAttempts") or 0) + 1
 
 
 def _emotion_package_summary() -> Dict[str, Any]:
@@ -441,6 +488,8 @@ class MediaRecorderState:
             base.update(osc_status())
             base.update(register_client.get_registry_status())
             base["emotionPrewarm"] = emotion_prewarm_status()
+            base["childPage"] = child_page_presence_status()
+            base["childPageOnline"] = bool(base["childPage"].get("online"))
             return base
 
     def start(
@@ -1754,6 +1803,24 @@ def ui_status():
     return jsonify(state.status())
 
 
+@app.post("/ui/child-presence")
+def ui_child_presence():
+    """Heartbeat from the real /child browser running on this robot."""
+    if not _ui_local_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    now_ms = int(time.time() * 1000)
+    with _child_page_lock:
+        _child_page_state.update({
+            "pageId": str(body.get("pageId") or "").strip()[:120] or None,
+            "url": str(body.get("url") or "").strip()[:500] or None,
+            "visible": bool(body.get("visible", True)),
+            "active": bool(body.get("active", True)),
+            "lastSeenAt": now_ms,
+        })
+    return jsonify({"ok": True, **child_page_presence_status(now_ms)})
+
+
 def _ui_local_ok() -> bool:
     """Allow local UI without key; remote still needs key when configured."""
     remote = request.remote_addr not in ("127.0.0.1", "::1", "localhost")
@@ -1916,6 +1983,81 @@ def open_child_lan_mic(backend_url: str) -> Dict[str, Any]:
         }
 
 
+def launch_child_page(backend_url: str) -> Dict[str, Any]:
+    """Launch the page and retain launch diagnostics separately from presence."""
+    result = open_child_lan_mic(backend_url)
+    _record_child_page_launch(result)
+    result["childPage"] = child_page_presence_status()
+    result["verified"] = bool(result["childPage"].get("online"))
+    return result
+
+
+def _ensure_child_page_after_startup() -> None:
+    """Recover /child after a packaged Runtime start or online update."""
+    deadline = time.time() + 45
+    while time.time() < deadline:
+        if child_page_presence_status().get("online"):
+            return
+        registry = register_client.get_registry_status()
+        if registry.get("backendUrl") and registry.get("backendRegistered"):
+            break
+        time.sleep(1)
+
+    # The package launcher/updater owns the first restore attempt. Give it a
+    # short head start so the bounded watchdog does not create a second window.
+    time.sleep(5)
+
+    registry = register_client.get_registry_status()
+    backend = str(
+        registry.get("backendPublicUrl")
+        or registry.get("backendUrl")
+        or register_client.BACKEND_URL
+        or ""
+    ).rstrip("/")
+    if not backend or child_page_presence_status().get("online"):
+        return
+
+    for attempt in range(2):
+        result = launch_child_page(backend)
+        if not result.get("ok"):
+            app.logger.warning(
+                "[RobotRuntime] automatic /child launch failed: %s",
+                result.get("error"),
+            )
+        for _ in range(20):
+            if child_page_presence_status().get("online"):
+                app.logger.info("[RobotRuntime] /child browser presence verified")
+                return
+            time.sleep(1)
+        if attempt == 0:
+            app.logger.warning(
+                "[RobotRuntime] /child launched but no browser heartbeat; retrying once"
+            )
+    app.logger.error(
+        "[RobotRuntime] /child browser did not connect after two launch attempts"
+    )
+
+
+def start_child_page_watchdog() -> bool:
+    """Start one bounded startup recovery worker for packaged deployments."""
+    global _child_page_watchdog_started
+    auto_open = str(os.environ.get("ROBOT_RUNTIME_AUTO_OPEN_CHILD", "1")).lower()
+    if auto_open in {"0", "false", "no", "off"}:
+        return False
+    if not getattr(sys, "frozen", False) and auto_open not in {"true", "yes", "on"}:
+        return False
+    with _child_page_watchdog_lock:
+        if _child_page_watchdog_started:
+            return False
+        _child_page_watchdog_started = True
+    threading.Thread(
+        target=_ensure_child_page_after_startup,
+        daemon=True,
+        name="RobotRuntime-ChildPageRecovery",
+    ).start()
+    return True
+
+
 @app.post("/ui/open-child")
 def ui_open_child():
     """Ops UI: open /child via LAN-mic helper script (or browser fallback)."""
@@ -1934,7 +2076,17 @@ def ui_open_child():
     backend = str(backend).rstrip("/")
     if not backend:
         return jsonify({"ok": False, "error": "backend URL not set"}), 400
-    result = open_child_lan_mic(backend)
+    force = bool(body.get("force"))
+    presence = child_page_presence_status()
+    if presence.get("online") and not force:
+        return jsonify({
+            "ok": True,
+            "alreadyOpen": True,
+            "verified": True,
+            "url": presence.get("url"),
+            "childPage": presence,
+        })
+    result = launch_child_page(backend)
     code = 200 if result.get("ok") else 400
     return jsonify(result), code
 
@@ -1991,6 +2143,89 @@ def config_media_dir():
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
+_update_job_lock = threading.RLock()
+_update_job: Dict[str, Any] = {
+    "jobId": None,
+    "stage": "idle",
+    "active": False,
+    "downloadedBytes": 0,
+    "totalBytes": 0,
+    "error": None,
+    "errorCode": None,
+    "updatedAt": None,
+}
+
+
+def _update_job_snapshot() -> Dict[str, Any]:
+    with _update_job_lock:
+        return dict(_update_job)
+
+
+def _set_update_job(job_id: str, **changes: Any) -> None:
+    with _update_job_lock:
+        if _update_job.get("jobId") != job_id:
+            return
+        _update_job.update(changes)
+        _update_job["updatedAt"] = int(time.time() * 1000)
+
+
+def _run_runtime_update(job_id: str, backend: Optional[str]) -> None:
+    def _progress(payload: Dict[str, Any]) -> None:
+        _set_update_job(job_id, active=True, **payload)
+
+    prepared = runtime_updater.download_and_prepare_update(
+        backend,
+        progress=_progress,
+    )
+    if not prepared.get("ok"):
+        _set_update_job(
+            job_id,
+            active=False,
+            stage="failed",
+            error=prepared.get("error") or "更新准备失败",
+            errorCode=prepared.get("errorCode"),
+            logPath=prepared.get("logPath"),
+        )
+        return
+    if prepared.get("alreadyLatest"):
+        _set_update_job(
+            job_id,
+            active=False,
+            stage="already_latest",
+            remoteVersion=prepared.get("remoteVersion"),
+        )
+        return
+
+    _set_update_job(
+        job_id,
+        active=True,
+        stage="swapping",
+        remoteVersion=prepared.get("remoteVersion"),
+        logPath=prepared.get("logPath"),
+    )
+    swap = runtime_updater.launch_swap_and_exit(prepared)
+    if not swap.get("ok"):
+        _set_update_job(
+            job_id,
+            active=False,
+            stage="failed",
+            error=swap.get("error") or "启动替换程序失败",
+            errorCode=swap.get("errorCode"),
+            logPath=swap.get("logPath") or prepared.get("logPath"),
+        )
+        return
+    _set_update_job(
+        job_id,
+        active=True,
+        stage="restarting",
+        restarting=True,
+        logPath=swap.get("logPath"),
+    )
+    # Give the browser enough time to observe the terminal progress state.
+    time.sleep(2.0)
+    os._exit(0)
+
+
 @app.get("/update/check")
 def update_check():
     if not _ui_local_ok():
@@ -2010,33 +2245,82 @@ def update_apply():
         return jsonify({"ok": False, "error": "recording in progress; stop first"}), 409
     body = request.get_json(silent=True) or {}
     backend = body.get("backendUrl") or None
-    prepared = runtime_updater.download_and_prepare_update(backend)
-    if not prepared.get("ok"):
-        return jsonify(prepared), 400
     if not runtime_updater.is_frozen():
         return jsonify({
             "ok": False,
-            "error": prepared.get("error")
-            or "auto-update only for RobotRuntime.exe; source mode: re-pack and replace manually",
-            "preparedDir": prepared.get("preparedDir"),
-            "hint": "开发/源码模式请重新运行 scripts/pack_robot_release.ps1，将 zip 放到服务器后在测试机用 exe 包更新。",
-        }), 400
-    swap = runtime_updater.launch_swap_and_exit(prepared)
-    if not swap.get("ok"):
-        return jsonify({**prepared, **swap}), 400
+            "errorCode": "source_mode_not_updatable",
+            "error": "源码运行模式不能在线更新，请安装机器人端 exe 包",
+        }), 409
 
-    def _exit_soon() -> None:
-        time.sleep(0.8)
-        os._exit(0)
+    release = runtime_updater.check_update(backend)
+    if not release.get("ok"):
+        return jsonify(release), 400
+    if not release.get("available"):
+        return jsonify({
+            **release,
+            "ok": False,
+            "error": release.get("error") or "服务器发布包不可用",
+        }), 409
+    if release.get("remoteOlder"):
+        return jsonify({
+            **release,
+            "ok": False,
+            "errorCode": "downgrade_blocked",
+            "error": "服务器版本早于本机，已阻止自动降级",
+        }), 409
+    if not release.get("updateAvailable"):
+        return jsonify({**release, "ok": True, "alreadyLatest": True})
 
-    threading.Thread(target=_exit_soon, daemon=True, name="RobotRuntime-UpdateExit").start()
+    with _update_job_lock:
+        if _update_job.get("active"):
+            return jsonify({"ok": True, **dict(_update_job)}), 202
+        job_id = uuid.uuid4().hex
+        _update_job.clear()
+        _update_job.update({
+            "jobId": job_id,
+            "stage": "queued",
+            "active": True,
+            "downloadedBytes": 0,
+            "totalBytes": int(release.get("sizeBytes") or 0),
+            "remoteVersion": release.get("remoteVersion"),
+            "error": None,
+            "errorCode": None,
+            "updatedAt": int(time.time() * 1000),
+        })
+
+    threading.Thread(
+        target=_run_runtime_update,
+        args=(job_id, backend),
+        daemon=True,
+        name="RobotRuntime-UpdateWorker",
+    ).start()
     return jsonify({
         "ok": True,
-        "restarting": True,
-        "message": "update prepared; process will restart shortly",
-        **swap,
-        "preparedDir": prepared.get("preparedDir"),
-    })
+        "accepted": True,
+        **_update_job_snapshot(),
+    }), 202
+
+
+@app.get("/update/status")
+def update_status():
+    if not _ui_local_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    snapshot = _update_job_snapshot()
+    requested = str(request.args.get("jobId") or "").strip()
+    if requested and requested != str(snapshot.get("jobId") or ""):
+        return jsonify({
+            "ok": False,
+            "errorCode": "update_job_not_found",
+            "error": "更新任务不存在或 Runtime 已重启",
+        }), 404
+    return jsonify({"ok": True, **snapshot})
+
+
+@app.get("/update/log")
+def update_log():
+    if not _ui_local_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    return jsonify(runtime_updater.read_update_log_tail())
 
 
 if __name__ == "__main__":
@@ -2052,4 +2336,5 @@ if __name__ == "__main__":
         print("[RobotRuntime] backend URL 未设置 — 请在 /ui 填写并「应用并注册」")
     print(f"[RobotRuntime] config {cfg.get('configPath')}")
     register_client.start_background(AGENT_PORT)
+    start_child_page_watchdog()
     app.run(host=AGENT_HOST, port=AGENT_PORT, debug=False, threaded=True)

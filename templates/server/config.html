@@ -257,6 +257,42 @@
           <div class="action-slots">
             <div class="action-slot">
               <div class="slot-header">
+                <h3>吸引 (Attention)</h3>
+                <button type="button" class="btn-test-small" onclick="testAction('attention', this)">▶ 测试</button>
+              </div>
+              <div class="slot-tags" id="slot-attention"></div>
+              <button type="button" class="btn-add-tag" onclick="addMotionToSlot('attention')">+ 添加动作</button>
+              <div class="emotion-select-wrapper">
+                <label>对应表情：</label>
+                <select id="emotion-attention" class="emotion-select" onchange="onEmotionChange('attention')"></select>
+              </div>
+              <div class="emotion-select-wrapper">
+                <label>下屏内容（可选）：</label>
+                <select id="animation-attention" class="emotion-select" onchange="onAnimationChange('attention')">
+                  <option value="">不播放下屏动画</option>
+                </select>
+              </div>
+            </div>
+            <div class="action-slot">
+              <div class="slot-header">
+                <h3>夸奖 (Reward)</h3>
+                <button type="button" class="btn-test-small" onclick="testAction('reward', this)">▶ 测试</button>
+              </div>
+              <div class="slot-tags" id="slot-reward"></div>
+              <button type="button" class="btn-add-tag" onclick="addMotionToSlot('reward')">+ 添加动作</button>
+              <div class="emotion-select-wrapper">
+                <label>对应表情：</label>
+                <select id="emotion-reward" class="emotion-select" onchange="onEmotionChange('reward')"></select>
+              </div>
+              <div class="emotion-select-wrapper">
+                <label>默认下屏内容：</label>
+                <select id="animation-reward" class="emotion-select" onchange="onAnimationChange('reward')">
+                  <option value="">默认库随机</option>
+                </select>
+              </div>
+            </div>
+            <div class="action-slot">
+              <div class="slot-header">
                 <h3>表扬 (Praise)</h3>
                 <button type="button" class="btn-test-small" onclick="testAction('praise', this)">▶ 测试</button>
               </div>
@@ -268,7 +304,7 @@
               </div>
               <div class="emotion-select-wrapper">
                 <label>课程鼓励动画：</label>
-                <select id="animation-praise" class="emotion-select" onchange="onAnimationChange()">
+                <select id="animation-praise" class="emotion-select" onchange="onAnimationChange('praise')">
                   <option value="">默认库随机</option>
                 </select>
               </div>
@@ -900,16 +936,16 @@
   <script src="/static/js/config_center.js"></script>
   <script src="/static/js/config_sync.js"></script>
   <script src="/static/js/config_content_expressions.js"></script>
-  <script src="/static/js/config_content_animations.js?v=20260823-module-guard-v1"></script>
+  <script src="/static/js/config_content_animations.js?v=20260823-engagement-v2"></script>
   <script src="/static/js/config_content_motions.js"></script>
   <script src="/static/js/config_content_media.js"></script>
   <script src="/static/js/config_content_courses.js"></script>
-  <script src="/static/js/config_content_phrases.js"></script>
+  <script src="/static/js/config_content_phrases.js?v=20260823-engagement-v2"></script>
   <script src="/static/js/config_content_workbench.js"></script>
   <script src="/static/js/config_algo.js"></script>
-  <script src="/static/robot/js/robot_mapping.js?v=20260813-three-layer-behavior"></script>
-  <script src="/static/robot/js/robot_emotion_mapping.js?v=20260813-three-layer-behavior"></script>
-  <script src="/static/js/config_behavior_sequence.js"></script>
+  <script src="/static/robot/js/robot_mapping.js?v=20260823-engagement-v2"></script>
+  <script src="/static/robot/js/robot_emotion_mapping.js?v=20260823-engagement-v2"></script>
+  <script src="/static/js/config_behavior_sequence.js?v=20260823-engagement-v2"></script>
   <script src="/static/js/config_phase5.js"></script>
   <script src="/static/js/config_latency.js"></script>
 </body>

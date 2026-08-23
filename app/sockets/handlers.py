@@ -479,6 +479,8 @@ class PlayResourceHandler:
                 aux_flags.get('question')
                 or aux_flags.get('praise')
                 or aux_flags.get('hint')
+                or aux_flags.get('attention')
+                or aux_flags.get('reward')
                 or aux_flags.get('socialGreetingIntro')
                 or aux_flags.get('socialGreetingPlay')
                 or aux_flags.get('socialFarewellBye')
@@ -545,7 +547,7 @@ class PlayResourceHandler:
             if is_aux_operation and existing_session:
                 course_type = data.get('courseType', 'default')
                 behavior_animation = None
-                if aux.get('praise'):
+                if aux.get('praise') or aux.get('attention') or aux.get('reward'):
                     try:
                         from app.robot import get_robot_service
                         behavior_animation = get_robot_service().resolve_encouragement_animation(data)
@@ -556,14 +558,15 @@ class PlayResourceHandler:
                             )
                     except Exception as e:
                         logger.error("Failed to resolve encouragement animation: %s", e, exc_info=True)
-                    try:
-                        from app.services.keyword_listen import get_keyword_listen_service
+                    if aux.get('praise'):
+                        try:
+                            from app.services.keyword_listen import get_keyword_listen_service
 
-                        get_keyword_listen_service().note_teacher_praise(
-                            existing_session.session_id
-                        )
-                    except Exception as kw_err:
-                        logger.debug('keyword_listen teacher praise note failed: %s', kw_err)
+                            get_keyword_listen_service().note_teacher_praise(
+                                existing_session.session_id
+                            )
+                        except Exception as kw_err:
+                            logger.debug('keyword_listen teacher praise note failed: %s', kw_err)
 
                 return {
                     'session_id': existing_session.session_id,

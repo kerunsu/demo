@@ -21,6 +21,8 @@ from app.config import BASE_DIR
 OVERLAY_PATH = BASE_DIR / "config" / "dialogue_phrase_selection.yaml"
 SCHEMA_VERSION = 1
 MANAGED_INTENTS = (
+    "attention",
+    "reward",
     "question",
     "hint",
     "praise",

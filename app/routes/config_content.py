@@ -616,6 +616,22 @@ def get_dialogue_phrases():
     from app.dialogue.phrases import base_lines_for
 
     course_types = []
+    global_slots = []
+    for intent, slot_label in (
+        ('attention', '吸引 · 重新集中注意'),
+        ('reward', '夸奖 · 注意力回归'),
+    ):
+        slot = get_slot(base_lines_for(intent, 'global'), intent, 'global')
+        slot['label'] = slot_label
+        global_slots.append(slot)
+    course_types.append({
+        'type': 'global',
+        'label': '全局注意力互动',
+        'courses': [],
+        'courseCount': 0,
+        'slots': global_slots,
+        'globalInteraction': True,
+    })
     for type_key, label in TYPE_EN_TO_CN.items():
         db_type = CourseType.query.filter_by(name=label).first()
         linked_courses = []

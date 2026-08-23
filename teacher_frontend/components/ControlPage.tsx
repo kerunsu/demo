@@ -96,6 +96,9 @@ type SocialAuxKey =
   | 'socialFarewellReply';
 
 type PlayAux = {
+  attention?: boolean;
+  reward?: boolean;
+  behaviorAnimationOverride?: string;
   question?: boolean;
   praise?: boolean;
   hint?: boolean;
@@ -106,7 +109,7 @@ type PlayAux = {
 };
 
 type PlaybackPhase = 'idle' | 'pending' | 'busy';
-type PlayIntent = 'content' | 'question' | 'praise' | 'hint' | 'social';
+type PlayIntent = 'content' | 'attention' | 'reward' | 'question' | 'praise' | 'hint' | 'social';
 
 interface PendingPlayRequest {
   requestId: string;
@@ -145,6 +148,8 @@ function normalizeId(value: unknown): string | null {
 }
 
 function getPlayIntent(aux: PlayAux): PlayIntent {
+  if (aux.attention) return 'attention';
+  if (aux.reward) return 'reward';
   if (aux.question) return 'question';
   if (aux.praise) return 'praise';
   if (aux.hint) return 'hint';
@@ -355,12 +360,41 @@ export function ControlPage({
   const [dialoguePanelVisible, setDialoguePanelVisible] = useState(true);
   const [dialogueControlBusy, setDialogueControlBusy] = useState(false);
   const [dialogueControlNotice, setDialogueControlNotice] = useState<string | null>(null);
+  const [engagementAnimations, setEngagementAnimations] = useState<Array<{ name: string }>>([]);
+  const [rewardAnimation, setRewardAnimation] = useState('');
   const [awaitingResourceReady, setAwaitingResourceReady] = useState(false);
   const [interactiveNextPending, setInteractiveNextPending] = useState(false);
   const lastGameEndRef = useRef<number>(0);
   const matchingGameStartedRef = useRef(false);
   const sequencingGameStartedRef = useRef(false);
   const [currentResolvedFile, setCurrentResolvedFile] = useState<string | null>(null); // 服务端随机选择的真实图片路径
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/api/robot/animations`, { cache: 'no-store', credentials: 'include' })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (cancelled || !payload?.success) return;
+        const playable = (Array.isArray(payload.items) ? payload.items : [])
+          .filter((item: any) => item?.validationStatus === 'compatible' || item?.validationStatus === 'degraded')
+          .map((item: any) => ({ name: String(item.name) }));
+        setEngagementAnimations(playable);
+      })
+      .catch((error) => console.warn('加载夸奖下屏素材失败:', error));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedStudent) {
+      setRewardAnimation('');
+      return;
+    }
+    try {
+      setRewardAnimation(localStorage.getItem(`maimai.reward-animation.${selectedStudent}`) || '');
+    } catch (_) {
+      setRewardAnimation('');
+    }
+  }, [selectedStudent]);
 
   // 音频播放状态
   const [audioStatus, setAudioStatus] = useState<{
@@ -1935,7 +1969,7 @@ export function ControlPage({
         
         // 判断是否是 aux 操作（表扬、提示、社交语音等）
         const isAuxOperation = aux && (
-          aux.question || aux.praise || aux.hint || isSocialAux(aux)
+          aux.question || aux.praise || aux.hint || aux.attention || aux.reward || isSocialAux(aux)
         );
         
         if (sessionId) {
@@ -2675,6 +2709,8 @@ export function ControlPage({
           };
         }
         const intentLabel: Record<Exclude<PlayIntent, 'content'>, string> = {
+          attention: '吸引',
+          reward: '夸奖',
           question: '提问',
           praise: '表扬',
           hint: '提示',
@@ -2725,8 +2761,9 @@ export function ControlPage({
     const targetImage = item?.file || selectedItem.course.file || null;
     
     // 构建完整的 aux 数据
+    const { behaviorAnimationOverride, ...auxFlags } = aux;
     const fullAux = {
-      ...aux,
+      ...auxFlags,
       targetImage: targetImage,  // 添加目标图片路径
       targetText: item?.speechTarget || item?.name || selectedItem.course.title,  // speech_target 优先，空则回退 name
     };
@@ -2750,6 +2787,7 @@ export function ControlPage({
       itemId: itemId,
       courseType: selectedItem.course.type,  // 添加课程类型
       mode,
+      ...(behaviorAnimationOverride ? { behaviorAnimationOverride } : {}),
       ...(selectedItem.course.type === 'ordering'
         ? {
             category: orderingQuestionConfig.category,
@@ -3267,6 +3305,26 @@ export function ControlPage({
     }
     playCurrentItem({ praise: true });
   }, [playCurrentItem]);
+
+  const handleAttention = useCallback(() => {
+    playCurrentItem({ attention: true });
+  }, [playCurrentItem]);
+
+  const handleAttentionReward = useCallback(() => {
+    playCurrentItem({
+      reward: true,
+      ...(rewardAnimation ? { behaviorAnimationOverride: rewardAnimation } : {}),
+    });
+  }, [playCurrentItem, rewardAnimation]);
+
+  const handleRewardAnimationChange = useCallback((value: string) => {
+    setRewardAnimation(value);
+    if (!selectedStudent) return;
+    try {
+      if (value) localStorage.setItem(`maimai.reward-animation.${selectedStudent}`, value);
+      else localStorage.removeItem(`maimai.reward-animation.${selectedStudent}`);
+    } catch (_) { /* private browsing may disable storage */ }
+  }, [selectedStudent]);
 
   const handleSocialVoice = useCallback((key: SocialAuxKey) => {
     playCurrentItem({ [key]: true });
@@ -3922,6 +3980,44 @@ export function ControlPage({
         
         {/* 中央可滚动区域 */}
         <div className="flex-1 overflow-y-auto">
+          <section className="sticky top-0 z-20 mx-4 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-violet-200 bg-white/95 p-3 shadow-md backdrop-blur sm:mx-6" aria-label="全局注意力支持">
+            <div className="mr-auto min-w-[12rem]">
+              <div className="text-sm font-semibold text-gray-900">全局注意力支持</div>
+              <div className="text-xs text-gray-500">不切题、不计分，只触发配置好的语音、动作、表情和下屏</div>
+            </div>
+            <button
+              type="button"
+              onClick={handleAttention}
+              disabled={commandControlsLocked}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 font-semibold text-white shadow-sm transition-transform duration-150 ease-out active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Target className="h-5 w-5" />
+              吸引
+            </button>
+            <div className="flex min-w-[15rem] flex-1 items-center gap-2 sm:flex-none">
+              <label htmlFor="reward-animation" className="whitespace-nowrap text-xs font-medium text-gray-600">夸奖下屏</label>
+              <select
+                id="reward-animation"
+                value={rewardAnimation}
+                onChange={(event) => handleRewardAnimationChange(event.target.value)}
+                className="min-h-11 min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-700 sm:w-48"
+              >
+                <option value="">使用 Server 默认</option>
+                {engagementAnimations.map((item) => (
+                  <option key={item.name} value={item.name}>{item.name}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={handleAttentionReward}
+              disabled={commandControlsLocked}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-rose-500 px-5 py-2.5 font-semibold text-white shadow-sm transition-transform duration-150 ease-out active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Award className="h-5 w-5" />
+              夸奖
+            </button>
+          </section>
           {/* 排序课程专用控制面板 */}
           {currentCourse?.type === 'ordering' && (
             <div className="bg-white rounded-2xl p-4 sm:p-5 mx-4 sm:mx-6 mt-6 shadow-lg border border-gray-200">

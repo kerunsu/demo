@@ -11,7 +11,7 @@
   }
 
   class QuestionInputGate {
-    constructor({ sessionId, timeoutMs = 15000, onUnlock } = {}) {
+    constructor({ sessionId, timeoutMs = 15000, onUnlock, focusElement } = {}) {
       this.sessionId = String(sessionId || "");
       this.timeoutMs = Math.max(3000, Number(timeoutMs) || 15000);
       this.onUnlock = typeof onUnlock === "function" ? onUnlock : null;
@@ -19,6 +19,19 @@
       this.questionKey = "";
       this.generation = 0;
       this.timer = null;
+      this.focusElement = focusElement || null;
+    }
+
+    positionFocus() {
+      const element = typeof this.focusElement === "string"
+        ? document.querySelector(this.focusElement)
+        : this.focusElement;
+      if (!element || typeof element.getBoundingClientRect !== "function") return;
+      const rect = element.getBoundingClientRect();
+      const x = global.innerWidth / 2 - (rect.left + rect.width / 2);
+      const y = global.innerHeight / 2 - (rect.top + rect.height / 2);
+      element.style.setProperty("--question-focus-x", `${Math.round(x)}px`);
+      element.style.setProperty("--question-focus-y", `${Math.round(y)}px`);
     }
 
     lock(questionKey) {
@@ -27,6 +40,9 @@
       this.questionKey = String(questionKey || "");
       this.locked = true;
       if (this.timer != null) global.clearTimeout(this.timer);
+      // Measure the element in its normal layout before the locked transform
+      // is applied, then move it into the true viewport centre.
+      this.positionFocus();
       document.body.classList.remove("question-input-ready");
       document.body.classList.add("question-input-locked");
       this.timer = global.setTimeout(() => {

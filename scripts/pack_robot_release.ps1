@@ -36,8 +36,10 @@ if (-not (Test-Path $EmotionsSrc)) {
 
 # Version
 $gitHash = ""
+$gitDirty = $false
 try {
     $gitHash = (git -C $Root rev-parse --short HEAD 2>$null).Trim()
+    $gitDirty = [bool](git -C $Root status --porcelain 2>$null)
 } catch { }
 $PreviousVersion = ""
 if (Test-Path $VersionFile) {
@@ -46,7 +48,10 @@ if (Test-Path $VersionFile) {
 $Version = $env:ROBOT_RELEASE_VERSION
 if (-not $Version) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmm"
-    if ($gitHash) { $Version = "$stamp-$gitHash" } else { $Version = $stamp }
+    if ($gitHash) {
+        $Version = "$stamp-$gitHash"
+        if ($gitDirty) { $Version = "$Version-dirty" }
+    } else { $Version = $stamp }
 }
 
 if ($env:SKIP_BUILD_EXE -eq "1" -and $PreviousVersion -ne $Version) {
@@ -116,50 +121,104 @@ Write-Host "[pack] baked backendUrl=$($RuntimeConfig.backendUrl)"
 $ZipName = "EIArt-Robot-$Version.zip"
 $ZipPath = Join-Path $OutDir $ZipName
 $LatestPath = Join-Path $OutDir "EIArt-Robot-latest.zip"
-
-if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
-if (Test-Path $LatestPath) { Remove-Item -Force $LatestPath }
+$UpdateZipName = "EIArt-Robot-Update-$Version.zip"
+$UpdateZipPath = Join-Path $OutDir $UpdateZipName
+$UpdateLatestPath = Join-Path $OutDir "EIArt-Robot-Update-latest.zip"
 
 Write-Host "[pack] Compressing $ZipName ..."
-# Prefer Python zipfile: Compress-Archive often fails with "file in use" on freshly built exe
+# Prefer Python zipfile: Compress-Archive often fails with "file in use" on freshly built exe.
+# Every output is written to a temporary sibling and atomically replaced.  The
+# manifest is replaced last, so the Server never observes half a release.
 $PyZip = @"
-import hashlib, json, shutil, zipfile
+import hashlib, json, os, shutil, zipfile
 from pathlib import Path
 from datetime import datetime, timezone
 stage = Path(r'$Stage')
 outdir = Path(r'$OutDir')
 zip_path = outdir / '$ZipName'
 latest = outdir / 'EIArt-Robot-latest.zip'
-if zip_path.exists():
-    zip_path.unlink()
-if latest.exists():
-    latest.unlink()
-with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+update_zip_path = outdir / '$UpdateZipName'
+update_latest = outdir / 'EIArt-Robot-Update-latest.zip'
+zip_tmp = zip_path.with_suffix(zip_path.suffix + '.tmp')
+latest_tmp = latest.with_suffix(latest.suffix + '.tmp')
+update_tmp = update_zip_path.with_suffix(update_zip_path.suffix + '.tmp')
+update_latest_tmp = update_latest.with_suffix(update_latest.suffix + '.tmp')
+manifest_path = outdir / 'manifest.json'
+manifest_tmp = manifest_path.with_suffix('.json.tmp')
+for temporary in (zip_tmp, latest_tmp, update_tmp, update_latest_tmp, manifest_tmp):
+    temporary.unlink(missing_ok=True)
+
+with zipfile.ZipFile(zip_tmp, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
     for p in stage.rglob('*'):
         if p.is_file():
             zf.write(p, arcname=str(Path('EIArt-Robot') / p.relative_to(stage)))
-shutil.copy2(zip_path, latest)
-h = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+
+update_names = {
+    'RobotRuntime.exe',
+    'start.bat',
+    'start_robot_runtime.ps1',
+    'restart.bat',
+    'restart_robot_runtime.ps1',
+    'README.txt',
+    'VERSION',
+    'Open-ChildLanMic.ps1',
+}
+with zipfile.ZipFile(update_tmp, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+    for name in sorted(update_names):
+        p = stage / name
+        if not p.is_file():
+            raise FileNotFoundError(f'update package sidecar missing: {p}')
+        zf.write(p, arcname=str(Path('EIArt-Robot') / name))
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+full_hash = sha256(zip_tmp)
+update_hash = sha256(update_tmp)
+full_size = zip_tmp.stat().st_size
+update_size = update_tmp.stat().st_size
+
+os.replace(zip_tmp, zip_path)
+shutil.copy2(zip_path, latest_tmp)
+os.replace(latest_tmp, latest)
+os.replace(update_tmp, update_zip_path)
+shutil.copy2(update_zip_path, update_latest_tmp)
+os.replace(update_latest_tmp, update_latest)
+
 manifest = {
     'available': True,
     'version': r'''$Version''',
     'buildVersion': r'''$Version''',
     'protocolVersion': '1',
     'sourceCommit': r'''$gitHash''',
+    'sourceDirty': bool(r'''$gitDirty'''.lower() == 'true'),
     'filename': '$ZipName',
     'latest': 'EIArt-Robot-latest.zip',
-    'sha256': h,
-    'sizeBytes': zip_path.stat().st_size,
+    'sha256': full_hash,
+    'sizeBytes': full_size,
+    'updateFilename': '$UpdateZipName',
+    'updateLatest': 'EIArt-Robot-Update-latest.zip',
+    'updateSha256': update_hash,
+    'updateSizeBytes': update_size,
     'builtAt': datetime.now(timezone.utc).isoformat(),
 }
-(outdir / 'manifest.json').write_text(json.dumps(manifest, indent=2) + chr(10), encoding='utf-8')
-print(h)
-print(zip_path.stat().st_size)
+manifest_tmp.write_text(json.dumps(manifest, indent=2) + chr(10), encoding='utf-8')
+os.replace(manifest_tmp, manifest_path)
+print(full_hash)
+print(full_size)
+print(update_hash)
+print(update_size)
 "@
 $PyOut = python -c $PyZip
 if ($LASTEXITCODE -ne 0) { throw "python zip failed" }
 $Hash = ($PyOut | Select-Object -First 1).Trim()
 $Size = [int64](($PyOut | Select-Object -Skip 1 -First 1).Trim())
+$UpdateHash = ($PyOut | Select-Object -Skip 2 -First 1).Trim()
+$UpdateSize = [int64](($PyOut | Select-Object -Skip 3 -First 1).Trim())
 $BuiltAt = (Get-Date).ToUniversalTime().ToString("o")
 
 # Cleanup stage
@@ -167,5 +226,8 @@ Remove-Item -Recurse -Force $StageRoot
 
 Write-Host "[pack] OK: $ZipPath"
 Write-Host "[pack]     $LatestPath"
+Write-Host "[pack]     $UpdateZipPath"
+Write-Host "[pack]     $UpdateLatestPath"
 Write-Host "[pack]     $(Join-Path $OutDir 'manifest.json')"
 Write-Host "[pack] sha256=$Hash size=$Size"
+Write-Host "[pack] update_sha256=$UpdateHash update_size=$UpdateSize"

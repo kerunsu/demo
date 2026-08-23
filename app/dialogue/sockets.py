@@ -273,6 +273,7 @@ def _try_keyword_auto_praise_from_dialogue(
     page_context: Dict[str, Any],
     stt_provider: Optional[str] = None,
     request_id: Optional[str] = None,
+    consume_course_miss: bool = True,
 ) -> bool:
     """Route a curriculum answer before wake/LLM; return whether consumed."""
     transcript = (text or "").strip()
@@ -287,7 +288,7 @@ def _try_keyword_auto_praise_from_dialogue(
             transcript,
         )
         consume_as_course_answer = False
-        if not praised:
+        if not praised and consume_course_miss:
             consume_check = getattr(
                 keyword_service,
                 "should_consume_dialogue_turn",
@@ -550,6 +551,10 @@ def _handle_dialogue_utterance(
             page_context=page_context,
             stt_provider=stt_provider,
             request_id=request_id,
+            # An explicit wake word means the child is addressing the agent.
+            # A curriculum miss must not swallow the remainder before the LLM
+            # has a chance to answer it.  A real course hit still wins.
+            consume_course_miss=False,
         ):
             return
 

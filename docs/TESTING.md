@@ -18,10 +18,19 @@ Required automated gates:
 - realtime phrase library selection, custom additions, per-course isolation,
   non-empty slots and ordering rule variants;
 - naming/onomatopoeia keyword re-arm after hints and course-answer routing that
-  cannot fall through into a blocking general-dialogue behavior;
+  cannot fall through into a blocking general-dialogue behavior, while an
+  explicit wake-with-remainder course miss still reaches the dialogue reply;
 - pairing/ordering assessment versus intervention policies, teacher “下一题”
   separation and repeat-click suppression, committed-frame-only question
-  readiness, correlated speech-ended input gating and reduced-motion support;
+  readiness, centred prompt focus, correlated speech-ended input gating and
+  reduced-motion support;
+- global attention/reward behavior ownership, Server phrase/action/expression/
+  lower-screen configuration, playable-MP4 filtering, automatic-praise
+  animation barriers and per-child teacher selection persistence;
+- Robot Runtime release consistency (manifest size/SHA-256/embedded VERSION),
+  rejection of a stale `latest` alias, lightweight-update selection, downgrade
+  prevention, interrupted-download resume, verified executable staging and
+  verified `/child` browser recovery after packaged startup/update;
 - batch files/ZIP, malformed entries, duplicates, conflicts, rollback and
   asset-reference protection.
 
@@ -31,7 +40,7 @@ microphones; unplug/busy/unwritable disk/Runtime restart; long-run resource
 release; real ASR/LLM/TTS. A source test or fake protocol cannot substitute for
 these gates.
 
-Current 2026-08-23 evidence: `python -m pytest tests -q` passes 417 tests;
+Current 2026-08-24 evidence: `python -m pytest tests -q` passes 436 tests;
 teacher `npm.cmd run build` succeeds; the 8080 teacher entry and hashed assets
 return HTTP 200. The in-app browser passed the real `djt` session, student and
 course selection, one normal prepare and one double-click prepare. Both reached
@@ -51,3 +60,13 @@ rows by exact media ID without mixing the other retries. The page was not
 driven through a live browser, and real cross-machine RTT, microphone/VAD,
 media decode and Robot Runtime latency remain explicit manual measurements
 described in `INTERACTION_LATENCY.md`.
+
+Robot release evidence for `20260824-0036-DJT823`: the full-install and
+lightweight-update ZIPs both pass central-directory/CRC checks, SHA-256, exact
+size, embedded VERSION and child-recovery sidecar validation. The prior package
+passed an isolated packaged-EXE start; live Flask requests advertise this exact
+version and return HTTP 206 for both full and update packages. This build's
+process launch was not repeated because the local execution policy rejected the
+bounded cleanup step.
+Physical in-place replacement of a running classroom Robot Runtime remains a
+robot-machine manual gate.

@@ -37,6 +37,12 @@ real behavior. Social greeting and farewell action slots remain mutually
 exclusive; accepting `silent` does not make either social action available to
 ordinary naming, pairing or ordering courses.
 
+`attention`（教师端“吸引”）和 `reward`（教师端“夸奖”）是所有课程都可用的
+全局注意力状态。它们继续使用 `defaults -> course -> item` 三级行为解析，但
+不会计分、推进课点或打开教师评分框。实时话术由虚拟的 `global` 话术组管理。
+教师端只允许给 `reward` 传递经 Server 校验的 `behaviorAnimationOverride`，并按
+儿童在本机记住选择；`course_map.json` 仍是共享三级事实源，不恢复学生覆盖层。
+
 The production teacher SPA is served by Flask at `/teacher/`; `/teacher` and
 the legacy `/therapist` entry redirect there by default. API, session cookie
 and Socket.IO therefore share the 8080 origin. Port 5173 is only an explicit
@@ -50,6 +56,8 @@ console manages a per-course-type enabled phrase set through
 `GET /api/config/phrases`, `PUT /api/config/phrases/<intent>/<courseType>` and
 `POST /api/config/phrases/<intent>/<courseType>/custom`. Every slot must retain
 at least one enabled phrase; ordering rule questions keep separate variants.
+虚拟的“全局注意力互动”组单独提供可选择、可新增的 `attention` 和 `reward`
+话术槽。
 The Server configuration console exposes device and recording operations as a
 top-level page at `GET /server/config/devices`; the historical
 `/server/config/content?view=phase5` browser URL redirects there.
@@ -90,8 +98,10 @@ new visible question, additional clicks are ignored; a six-second watchdog
 restores the control without issuing another advance. Skipping an unresolved
 question records it as not independently completed and never double-counts an
 intervention attempt that was already wrong. A new question starts in
-prompt-only state. Options
-remain non-interactive and hidden until the correlated
+prompt-only state. The pairing target or ordering rule first moves to the
+viewport centre at an emphasized scale; after correlated question speech ends
+it returns to normal layout, then the options appear. Options remain
+non-interactive and hidden until the correlated
 `robot_speak_ended(intent=question, questionId=...)` event. A stale terminal
 event from the previous ordering/pairing question cannot unlock the new one;
 an eight-second failure watchdog prevents a missing TTS callback from blocking
@@ -115,7 +125,11 @@ After question or hint speech ends the keyword window is armed again. While this
 curriculum answer window is active, a non-matching transcript is surfaced as a
 course-answer miss and must not fall through to general dialogue or reserve a
 long robot behavior. An explicit wake phrase remains higher priority so a child
-can still wake the agent before answering.
+can still wake the agent before answering. When the same utterance contains a
+wake phrase and a remainder, a true course hit still triggers praise, but a
+course miss falls through to the dialogue reply instead of being silently
+consumed. Browser VAD derives its thresholds from a rolling classroom noise
+floor and still requires a continuous confirmation window before upload.
 
 ## Versioned additive APIs
 
@@ -191,12 +205,32 @@ can still wake the agent before answering.
   the display runs any queued formal expression or returns to random idle. A
   successful pool update emits `robot_idle_pool_changed` so an online robot
   display applies the new pool without a page refresh.
+- `GET /api/robot/runtime/version` advertises a release only after the Server
+  verifies the selected ZIP size, SHA-256 and embedded `VERSION` against
+  `releases/robot/manifest.json`. A missing versioned file may use the `latest`
+  alias only when the alias contains those exact declared bytes; an unrelated
+  old package is never exposed with new metadata. Additive `update*` fields
+  describe the lightweight Runtime hot-update archive. The existing
+  `GET /api/robot/runtime/download` remains the full first-install package;
+  `?kind=update` selects the lightweight archive and both variants support HTTP
+  range requests. Robot Runtime `/update/apply` runs asynchronously and
+  `/update/status` reports download, verification, extraction, swap, restart or
+  failure stages; `/update/log` exposes only the local machine's bounded update
+  log through the local-only operations UI.
+- The robot `/child` page posts a local-only heartbeat to Robot Runtime. Runtime
+  health exposes `childPage.online`; packaged startup and online-update restart
+  restore the page and only report readiness after this browser heartbeat. A
+  successful PowerShell process launch alone is not child-page readiness.
 
-For a praise action, `course_map.json` may carry an `animation` filename next
+For `praise`, `reward`, and optionally `attention`, `course_map.json` may carry
+an `animation` filename next
 to `motions`, `emotion`, and `sequence`. The server sends the resolved static
 path as `behaviorAnimation`; the child reports completion through
-`behavior_animation_ended`. When `animation` is empty or missing, the server
-chooses a random MP4 from `static/resources/Animations/`. For one compatibility
+`behavior_animation_ended`. Automatic pairing/ordering praise and teacher
+praise use the same preparation event, start anchor and completion barrier.
+When praise/reward animation is empty, the server chooses a random MP4 that
+passes bounded inspection; invalid placeholders remain visible for repair but
+never enter the random pool. Empty attention animation means no overlay. For one compatibility
 release, `praiseVideo` and `praise_video_ended` remain aliases only; they no
 longer select assets or contain a separate playback implementation.
 
