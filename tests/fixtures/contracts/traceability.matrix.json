@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-12",
-  "sourceSnapshot": "docs/refactor/contracts.snapshot.json",
+  "generatedAt": "2026-08-23",
+  "sourceSnapshot": "tests/fixtures/contracts/contracts.snapshot.json",
   "interfaces": {
     "http": [
       {
@@ -10,7 +10,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "DELETE",
@@ -18,7 +18,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "DELETE",
@@ -26,7 +26,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "DELETE",
@@ -34,7 +34,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "DELETE",
@@ -42,7 +42,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "DELETE",
@@ -50,7 +50,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "DELETE",
@@ -58,7 +58,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "tests/test_robot_asset_tuning.py"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "DELETE",
@@ -66,7 +66,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "DELETE",
@@ -74,7 +74,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "DELETE",
@@ -82,7 +82,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "DELETE",
@@ -90,7 +90,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "DELETE",
@@ -98,7 +98,7 @@
         "owner": "facade + acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "DELETE",
@@ -106,7 +106,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -114,7 +114,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -122,7 +122,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -130,7 +130,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -138,7 +138,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -146,7 +146,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -154,7 +154,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -162,7 +162,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -170,7 +170,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -178,7 +178,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -186,7 +186,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -194,7 +194,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -202,7 +202,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -210,7 +210,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -218,7 +218,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -226,7 +226,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -234,7 +234,7 @@
         "owner": "facade + acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -242,7 +242,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -250,7 +250,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -258,7 +258,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -266,7 +266,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -274,7 +274,7 @@
         "owner": "facade + computation/storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -282,7 +282,7 @@
         "owner": "facade + computation/storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -290,7 +290,7 @@
         "owner": "facade + computation/storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -298,7 +298,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -306,7 +306,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -314,7 +314,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -322,7 +322,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -330,7 +330,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -338,15 +338,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/robot/emotions/idle-pool",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "tests/test_robot_asset_tuning.py"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -354,7 +346,15 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
+      },
+      {
+        "method": "GET",
+        "path": "/api/robot/emotions/idle-pool",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -362,7 +362,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -370,7 +370,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -378,7 +378,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -386,7 +386,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -394,7 +394,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -402,7 +402,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -410,7 +410,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -418,7 +418,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -426,7 +426,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -434,7 +434,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -442,7 +442,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -450,7 +450,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -458,7 +458,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -466,7 +466,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -474,7 +474,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -482,7 +482,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -490,7 +490,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -498,7 +498,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -506,7 +506,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -514,7 +514,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -522,7 +522,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -530,7 +530,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -538,7 +538,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -546,7 +546,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -554,7 +554,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -562,7 +562,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -570,7 +570,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -578,7 +578,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -586,7 +586,7 @@
         "owner": "facade + storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -594,7 +594,15 @@
         "owner": "facade + acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v2/capture/devices/candidates",
+        "owner": "facade + acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -602,7 +610,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -610,7 +618,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -618,7 +626,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -626,7 +634,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -634,7 +642,7 @@
         "owner": "facade + computation",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -642,7 +650,7 @@
         "owner": "facade + computation",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -650,7 +658,23 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v2/timeline/<training_session_id>/latency",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v2/timeline/latency/sessions",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -658,7 +682,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -666,7 +690,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -674,7 +698,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -682,7 +706,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -690,7 +714,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -698,7 +722,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -706,7 +730,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -714,7 +738,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -722,7 +746,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -730,7 +754,15 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
+      },
+      {
+        "method": "GET",
+        "path": "/server/config/latency",
+        "owner": "facade",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -738,7 +770,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -746,7 +778,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -754,7 +786,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -762,7 +794,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -770,7 +802,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -778,7 +810,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -786,7 +818,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -794,7 +826,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -802,7 +834,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -810,7 +842,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -818,7 +850,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -826,7 +858,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -834,7 +866,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -842,7 +874,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PATCH",
@@ -850,7 +882,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PATCH",
@@ -858,7 +890,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PATCH",
@@ -866,7 +898,7 @@
         "owner": "facade + acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -874,7 +906,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -882,7 +914,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -890,7 +922,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -898,7 +930,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -906,7 +938,7 @@
         "owner": "facade + acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -914,7 +946,7 @@
         "owner": "facade + acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -922,7 +954,7 @@
         "owner": "facade + acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -930,7 +962,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -938,7 +970,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -946,7 +978,7 @@
         "owner": "facade + computation/storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -954,7 +986,7 @@
         "owner": "facade + computation/storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -962,7 +994,7 @@
         "owner": "facade + computation/storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -970,7 +1002,7 @@
         "owner": "facade + computation/storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -978,7 +1010,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -986,7 +1018,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -994,7 +1026,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1002,7 +1034,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1010,7 +1042,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1018,7 +1050,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1026,7 +1058,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1034,7 +1066,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1042,7 +1074,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1050,7 +1082,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1058,7 +1090,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1066,7 +1098,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1074,7 +1106,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1082,7 +1114,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1090,7 +1122,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1098,7 +1130,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1106,7 +1138,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1114,7 +1146,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1122,7 +1154,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1130,7 +1162,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1138,7 +1170,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1146,7 +1178,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1154,7 +1186,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1162,7 +1194,7 @@
         "owner": "facade + storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1170,7 +1202,7 @@
         "owner": "facade + storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1178,7 +1210,7 @@
         "owner": "facade + storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1186,7 +1218,15 @@
         "owner": "facade + acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v2/capture/devices/candidates",
+        "owner": "facade + acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1194,23 +1234,7 @@
         "owner": "facade + acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "GET",
-        "path": "/api/v2/capture/devices/candidates",
-        "owner": "facade + acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "tests/test_phase3_device_control_api.py"
-      },
-      {
-        "method": "POST",
-        "path": "/api/v2/capture/devices/candidates",
-        "owner": "facade + acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "tests/test_phase3_device_control_api.py"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1218,7 +1242,7 @@
         "owner": "facade + acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1226,7 +1250,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1234,7 +1258,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1242,7 +1266,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1250,7 +1274,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1258,7 +1282,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1266,7 +1290,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1274,7 +1298,7 @@
         "owner": "facade + computation",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1282,7 +1306,7 @@
         "owner": "facade + computation",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1290,7 +1314,7 @@
         "owner": "facade + computation",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1298,7 +1322,7 @@
         "owner": "facade + computation",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1306,7 +1330,7 @@
         "owner": "facade + computation",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "POST",
@@ -1314,7 +1338,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1322,7 +1346,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1330,7 +1354,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1338,7 +1362,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1346,7 +1370,7 @@
         "owner": "facade + computation/storage",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1354,7 +1378,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1362,7 +1386,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1370,15 +1394,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/robot/emotions/idle-pool",
-        "owner": "facade + storage/computation/acquisition",
-        "sourceSnapshot": true,
-        "runtimeCrossChecked": true,
-        "behaviorFixture": "tests/test_robot_asset_tuning.py"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1386,7 +1402,15 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/robot/emotions/idle-pool",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1394,7 +1418,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1402,7 +1426,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "tests/test_robot_asset_tuning.py"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1410,7 +1434,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1418,7 +1442,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1426,7 +1450,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1434,7 +1458,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1442,7 +1466,7 @@
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1450,7 +1474,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1458,7 +1482,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1466,7 +1490,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1474,7 +1498,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1482,7 +1506,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1490,7 +1514,7 @@
         "owner": "facade",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "PUT",
@@ -1498,7 +1522,7 @@
         "owner": "facade + computation",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
-        "behaviorFixture": "partial; see 01-contract-inventory.md"
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
       },
       {
         "method": "GET",
@@ -1603,6 +1627,13 @@
       },
       {
         "event": "disconnect",
+        "owner": "facade adapter + legacy handler",
+        "sourceSnapshot": true,
+        "runtimeRegistered": true,
+        "behaviorFixture": "partial; see contract tests"
+      },
+      {
+        "event": "dialogue_latency_event",
         "owner": "facade adapter + legacy handler",
         "sourceSnapshot": true,
         "runtimeRegistered": true,

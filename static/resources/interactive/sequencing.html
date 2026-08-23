@@ -143,7 +143,8 @@
       border: 5px solid #f0f9ff;
       box-shadow: var(--shadow-light);
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+                  opacity 160ms cubic-bezier(0.23, 1, 0.32, 1);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -156,9 +157,11 @@
       overflow: hidden;
     }
 
-    .option-card:not(.wrong):not(.correct):not(.correct-lvl3):hover {
-      transform: translateY(-8px);
-      box-shadow: var(--shadow-hover);
+    @media (hover: hover) and (pointer: fine) {
+      .option-card:not(.wrong):not(.correct):not(.correct-lvl3):hover {
+        transform: translateY(-8px);
+        box-shadow: var(--shadow-hover);
+      }
     }
 
     .option-card:not(.wrong):not(.correct):not(.correct-lvl3):active {
@@ -191,10 +194,45 @@
 
     .option-card.wrong {
       opacity: 0.3 !important;
-      filter: grayscale(100%) !important;
-      transform: scale(0.7) !important;
-      transition: opacity 0.5s ease, filter 0.5s ease, transform 0.5s ease !important;
+      transform: scale(0.82) !important;
+      transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+                  transform 180ms cubic-bezier(0.23, 1, 0.32, 1) !important;
       pointer-events: none;
+    }
+
+    .rule-text {
+      transition: transform 240ms cubic-bezier(0.77, 0, 0.175, 1);
+      transform-origin: center;
+    }
+
+    .options-grid {
+      transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+                  transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    body.question-input-locked .rule-text { transform: scale(1.12); }
+    body.question-input-locked .options-grid {
+      opacity: 0;
+      transform: scale(0.98);
+      pointer-events: none;
+    }
+    body.question-input-ready .rule-text { transform: scale(1); }
+    body.question-input-ready .options-grid {
+      opacity: 1;
+      transform: scale(1);
+      pointer-events: auto;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .rule-text { transform: none !important; transition: none !important; }
+      .options-grid {
+        transform: none !important;
+        transition: opacity 160ms ease !important;
+      }
+      .option-card {
+        animation: none !important;
+        transition: opacity 120ms ease !important;
+      }
     }
 
     .option-card.dimmed {
@@ -370,6 +408,7 @@
     </div>
   </div>
 
+  <script src="/static/js/interactive_question_state.js?v=20260823-1"></script>
   <script>
     // ==================== 粒子特效系统 ====================
     const canvas = document.getElementById('confetti-canvas');
@@ -480,6 +519,7 @@
     const itemId = urlParams.get('itemId');
     const trainingSessionId = urlParams.get('trainingSessionId');
     const questionId = urlParams.get('questionId');
+    const operationMode = window.InteractiveQuestionState.normalizeMode(urlParams.get('mode'));
 
     // ==================== 调试日志 ====================
     function debugLog(message) {
@@ -552,7 +592,7 @@
       }
       if (eventName === 'sequencing_next') {
         debugLog('收到下一题指令');
-        window.game.nextQuestion();
+        window.game.forceNextQuestion();
         return;
       }
       if (eventName === 'sequencing_hint') {
@@ -563,6 +603,15 @@
 
     window.addEventListener('message', (event) => {
       const message = event && event.data;
+      if (
+        isEmbeddedInteractiveFrame &&
+        event.source === window.parent &&
+        event.origin === window.location.origin &&
+        message && message.type === 'robot_speak_ended'
+      ) {
+        window.game?.questionGate?.handleSpeakEnded(message);
+        return;
+      }
       if (
         !isEmbeddedInteractiveFrame ||
         event.source !== window.parent ||
@@ -613,6 +662,10 @@
       socket.on('sequencing_hint', (data) => {
         if (!isEmbeddedInteractiveFrame) applySequencingControl('sequencing_hint', data);
       });
+
+      socket.on('robot_speak_ended', (data) => {
+        if (!isEmbeddedInteractiveFrame) window.game?.questionGate?.handleSpeakEnded(data);
+      });
     }
 
     // ==================== 排序游戏类 ====================
@@ -627,6 +680,7 @@
         this.isGameActive = false;
         
         this.currentQuestion = 0;
+        this.activeQuestionNumber = 0;
         this.maxQuestions = 16;
         this.questionsPerCategory = 4;
         
@@ -645,6 +699,7 @@
         
         // 图片数据
         this.imageGroups = {};
+        this.imageGroupsByCategory = {};
         
         // 当前题目数据
         this.options = [];
@@ -655,6 +710,16 @@
         this.isProcessing = false;
         this.questionStartAt = null;
         this.responseTimesMs = [];
+        this.operationMode = operationMode;
+        this.hasAnsweredWrong = false;
+        this.activeQuestionResolved = false;
+        this.questionGate = new window.InteractiveQuestionState.QuestionInputGate({
+          sessionId,
+          timeoutMs: 8000,
+          onUnlock: () => {
+            if (this.questionStartAt == null) this.questionStartAt = Date.now();
+          },
+        });
         
         // DOM 元素
         this.overlay = document.getElementById('gameOverlay');
@@ -722,6 +787,7 @@
         }
         
         await this.loadImages();
+        window.setTimeout(() => this.preloadRemainingCategories(), 0);
         this.generateQuestion();
         this.hideOverlay();
       }
@@ -752,12 +818,19 @@
         return { correct, wrong, answered, accuracy, avgResponseMs };
       }
       
-      async loadImages() {
+      async loadImages(category = this.category, { activate = true } = {}) {
         try {
-          const response = await fetch(`/api/getSequencingImages?category=${this.category}`);
-          const data = await response.json();
-          this.imageGroups = data.groups;
-          Object.values(this.imageGroups || {}).flat().forEach((item) => {
+          let groups = this.imageGroupsByCategory[category];
+          if (!groups) {
+            const response = await fetch(`/api/getSequencingImages?category=${category}`, {
+              cache: 'default',
+            });
+            const data = await response.json();
+            groups = data.groups || {};
+            this.imageGroupsByCategory[category] = groups;
+          }
+          if (activate && this.category === category) this.imageGroups = groups;
+          Object.values(groups || {}).flat().forEach((item) => {
             const src = item && (item.path || item.src || item.file);
             if (!src) return;
             const image = new Image();
@@ -765,15 +838,29 @@
             image.src = src;
             image.decode?.().catch(() => {});
           });
-          debugLog(`已加载 ${Object.keys(this.imageGroups).length} 组图片`);
+          debugLog(`已加载 ${category} 的 ${Object.keys(groups).length} 组图片`);
+          return groups;
         } catch (error) {
           debugLog(`加载图片失败: ${error}`);
+          return {};
         }
+      }
+
+      preloadRemainingCategories() {
+        ['size', 'length', 'height', 'count']
+          .filter((category) => category !== this.category)
+          .forEach((category) => {
+            this.loadImages(category, { activate: false }).catch(() => {});
+          });
       }
       
       async generateQuestion() {
         // 清除提示效果
         this.clearHintEffects();
+        this.hasAnsweredWrong = false;
+        this.activeQuestionResolved = false;
+        this.wrongAttemptsThisQuestion = 0;
+        this.activeQuestionNumber = this.currentQuestion + 1;
 
         await this.applyPendingConfig();
         
@@ -864,6 +951,16 @@
         this.ruleText.classList.remove('bounce-big');
         document.body.classList.remove('flash-bg');
         
+        this.questionGate.lock(this.buildPageContext().questionId);
+        this.renderOptionCards();
+
+        this.isProcessing = false;
+        this.questionStartAt = null;
+        this.publishPageContext();
+        this.emitQuestionReady();
+      }
+
+      renderOptionCards() {
         // 清空选项区（布局由 CSS grid 控制，避免内联 flex 覆盖样式）
         this.optionsGrid.innerHTML = '';
         this.optionsGrid.removeAttribute('style');
@@ -884,12 +981,6 @@
           
           this.optionsGrid.appendChild(card);
         });
-        
-        this.isProcessing = false;
-        this.questionStartAt = Date.now();
-        this.wrongAttemptsThisQuestion = 0;
-        this.publishPageContext();
-        this.emitQuestionReady();
       }
 
       buildPageContext() {
@@ -923,10 +1014,11 @@
           options: opts,
           optionsLeftToRight: opts.map((o) => o.label),
           wrongAttempts: this.wrongAttemptsThisQuestion || 0,
-          questionIndex: (this.currentQuestion || 0) + 1,
+          mode: this.operationMode,
+          questionIndex: this.activeQuestionNumber || (this.currentQuestion || 0) + 1,
           totalQuestions: this.maxQuestions,
           // Per-item id so server hard-ask identity never collapses across items
-          questionId: `${questionId || courseId || 'ordering'}_q${(this.currentQuestion || 0) + 1}`,
+          questionId: `${questionId || courseId || 'ordering'}_q${this.activeQuestionNumber || (this.currentQuestion || 0) + 1}`,
           itemId: itemId || null,
           correctPosition: correctIndex >= 0 ? correctIndex + 1 : null,
           correctLabel: correctIndex >= 0 ? opts[correctIndex].label : null,
@@ -946,7 +1038,7 @@
         } catch (e) {
           debugLog(`postMessage pageContext 失败: ${e}`);
         }
-        if (socket && socket.connected && this.sessionId) {
+        if (!isEmbeddedInteractiveFrame && socket && socket.connected && this.sessionId) {
           socket.emit('interactive_page_context', {
             sessionId: this.sessionId,
             courseType: 'ordering',
@@ -955,7 +1047,7 @@
         }
       }
 
-      waitForFeedbackSpeech(intent, { minMs = 900, maxMs = 2800 } = {}) {
+      waitForFeedbackSpeech(intent, { minMs = 900, maxMs = 6000 } = {}) {
         return new Promise((resolve) => {
           const start = Date.now();
           let settled = false;
@@ -1005,13 +1097,9 @@
           return;
         }
         this.sessionId = sid;
-        if (!socket || !socket.connected) {
-          debugLog('提问就绪等待 socket 连接');
-          return;
-        }
         const pageContext = this.buildPageContext();
         const askSeq = this._questionReadySeq || 0;
-        socket.emit('sequencing_question_ready', {
+        const payload = {
           sessionId: sid,
           trainingSessionId: trainingSessionId,
           questionId: pageContext.questionId,
@@ -1022,13 +1110,26 @@
           askSeq,
           prompt: pageContext.prompt,
           pageContext,
-        });
+        };
+        if (isEmbeddedInteractiveFrame) {
+          window.parent.postMessage({
+            type: 'interactive_question_ready',
+            eventName: 'sequencing_question_ready',
+            payload,
+          }, window.location.origin);
+        } else {
+          if (!socket || !socket.connected) {
+            debugLog('提问就绪等待 socket 连接');
+            return;
+          }
+          socket.emit('sequencing_question_ready', payload);
+        }
         this._pendingQuestionReady = false;
         debugLog(`提问语音: ${this.category}/${this.rule} q=${pageContext.questionIndex} seq=${askSeq}`);
       }
       
       selectOption(option) {
-        if (this.isProcessing) return;
+        if (this.isProcessing || this.questionGate.locked) return;
         this.isProcessing = true;
 
         if (this.questionStartAt != null) {
@@ -1038,16 +1139,26 @@
         
         const isCorrect = option.path === this.correctOption.path;
         
-        // 更新统计
-        this.categoryStats[this.category][isCorrect ? 'correct' : 'wrong']++;
-        this.currentQuestion++;
-        this.currentCategoryCount++;
-        if (!isCorrect) {
-          this.wrongAttemptsThisQuestion = (this.wrongAttemptsThisQuestion || 0) + 1;
+        const isAssessment = this.operationMode === window.InteractiveQuestionState.MODE_ASSESSMENT;
+        if (!isCorrect) this.wrongAttemptsThisQuestion = (this.wrongAttemptsThisQuestion || 0) + 1;
+
+        if (isAssessment) {
+          this.categoryStats[this.category][isCorrect ? 'correct' : 'wrong']++;
+          this.currentQuestion++;
+          this.currentCategoryCount++;
+          this.activeQuestionResolved = true;
+        } else if (isCorrect) {
+          if (!this.hasAnsweredWrong) this.categoryStats[this.category].correct++;
+          this.currentQuestion++;
+          this.currentCategoryCount++;
+          this.activeQuestionResolved = true;
+        } else if (!this.hasAnsweredWrong) {
+          this.categoryStats[this.category].wrong++;
+          this.hasAnsweredWrong = true;
         }
         
         // 显示反馈动画
-        this.showFeedback(option, isCorrect);
+        this.showFeedback(option, isCorrect, isAssessment);
 
         const progress = this._computeProgress();
         const pageContext = this.buildPageContext();
@@ -1058,7 +1169,7 @@
         const token = (this._advanceToken = (this._advanceToken || 0) + 1);
         const waitSpeech = this.waitForFeedbackSpeech(speakIntent, {
           minMs: 900,
-          maxMs: 2800,
+          maxMs: 6000,
         });
 
         // 上报状态（含部分进度正确率与反应时，中途退出也可出分）
@@ -1070,7 +1181,7 @@
           category: this.category,
           rule: this.rule,
           isCorrect,
-          questionIndex: this.currentQuestion,
+          questionIndex: this.activeQuestionNumber,
           categoryStats: this.categoryStats,
           accuracy: progress.accuracy,
           correct: progress.correct,
@@ -1085,12 +1196,21 @@
           pageContext,
           wrongAttempts: this.wrongAttemptsThisQuestion || 0,
           prompt: pageContext.prompt,
+          mode: this.operationMode,
         });
 
         debugLog(`第${this.currentQuestion}题: ${isCorrect ? '正确' : '错误'}`);
 
         waitSpeech.then(() => {
           if (token !== this._advanceToken) return;
+          if (!isCorrect && !isAssessment) {
+            // 干预模式：同一题换位后继续，首次答错仍保留在统计中。
+            if (this.options.length > 1) this.options = [this.options[1], this.options[0]];
+            this.renderOptionCards();
+            this.publishPageContext();
+            this.isProcessing = false;
+            return;
+          }
           if (this.currentQuestion >= this.maxQuestions) {
             this.finishGame();
           } else {
@@ -1099,7 +1219,7 @@
         });
       }
       
-      showFeedback(selectedOption, isCorrect) {
+      showFeedback(selectedOption, isCorrect, isAssessment = true) {
         const cards = this.optionsGrid.querySelectorAll('.option-card');
         cards.forEach(card => {
           if (card.dataset.path === selectedOption.path) {
@@ -1108,7 +1228,7 @@
             } else {
               card.classList.add('wrong');
             }
-          } else {
+          } else if (isCorrect || isAssessment) {
             card.classList.add('wrong');
           }
         });
@@ -1154,8 +1274,28 @@
       nextQuestion() {
         // 教师强制下一题：作废进行中的语音等待并立即出题
         this._advanceToken = (this._advanceToken || 0) + 1;
+        this.questionGate.cancel();
         this.isProcessing = false;
         this.generateQuestion();
+      }
+
+      forceNextQuestion() {
+        if (!this.isGameActive) return;
+        this._advanceToken = (this._advanceToken || 0) + 1;
+        this.questionGate.cancel();
+        if (!this.activeQuestionResolved) {
+          // 教师跳过也代表本题未独立完成；与配对课程保持同一评分语义，
+          // 已经答错过的干预题不重复累计。
+          if (!this.hasAnsweredWrong) {
+            this.categoryStats[this.category].wrong++;
+            this.hasAnsweredWrong = true;
+          }
+          this.currentQuestion++;
+          this.currentCategoryCount++;
+          this.activeQuestionResolved = true;
+        }
+        if (this.currentQuestion >= this.maxQuestions) this.finishGame();
+        else this.generateQuestion();
       }
       
       finishGame() {

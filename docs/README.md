@@ -18,7 +18,5 @@
 - `current/教师端开课与机器人多模态同步重构需求.md`：教师端与多模态同步需求。
 - `current/Server控制端代码审查与优化说明.md`：控制端真值和交互状态说明。
 
-## 历史资料
-
-`archive/` 只用于追溯旧规划、迁移手册和 UI 原型，不作为当前实现依据。动作编辑器的
-JSON 格式和示例已归位到 `doll/DollSer/docs/` 与 `doll/DollSer/example/`。
+历史阶段、迁移和验收过程由 Git 历史保存，不在当前工作树保留。动作编辑器的 JSON
+格式和示例位于 `doll/DollSer/docs/` 与 `doll/DollSer/example/`。

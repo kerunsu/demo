@@ -67,6 +67,8 @@ interface ControlPageProps {
   initialTrainingSessionId?: string | null;
   /** 开课录制门已通过（服务器已收到视频） */
   readinessPassed?: boolean;
+  /** 评估一次作答即定结果；训练答错后继续正向引导。 */
+  mode: 'assessment' | 'training';
   /** Read-only ControlPage preview, available only under Vite development. */
   previewMode?: boolean;
   /** In-memory course fixtures used by the read-only preview. */
@@ -281,6 +283,7 @@ export function ControlPage({
   selectedStudent,
   initialTrainingSessionId = null,
   readinessPassed = false,
+  mode,
   previewMode = false,
   previewCourses = EMPTY_PREVIEW_COURSES,
 }: ControlPageProps) {
@@ -309,6 +312,7 @@ export function ControlPage({
   } | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const latencyProbeTimerRef = useRef<number | null>(null);
+  const teacherLatencyRef = useRef<number | null>(null);
   
   // 分析结果状态
   const [matchScore, setMatchScore] = useState<number | null>(null);
@@ -352,6 +356,7 @@ export function ControlPage({
   const [dialogueControlBusy, setDialogueControlBusy] = useState(false);
   const [dialogueControlNotice, setDialogueControlNotice] = useState<string | null>(null);
   const [awaitingResourceReady, setAwaitingResourceReady] = useState(false);
+  const [interactiveNextPending, setInteractiveNextPending] = useState(false);
   const lastGameEndRef = useRef<number>(0);
   const matchingGameStartedRef = useRef(false);
   const sequencingGameStartedRef = useRef(false);
@@ -484,6 +489,13 @@ export function ControlPage({
   const trainingSessionIdRef = useRef<string | null>(initialTrainingSessionId);
   const currentSessionIdRef = useRef<string | null>(null);
   const currentQuestionIdRef = useRef<string | null>(null);
+  const interactiveQuestionIdRef = useRef<string | null>(null);
+  const interactiveNextPendingRef = useRef<{
+    courseType: 'pairing' | 'ordering';
+    previousQuestionId: string | null;
+    requestId: string;
+    timeoutId: number | null;
+  } | null>(null);
   const questionStartedAtRef = useRef<number | null>(null);
   const completionAtRef = useRef<number | null>(null);
   const advanceLockRef = useRef(false);
@@ -508,6 +520,27 @@ export function ControlPage({
     delayedTimersRef.current.clear();
     behaviorUnlockTimerRef.current = null;
   }, []);
+
+  const completeInteractiveNext = useCallback((
+    courseType: 'pairing' | 'ordering',
+    nextQuestionId?: string | null,
+  ) => {
+    const pending = interactiveNextPendingRef.current;
+    if (!pending || pending.courseType !== courseType) return false;
+    const normalizedNextQuestionId = normalizeId(nextQuestionId);
+    if (
+      pending.previousQuestionId &&
+      normalizedNextQuestionId &&
+      pending.previousQuestionId === normalizedNextQuestionId
+    ) {
+      return false;
+    }
+    clearScheduledTimeout(pending.timeoutId);
+    interactiveNextPendingRef.current = null;
+    setInteractiveNextPending(false);
+    setPlaybackNotice(null);
+    return true;
+  }, [clearScheduledTimeout]);
 
   const clearContentResourceWait = useCallback((expectedRequestId?: string | null) => {
     const wait = contentResourceWaitRef.current;
@@ -1373,7 +1406,11 @@ export function ControlPage({
 
       socket.on('teacher_latency_probe_ack', (data: any) => {
         const sent = Number(data?.clientAtMs || 0);
-        if (sent > 0) setTeacherLatencyMs(Math.max(0, Date.now() - sent));
+        if (sent > 0) {
+          const measured = Math.max(0, Date.now() - sent);
+          teacherLatencyRef.current = measured;
+          setTeacherLatencyMs(measured);
+        }
       });
 
       socket.on('connect_error', (error) => {
@@ -1923,6 +1960,13 @@ export function ControlPage({
             currentQuestionIdRef.current = nextQuestionId;
             questionStartedAtRef.current = Date.now();
             completionAtRef.current = null;
+            interactiveQuestionIdRef.current = null;
+            const pendingNext = interactiveNextPendingRef.current;
+            if (pendingNext) {
+              clearScheduledTimeout(pendingNext.timeoutId);
+              interactiveNextPendingRef.current = null;
+              setInteractiveNextPending(false);
+            }
           }
           
           // 保存服务端返回的真实图片路径（用于显示缩略图）
@@ -1982,18 +2026,24 @@ export function ControlPage({
           correctCount: correctCount,
           wrongCount: wrongCount,
           accuracy: accuracy,
-          isCorrect: data.isCorrect || false,
+          isCorrect: data.selectedCorrect ?? data.isCorrect ?? false,
           consecutiveCorrect: data.consecutiveCorrect || 0,
           isSimplifiedMode: data.isSimplifiedMode || false
         });
+      });
+
+      socket.on('matching_question_ready', (data: any) => {
+        if (!eventMatchesCurrentSession(data)) return;
+        const readyQuestionId = normalizeId(
+          data?.questionId ?? data?.pageContext?.questionId,
+        );
+        if (readyQuestionId) interactiveQuestionIdRef.current = readyQuestionId;
+        completeInteractiveNext('pairing', readyQuestionId);
       });
       
       socket.on('matching_game_end', (data: any) => {
         if (!eventMatchesCurrentSession(data)) return;
         console.log('🏁 配对游戏结束:', data);
-        const endedSessionId = normalizeId(data?.sessionId ?? data?.session_id);
-        const endedCourseIndex = currentCourseIndexRef.current;
-        const endedItemIndex = currentItemIndexRef.current;
         setMatchingGameStarted(false);
         matchingGameStartedRef.current = false;
         lastGameEndRef.current = Date.now();
@@ -2006,18 +2056,7 @@ export function ControlPage({
             accuracy: data.accuracy
           } : null);
         }
-        // 游戏结束后自动触发下一个（延迟2秒）
-        scheduleTimeout(() => {
-          if (
-            currentSessionIdRef.current !== endedSessionId ||
-            currentCourseIndexRef.current !== endedCourseIndex ||
-            currentItemIndexRef.current !== endedItemIndex
-          ) {
-            return;
-          }
-          console.log('⏭️ 配对游戏结束，自动跳转下一个');
-          handleNextRef.current('matching_end');
-        }, 2000);
+        setPlaybackNotice('配对题组已完成；确认结果后可点击“下一个”进入下一课点');
       });
 
       // 排序游戏事件监听
@@ -2082,6 +2121,11 @@ export function ControlPage({
         const pageContext = data?.pageContext && typeof data.pageContext === 'object'
           ? data.pageContext
           : {};
+        const readyQuestionId = normalizeId(
+          data?.questionId ?? pageContext.questionId,
+        );
+        if (readyQuestionId) interactiveQuestionIdRef.current = readyQuestionId;
+        completeInteractiveNext('ordering', readyQuestionId);
         const category = String(data?.category || pageContext.category || '').trim();
         const rule = String(data?.rule || pageContext.rule || '').trim();
         if (!category || !rule) return;
@@ -2111,9 +2155,6 @@ export function ControlPage({
       socket.on('sequencing_game_end', (data: any) => {
         if (!eventMatchesCurrentSession(data)) return;
         console.log('🏁 排序游戏结束:', data);
-        const endedSessionId = normalizeId(data?.sessionId ?? data?.session_id);
-        const endedCourseIndex = currentCourseIndexRef.current;
-        const endedItemIndex = currentItemIndexRef.current;
         setSequencingGameStarted(false);
         sequencingGameStartedRef.current = false;
         lastGameEndRef.current = Date.now();
@@ -2128,18 +2169,7 @@ export function ControlPage({
           });
         }
         
-        // 游戏结束后自动触发下一个（延迟2秒）
-        scheduleTimeout(() => {
-          if (
-            currentSessionIdRef.current !== endedSessionId ||
-            currentCourseIndexRef.current !== endedCourseIndex ||
-            currentItemIndexRef.current !== endedItemIndex
-          ) {
-            return;
-          }
-          console.log('⏭️ 排序游戏结束，自动跳转下一个');
-          handleNextRef.current('ordering_end');
-        }, 2000);
+        setPlaybackNotice('排序题组已完成；确认结果后可点击“下一个”进入下一课点');
       });
       
       // 关键词自动表扬：与教师点「表扬」完全同路（play_resource → 动画/表情/动作 → 打分 → 切题）
@@ -2269,6 +2299,8 @@ export function ControlPage({
       contentResourceWaitRef.current = null;
       awaitingResourceReadyRef.current = false;
       contentRequestRef.current = null;
+      interactiveQuestionIdRef.current = null;
+      interactiveNextPendingRef.current = null;
       praiseRequestContextRef.current = null;
       pendingPraiseAdvanceRef.current = null;
       praiseRatingTimerRef.current = null;
@@ -2319,6 +2351,7 @@ export function ControlPage({
     clearAllScheduledTimeouts,
     clearContentResourceWait,
     clearScheduledTimeout,
+    completeInteractiveNext,
     flushDeferredAutoQuestion,
     holdPlaybackGate,
     markResourceReady,
@@ -2414,6 +2447,55 @@ export function ControlPage({
       console.log('💡 发送配对游戏提示');
     }
   }, [currentSessionId]);
+
+  // “下一题”只切换配对/排序内部题目；“下一个”仍负责切换课点。
+  const handleInteractiveNextQuestion = useCallback(() => {
+    const selected = selectedCourseItemsRef.current[currentCourseIndexRef.current];
+    const courseType = selected?.course?.type;
+    const eventName = courseType === 'pairing'
+      ? 'matching_next'
+      : courseType === 'ordering'
+        ? 'sequencing_next'
+        : null;
+    const activeSocket = socketRef.current;
+    const sessionId = currentSessionIdRef.current;
+    if (!eventName || !activeSocket?.connected || !sessionId) {
+      setPlaybackNotice('当前课程尚未准备好下一题');
+      return;
+    }
+    if (interactiveNextPendingRef.current) {
+      setPlaybackNotice('下一题正在准备，请不要连续点击');
+      return;
+    }
+    const requestId = createClientRequestId(eventName);
+    const interactiveCourseType = selected?.course?.type as 'pairing' | 'ordering';
+    interactiveNextPendingRef.current = {
+      courseType: interactiveCourseType,
+      previousQuestionId: interactiveQuestionIdRef.current,
+      requestId,
+      timeoutId: null,
+    };
+    setInteractiveNextPending(true);
+    const timeoutId = scheduleTimeout(() => {
+      const pending = interactiveNextPendingRef.current;
+      if (!pending || pending.requestId !== requestId) return;
+      interactiveNextPendingRef.current = null;
+      setInteractiveNextPending(false);
+      setPlaybackNotice('下一题暂未显示，已解除按钮锁定；可重试，不会跳过更多题目');
+    }, 6000);
+    if (interactiveNextPendingRef.current?.requestId === requestId) {
+      interactiveNextPendingRef.current.timeoutId = timeoutId;
+    }
+    activeSocket.emit(eventName, {
+      sessionId,
+      trainingSessionId: trainingSessionIdRef.current || undefined,
+      questionId: interactiveQuestionIdRef.current || currentQuestionIdRef.current || undefined,
+      mode,
+      requestId,
+      source: 'teacher_next_question',
+    });
+    setPlaybackNotice('正在进入下一题…');
+  }, [mode, scheduleTimeout]);
 
   // 排序游戏：启动游戏
   const handleStartSequencingGame = useCallback(() => {
@@ -2656,13 +2738,18 @@ export function ControlPage({
     ) || sequencingConfigRef.current;
 
     const requestId = options.requestId || createClientRequestId(`play-${intent}`);
+    const clientCommandAtMs = Date.now();
     const playData = {
       action: "play",
       requestId,
+      clientCommandAtMs,
+      teacherNetworkRttMs: teacherLatencyRef.current,
+      clientTransport: (socketRef.current.io.engine.transport as any)?.name || 'unknown',
       studentId,
       courseId: selectedItem.courseId,
       itemId: itemId,
       courseType: selectedItem.course.type,  // 添加课程类型
+      mode,
       ...(selectedItem.course.type === 'ordering'
         ? {
             category: orderingQuestionConfig.category,
@@ -2738,6 +2825,7 @@ export function ControlPage({
     scheduleTimeout,
     selectedStudent,
     setPlaybackGate,
+    mode,
   ]);
 
   useEffect(() => {
@@ -4106,15 +4194,25 @@ export function ControlPage({
               </>
             ) : (
               <>
-                {/* 提问按钮 */}
-                <button
-                  onClick={() => playCurrentItem({ question: true })}
-                  disabled={commandControlsLocked}
-                  className="flex flex-col items-center justify-center w-48 h-48 bg-yellow-500 hover:bg-yellow-600 text-white rounded-3xl shadow-2xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                >
-                  <Lightbulb className="w-16 h-16 mb-4" />
-                  <span className="text-2xl">提问</span>
-                </button>
+                {currentCourse?.type === 'pairing' || currentCourse?.type === 'ordering' ? (
+                  <button
+                    onClick={handleInteractiveNextQuestion}
+                    disabled={commandControlsLocked || interactiveNextPending}
+                    className="flex flex-col items-center justify-center w-48 h-48 bg-sky-600 hover:bg-sky-700 text-white rounded-3xl shadow-2xl transition-transform duration-150 ease-out active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ArrowRight className="w-16 h-16 mb-4" />
+                    <span className="text-2xl">{interactiveNextPending ? '切题中…' : '下一题'}</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => playCurrentItem({ question: true })}
+                    disabled={commandControlsLocked}
+                    className="flex flex-col items-center justify-center w-48 h-48 bg-yellow-500 hover:bg-yellow-600 text-white rounded-3xl shadow-2xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  >
+                    <Lightbulb className="w-16 h-16 mb-4" />
+                    <span className="text-2xl">提问</span>
+                  </button>
+                )}
 
                 {/* 提示按钮 */}
                 <button

@@ -10,7 +10,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SNAPSHOT = ROOT / "docs" / "refactor" / "contracts.snapshot.json"
+SNAPSHOT = ROOT / "tests" / "fixtures" / "contracts" / "contracts.snapshot.json"
 
 
 def _python_sources():
@@ -98,9 +98,9 @@ def test_phase1_runtime_url_map_matches_source_snapshot(phase1_runtime):
     expected = source_routes | {
         ("GET", "/static/<path:filename>"),
     }
-    assert len(source_routes) == snapshot["routeCount"] == 187
+    assert len(source_routes) == snapshot["routeCount"] == 190
     assert runtime_routes == expected
-    assert len(runtime_routes) == snapshot["runtimeUrlRuleCountObserved"] == 188
+    assert len(runtime_routes) == snapshot["runtimeUrlRuleCountObserved"] == 191
     assert snapshot["runtimeImplicitRoutes"] == ["GET /static/<path:filename>"]
 
 
@@ -111,6 +111,6 @@ def test_phase1_socket_registration_and_emit_scan_match_snapshot(phase1_runtime)
 
     assert source_events == set(snapshot["socketDecoratedEvents"])
     assert actual_events == source_events
-    assert len(actual_events) == snapshot["socketDecoratorCount"] == 68
+    assert len(actual_events) == snapshot["socketDecoratorCount"] == 69
     assert source_emits == set(snapshot["observedServerEmits"])
     assert len(source_emits) == 71

@@ -582,6 +582,9 @@
     ]
   },
   "motionMeta": {
+    "空动作": {
+      "speedMultiplier": 0.5
+    },
     "01-打招呼": {
       "sourceFormat": "dollser-motion",
       "sourceVersion": 2,

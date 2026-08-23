@@ -38,6 +38,7 @@ wheels/
 
 # 日志文件
 logs/
+static/logs/
 *.log
 
 # 数据库

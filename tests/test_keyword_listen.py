@@ -98,6 +98,29 @@ def test_teacher_praise_disarms():
     assert hit == '香蕉'
 
 
+def test_hint_end_rearms_same_course_answer_window():
+    svc = KeywordListenService()
+    sid = 'sess-kw-hint'
+    svc.prepare(sid, course_type='onomatopoeia', item_id=5, speech_target='汪')
+    assert svc.arm_after_question(sid, intent='question', item_id=5)
+    svc.disarm(sid, reason='system_speak:hint')
+    assert svc.evaluate_transcript(sid, '汪')[0] == 'suppressed_echo'
+    assert svc.arm_after_question(sid, intent='hint', item_id=5)
+    assert svc.evaluate_transcript(sid, '汪') == ('hit', '汪')
+
+
+def test_active_course_answer_window_consumes_miss_and_duplicate_tail():
+    svc = KeywordListenService()
+    sid = 'sess-kw-route'
+    svc.prepare(sid, course_type='naming', item_id=8, name='小狗')
+    assert svc.should_consume_dialogue_turn(sid) is False
+    assert svc.arm_after_question(sid, intent='question', item_id=8)
+    assert svc.evaluate_transcript(sid, '我不知道')[0] == 'miss'
+    assert svc.should_consume_dialogue_turn(sid) is True
+    svc.note_teacher_praise(sid)
+    assert svc.should_consume_dialogue_turn(sid) is True
+
+
 def test_timeout_disarms(monkeypatch):
     svc = KeywordListenService()
     sid = 'sess-kw-3'

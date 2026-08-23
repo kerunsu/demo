@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -202,21 +203,44 @@ def transcribe_wav_bytes(wav_bytes: bytes) -> Dict[str, Any]:
     if not wav_bytes or len(wav_bytes) < 64:
         return {"ok": False, "transcript": "", "provider": None, "error": "audio_too_short"}
 
+    local_started = time.perf_counter()
     text = _transcribe_local(wav_bytes)
+    local_ms = round((time.perf_counter() - local_started) * 1000, 3)
     if text:
-        return {"ok": True, "transcript": text, "provider": "local-funasr", "error": None}
+        return {
+            "ok": True,
+            "transcript": text,
+            "provider": "local-funasr",
+            "error": None,
+            "timing": {"localAttemptMs": local_ms, "remoteFallbackMs": 0},
+        }
 
+    remote_started = time.perf_counter()
     remote = _transcribe_voice_service(wav_bytes, mime_type="audio/wav")
+    remote_ms = round((time.perf_counter() - remote_started) * 1000, 3)
     if remote.get("ok") and remote.get("transcript"):
         return {
             "ok": True,
             "transcript": remote["transcript"],
             "provider": "voice-service-funasr",
             "error": None,
+            "timing": {
+                "localAttemptMs": local_ms,
+                "remoteFallbackMs": remote_ms,
+            },
         }
 
     err = remote.get("error") or _model_error or "funasr_unavailable"
-    return {"ok": False, "transcript": "", "provider": None, "error": err}
+    return {
+        "ok": False,
+        "transcript": "",
+        "provider": None,
+        "error": err,
+        "timing": {
+            "localAttemptMs": local_ms,
+            "remoteFallbackMs": remote_ms,
+        },
+    }
 
 
 def voice_service_ready(timeout: float = 2.0) -> bool:
@@ -244,13 +268,21 @@ def transcribe_audio_base64(
     mime_type: str = "audio/webm",
 ) -> Dict[str, Any]:
     """返回 {ok, transcript, provider, error}。"""
+    decode_started = time.perf_counter()
     try:
         audio_bytes = base64.b64decode(audio_base64, validate=False)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "transcript": "", "provider": None, "error": f"invalid_base64:{exc}"}
+    decode_ms = round((time.perf_counter() - decode_started) * 1000, 3)
 
     if len(audio_bytes) < 64:
         return {"ok": False, "transcript": "", "provider": None, "error": "audio_too_short"}
 
+    convert_started = time.perf_counter()
     wav_bytes = _ensure_wav_bytes(audio_bytes, mime_type)
-    return transcribe_wav_bytes(wav_bytes)
+    convert_ms = round((time.perf_counter() - convert_started) * 1000, 3)
+    result = transcribe_wav_bytes(wav_bytes)
+    timing = dict(result.get("timing") or {})
+    timing.update({"base64DecodeMs": decode_ms, "audioConvertMs": convert_ms})
+    result["timing"] = timing
+    return result

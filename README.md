@@ -88,11 +88,9 @@ HTTP/Socket 契约与会话文件命名；V2 控制接口为增量扩展，可�
 - [扩展](docs/EXTENDING.md) —— 设备、模型、对话与交互配置
 - [测试](docs/TESTING.md) —— 假设备、契约测试与发布门禁
 - [当前架构](docs/ARCHITECTURE.md) —— 当前模块边界与依赖方向
-- [教师端 Windows 控制锁修复 2026-08-10](docs/教师端Windows控制锁修复与验收记录-20260810.md)
-  —— Windows `Errno 22` 根因、恢复行为与浏览器证据
 - [三端协同稳定性整改方案](docs/current/三端协同稳定性根因与分阶段整改方案.md)
   —— 根因、已实施改动、现场证据与剩余浸泡测试
 
-历史文档归档于 `docs/archive/`，不具规范效力。机器人动作格式说明位于工作台
-`doll/DollSer/docs/`。切勿重置或清理包含 `database/app.db`、录制、日志、
+历史过程由 Git 历史保存；当前工作树只保留现行事实文档。机器人动作格式说明位于
+工作台 `doll/DollSer/docs/`。切勿重置或清理包含 `database/app.db`、录制、日志、
 发布包或课程素材的部署。

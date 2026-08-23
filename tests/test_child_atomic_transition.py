@@ -20,7 +20,7 @@ def test_child_resource_transition_is_staged_and_acknowledged():
     assert 'socket.emit("resource_transition_failed", terminal)' in child
     assert "await preloadStagingResource(spec, pair.staging, token)" in child
     assert "await delayMs(RESOURCE_CROSSFADE_MS)" in child
-    assert "transition: opacity 320ms ease-in-out" in css
+    assert "transition: opacity 160ms cubic-bezier(0.77, 0, 0.175, 1)" in css
     assert "imageEl.onclick" not in child
 
 
@@ -100,7 +100,8 @@ def test_interactive_shell_prefers_course_entry_file():
         child.index("function buildResourceSpec")
     ]
     assert helper.index("course && course.file") < helper.index("item && item.file")
-    assert 'params.set("_transition", transitionId)' in helper
+    assert 'params.set("_transition", transitionId)' not in helper
+    assert 'params.set("mode", mode)' in helper
 
 
 def test_logical_context_and_video_start_commit_with_the_staged_frame():
@@ -123,8 +124,10 @@ def test_logical_context_and_video_start_commit_with_the_staged_frame():
     assert "await staging.play()" not in preload
     assert "try { staging.pause(); }" in preload
     assert "await pair.staging.play()" in transition
-    assert "event.source !== interactiveEl.contentWindow" in child
+    assert "event.source === interactiveEl.contentWindow" in child
     assert "stagingInteractiveEl.__pendingPageContext = data.pageContext" in child
+    assert "stagingInteractiveEl.__pendingQuestionReady" in child
+    assert "relayInteractiveQuestionReady(promoted, stagedQuestionReady)" in child
 
 
 def test_child_rejects_old_session_media_and_praise_is_request_correlated():
@@ -236,7 +239,7 @@ def test_interactive_controls_use_authorized_parent_socket_bridge():
     assert "relayInteractiveControl(eventName" in child
     assert 'frame.dataset.pageContextActive !== "true"' in child
     assert "}, window.location.origin);" in child
-    assert 'child.js?v=20260822-interactive-control-v4' in template
+    assert 'child.js?v=20260823-resource-latency-v1' in template
 
     for page, prefix, apply_name in (
         (matching, "matching_", "applyMatchingControl"),
@@ -265,6 +268,39 @@ def test_interactive_controls_use_authorized_parent_socket_bridge():
 
     # The bridge must not weaken the one-owner child session rule.
     assert "_claim_child_session_owner" in events
+
+
+def test_interactive_question_state_separates_mode_gate_and_teacher_next():
+    control = _read("teacher_frontend/components/ControlPage.tsx")
+    app = _read("teacher_frontend/App.tsx")
+    child = _read("static/js/child.js")
+    gate = _read("static/js/interactive_question_state.js")
+    matching = _read("static/resources/interactive/matching.html")
+    sequencing = _read("static/resources/interactive/sequencing.html")
+    events = _read("app/sockets/events.py")
+
+    assert "mode={assessmentMode ? 'assessment' : 'training'}" in app
+    assert "mode," in control
+    assert "handleInteractiveNextQuestion" in control
+    assert "source: 'teacher_next_question'" in control
+    assert "interactiveNextPending ? '切题中…' : '下一题'" in control
+    assert "下一题正在准备，请不要连续点击" in control
+    assert 'params.set("mode", mode)' in child
+    assert "class QuestionInputGate" in gate
+    assert 'data.intent || ""' in gate
+    assert "question-input-locked" in matching
+    assert "question-input-locked" in sequencing
+    assert "this.questionGate.lock" in matching
+    assert "this.questionGate.lock" in sequencing
+    assert "type: 'interactive_question_ready'" in matching
+    assert "type: 'interactive_question_ready'" in sequencing
+    assert "!isEmbeddedInteractiveFrame && socket && socket.connected" in matching
+    assert "!isEmbeddedInteractiveFrame && socket && socket.connected" in sequencing
+    assert "MODE_ASSESSMENT" in matching
+    assert "MODE_ASSESSMENT" in sequencing
+    assert "this.currentOptions.reverse()" in matching
+    assert "this.options = [this.options[1], this.options[0]]" in sequencing
+    assert events.count("_interrupt_interactive_prompt(session_id, data)") >= 4
 
 
 def test_matching_teacher_difficulty_overrides_simplified_mode_on_next_question():

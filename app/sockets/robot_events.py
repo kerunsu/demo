@@ -154,6 +154,14 @@ def register_robot_events(socketio):
     def handle_robot_emotion_started(data):
         payload = data or {}
         try:
+            from app.sockets.events import _record_latency_modality_callback
+
+            _record_latency_modality_callback(
+                payload,
+                phase='started',
+                modality='expression',
+                actor='robot_display',
+            )
             result = get_robot_service().mark_behavior_modality_started(
                 behavior_id=payload.get('behaviorId'),
                 request_id=payload.get('requestId'),
@@ -170,6 +178,14 @@ def register_robot_events(socketio):
     def handle_robot_emotion_ready(data):
         payload = data or {}
         try:
+            from app.sockets.events import _record_latency_modality_callback
+
+            _record_latency_modality_callback(
+                payload,
+                phase='ready',
+                modality='expression',
+                actor='robot_display',
+            )
             result = get_robot_service().mark_behavior_modality_ready(
                 behavior_id=payload.get('behaviorId'),
                 request_id=payload.get('requestId'),

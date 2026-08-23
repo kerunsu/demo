@@ -400,3 +400,16 @@ def test_phase5_child_dialogue_checks_voice_health_before_listening():
     script = (root / "static/js/child_dialogue.js").read_text(encoding="utf-8")
     assert "/api/v2/voice/health" in script
     assert "语音识别不可用" in script
+
+
+def test_child_dialogue_preserves_fast_answer_after_wake_tts():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "static/js/child_dialogue.js").read_text(encoding="utf-8")
+    assert "const COOLDOWN_MS = 180;" in script
+    assert "const PREROLL_MS = 700;" in script
+    assert "function prerollHasVoice()" in script
+    assert "isBrowserSpeechBusy?.()" in script
+    resume_body = script.split("function resumeAsrAfterTts()", 1)[1].split(
+        "function maybeResumeListening()", 1
+    )[0]
+    assert "clearPreroll()" not in resume_body

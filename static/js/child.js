@@ -395,41 +395,115 @@ function applyInteractivePageContext(pageContext) {
   return true;
 }
 
+function publishInteractivePageContextToServer(pageContext) {
+  if (!socket || !socket.connected || !pageContext || typeof pageContext !== "object") {
+    return false;
+  }
+  const sessionId = String(currentSessionId || window.currentSessionId || "").trim();
+  if (!sessionId) return false;
+  socket.emit("interactive_page_context", {
+    sessionId,
+    trainingSessionId: currentTrainingSessionId || undefined,
+    courseType: pageContext.courseType || window.currentCourseType || undefined,
+    pageContext,
+  });
+  return true;
+}
+
+function relayInteractiveQuestionReady(frame, message) {
+  if (!frame || !message || typeof message !== "object") return false;
+  if (
+    frame !== interactiveEl ||
+    !frame.contentWindow ||
+    frame.dataset.pageContextActive !== "true"
+  ) {
+    return false;
+  }
+  const eventName = String(message.eventName || "").trim();
+  if (eventName !== "matching_question_ready" && eventName !== "sequencing_question_ready") {
+    return false;
+  }
+  const payload = message.payload && typeof message.payload === "object"
+    ? { ...message.payload }
+    : {};
+  const sessionId = String(currentSessionId || window.currentSessionId || "").trim();
+  const payloadSessionId = String(payload.sessionId || payload.session_id || "").trim();
+  if (!sessionId || (payloadSessionId && payloadSessionId !== sessionId)) {
+    console.warn("🎮 [child.js] 忽略会话不符的题目就绪消息:", eventName);
+    return false;
+  }
+  payload.sessionId = sessionId;
+  payload.trainingSessionId = currentTrainingSessionId || payload.trainingSessionId || undefined;
+  if (!socket || !socket.connected) {
+    frame.__pendingQuestionReady = { eventName, payload };
+    console.log("🎮 [child.js] 暂存题目就绪，等待儿童端 Socket 恢复");
+    return false;
+  }
+  socket.emit(eventName, payload);
+  delete frame.__pendingQuestionReady;
+  console.log("🎮 [child.js] 当前互动题已显示，开始请求提问:", eventName);
+  return true;
+}
+
 // Only the committed iframe may mutate the live dialogue context. A staging
 // iframe may report while preloading; cache that context until atomic commit.
 window.addEventListener("message", (event) => {
   const data = event && event.data;
-  if (
-    !data ||
-    typeof data !== "object" ||
-    data.type !== "interactive_page_context" ||
-    !data.pageContext
-  ) {
-    return;
-  }
+  if (!data || typeof data !== "object") return;
 
-  if (
+  const isStagingSource = Boolean(
     stagingInteractiveEl &&
     stagingInteractiveEl.contentWindow &&
     event.source === stagingInteractiveEl.contentWindow
-  ) {
+  );
+  const isActiveSource = Boolean(
+    currentVisibleCourseMedia &&
+    currentVisibleCourseMedia.type === "interactive" &&
+    interactiveEl &&
+    interactiveEl.dataset.pageContextActive === "true" &&
+    event.source === interactiveEl.contentWindow
+  );
+
+  if (data.type === "interactive_question_ready") {
+    if (isStagingSource) {
+      stagingInteractiveEl.__pendingQuestionReady = {
+        eventName: data.eventName,
+        payload: data.payload,
+      };
+      console.log("🎮 [child.js] 暂存预加载互动页的题目就绪消息");
+      return;
+    }
+    if (!isActiveSource) {
+      console.log("🎮 [child.js] 忽略非当前互动页的题目就绪消息");
+      return;
+    }
+    relayInteractiveQuestionReady(interactiveEl, data);
+    return;
+  }
+
+  if (data.type !== "interactive_page_context" || !data.pageContext) return;
+
+  if (isStagingSource) {
     stagingInteractiveEl.__pendingPageContext = data.pageContext;
     console.log("📄 [child.js] 暂存预加载互动页上下文");
     return;
   }
 
-  if (
-    !currentVisibleCourseMedia ||
-    currentVisibleCourseMedia.type !== "interactive" ||
-    !interactiveEl ||
-    interactiveEl.dataset.pageContextActive !== "true" ||
-    event.source !== interactiveEl.contentWindow
-  ) {
+  if (!isActiveSource) {
     console.log("📄 [child.js] 忽略非当前互动页的上下文消息");
     return;
   }
   applyInteractivePageContext(data.pageContext);
+  publishInteractivePageContextToServer(data.pageContext);
 });
+
+if (socket) {
+  socket.on("connect", () => {
+    if (interactiveEl && interactiveEl.__pendingQuestionReady) {
+      relayInteractiveQuestionReady(interactiveEl, interactiveEl.__pendingQuestionReady);
+    }
+  });
+}
 
 function behaviorIdentity(payload) {
   const data = payload || {};
@@ -481,6 +555,10 @@ function notifyInteractiveSpeakEnded(payload) {
     behaviorId: identity.behaviorId || identity.sequenceId || undefined,
     requestId: identity.requestId || undefined,
     sequenceId: identity.sequenceId || undefined,
+    questionId: firstDefined(
+      payload && payload.questionId,
+      payload && payload.question_id
+    ),
   };
   try {
     const frame = document.getElementById("interactive");
@@ -1189,7 +1267,7 @@ let stagingImageEl = document.getElementById("image-staging");
 let stagingVideoEl = document.getElementById("video-staging");
 let stagingInteractiveEl = document.getElementById("interactive-staging");
 
-const RESOURCE_CROSSFADE_MS = 320;
+const RESOURCE_CROSSFADE_MS = 160;
 const RESOURCE_LOAD_TIMEOUT_MS = 10000;
 const RESOURCE_ACK_TTL_MS = 5 * 60 * 1000;
 const RESOURCE_FALLBACK_ACK_TTL_MS = 2000;
@@ -1263,11 +1341,26 @@ function resourceTerminalPayload(payload, course, item, transitionId, extra = {}
     protocolVersion: firstDefined(payload && payload.protocolVersion, "1"),
     modality: "childAnimation",
     sessionId: firstDefined(payload && payload.sessionId, currentSessionId, ""),
+    trainingSessionId: firstDefined(
+      payload && payload.trainingSessionId,
+      currentTrainingSessionId,
+      ""
+    ),
     requestId: requestId == null ? "" : String(requestId),
+    behaviorId: firstDefined(
+      payload && payload.behaviorId,
+      payload && payload.interactionId,
+      ""
+    ),
     transitionId: String(transitionId || ""),
     questionId: firstDefined(payload && payload.questionId, currentQuestionId, ""),
     courseId: firstDefined(payload && payload.courseId, course && course.id, ""),
     itemId: firstDefined(payload && payload.itemId, item && item.id, ""),
+    commandReceivedAtClientMs: firstDefined(
+      payload && payload.commandReceivedAtClientMs,
+      null
+    ),
+    actualAtClientMs: Date.now(),
     ...extra,
   };
 }
@@ -1286,9 +1379,10 @@ function pruneCompletedResourceTransitions(now = Date.now()) {
   }
 }
 
-function emitResourceReady(payload, course, item, transitionId) {
+function emitResourceReady(payload, course, item, transitionId, timing = {}) {
   const terminal = resourceTerminalPayload(payload, course, item, transitionId, {
     status: "ready",
+    timing,
   });
   completedResourceTransitions.set(transitionId, {
     completedAt: Date.now(),
@@ -1358,6 +1452,7 @@ function resetStagingElement(el, type) {
   clearMediaElement(el, type);
   if (type === "interactive") {
     delete el.__pendingPageContext;
+    delete el.__pendingQuestionReady;
   }
   el.classList.add("course-media-layer--staging");
   el.setAttribute("aria-hidden", "true");
@@ -1472,20 +1567,11 @@ function waitForVideoReady(video, src) {
 
 async function waitForIframeReady(frame, src, token) {
   const parsed = new URL(src, window.location.href);
-  if (parsed.origin === window.location.origin) {
-    const response = await fetch(parsed.href, {
-      method: "GET",
-      credentials: "same-origin",
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      throw new Error(`interactive_preflight_failed:${response.status}`);
-    }
-  }
   if (!isCurrentResourceTransition(token)) {
     throw new Error("stale_transition");
   }
 
+  const iframeLoadStartedAt = performance.now();
   await new Promise((resolve, reject) => {
     let settled = false;
     let timer = null;
@@ -1497,7 +1583,20 @@ async function waitForIframeReady(frame, src, token) {
       if (frame.onerror === onError) frame.onerror = null;
       error ? reject(error) : resolve();
     };
-    const onLoad = () => finish();
+    const onLoad = () => {
+      if (parsed.origin === window.location.origin) {
+        try {
+          if (!frame.contentDocument || !frame.contentDocument.documentElement) {
+            finish(new Error(`interactive_document_missing:${src}`));
+            return;
+          }
+        } catch (error) {
+          finish(error);
+          return;
+        }
+      }
+      finish();
+    };
     const onError = () => finish(new Error(`interactive_load_failed:${src}`));
     frame.onload = onLoad;
     frame.onerror = onError;
@@ -1507,6 +1606,7 @@ async function waitForIframeReady(frame, src, token) {
     );
     setElementSource(frame, src);
   });
+  token.timings.iframeLoadMs = Math.round(performance.now() - iframeLoadStartedAt);
 }
 
 function interactiveResourceUrl(payload, course, item, transitionId) {
@@ -1530,6 +1630,8 @@ function interactiveResourceUrl(payload, course, item, transitionId) {
   if (sessionId != null) params.set("sessionId", sessionId);
   const trainingSessionId = firstDefined(payload.trainingSessionId, currentTrainingSessionId);
   if (trainingSessionId != null) params.set("trainingSessionId", trainingSessionId);
+  const mode = firstDefined(payload.mode, payload.trainingMode, payload.training_mode);
+  if (mode != null) params.set("mode", mode);
   const questionId = firstDefined(payload.questionId, currentQuestionId);
   if (questionId != null) params.set("questionId", questionId);
 
@@ -1543,7 +1645,6 @@ function interactiveResourceUrl(payload, course, item, transitionId) {
       params.set(key, typeof value === "object" ? JSON.stringify(value) : value);
     });
   }
-  params.set("_transition", transitionId);
   return `${base}${base.includes("?") ? "&" : "?"}${params.toString()}`;
 }
 
@@ -1720,6 +1821,13 @@ async function transitionCourseResource(payload, course, item) {
     type: "",
     stagingElement: null,
     phase: "preloading",
+    timings: {
+      resourceType: null,
+      commandToTransitionMs: Math.max(
+        0,
+        Date.now() - Number(payload.commandReceivedAtClientMs || Date.now())
+      ),
+    },
   };
   pendingResourceTransition = token;
 
@@ -1728,14 +1836,19 @@ async function transitionCourseResource(payload, course, item) {
     const pair = stagingPairForType(spec.type);
     if (!pair || !pair.staging) throw new Error(`staging_element_missing:${spec.type}`);
     token.type = spec.type;
+    token.timings.resourceType = spec.type;
     token.stagingElement = pair.staging;
     resetStagingElement(pair.staging, spec.type);
+    const preloadStartedAt = performance.now();
     await preloadStagingResource(spec, pair.staging, token);
+    token.timings.preloadMs = Math.round(performance.now() - preloadStartedAt);
     if (!isCurrentResourceTransition(token)) return false;
 
     token.phase = "crossfading";
     const previous = currentVisibleCourseMedia && currentVisibleCourseMedia.el;
+    const paintStartedAt = performance.now();
     await waitForNextPaint();
+    token.timings.paintWaitMs = Math.round(performance.now() - paintStartedAt);
     if (!isCurrentResourceTransition(token)) return false;
     pair.staging.style.opacity = "1";
     if (previous && previous !== pair.staging) {
@@ -1754,14 +1867,19 @@ async function transitionCourseResource(payload, course, item) {
         console.warn("[child.js] video autoplay blocked; committing decoded first frame");
       }
     }
+    const crossfadeStartedAt = performance.now();
     await delayMs(RESOURCE_CROSSFADE_MS);
+    token.timings.crossfadeMs = Math.round(performance.now() - crossfadeStartedAt);
     if (!isCurrentResourceTransition(token)) return false;
 
     const promoted = promoteStagingResource(spec.type);
     const stagedPageContext =
       spec.type === "interactive" ? promoted.__pendingPageContext || null : null;
+    const stagedQuestionReady =
+      spec.type === "interactive" ? promoted.__pendingQuestionReady || null : null;
     if (spec.type === "interactive") {
       delete promoted.__pendingPageContext;
+      delete promoted.__pendingQuestionReady;
     }
     clearOtherCommittedMedia(promoted);
     currentVisibleCourseMedia = { el: promoted, type: spec.type, transitionId };
@@ -1773,6 +1891,12 @@ async function transitionCourseResource(payload, course, item) {
       // bookkeeping error must never roll that frame back to a cleared layer.
       console.error("[child.js] 提交课程逻辑上下文失败:", contextError);
     }
+    if (stagedPageContext) {
+      publishInteractivePageContextToServer(stagedPageContext);
+    }
+    if (stagedQuestionReady) {
+      relayInteractiveQuestionReady(promoted, stagedQuestionReady);
+    }
     hideStandbyImage();
 
     const statusEl = document.getElementById("status");
@@ -1780,7 +1904,11 @@ async function transitionCourseResource(payload, course, item) {
       const itemLabel = item && item.name ? ` - ${item.name}` : "";
       statusEl.innerText = `正在播放：${course.title || ""}${itemLabel}`;
     }
-    emitResourceReady(payload, course, item, transitionId);
+    token.timings.totalClientMs = Math.max(
+      0,
+      Date.now() - Number(payload.commandReceivedAtClientMs || Date.now())
+    );
+    emitResourceReady(payload, course, item, transitionId, token.timings);
     return true;
   } catch (error) {
     if (!isCurrentResourceTransition(token)) return false;
@@ -1800,6 +1928,9 @@ function handlePlayResource(payload) {
   console.log("🎯 [child.js] 收到 play_resource 事件:", payload);
   
   if (!payload || payload.action !== "play") return;
+  if (payload.commandReceivedAtClientMs == null) {
+    payload.commandReceivedAtClientMs = Date.now();
+  }
   if (!isEventForActiveChildSession(payload)) {
     console.warn("⏭️ [child.js] 忽略旧会话/旧训练的 play_resource:", payload);
     return;
@@ -2409,6 +2540,16 @@ socket.on("behavior_cancel", (data) => {
   // Do not enqueue a silent "unlock" utterance in front of formal speech.
   // SpeechSynthesis itself marks the output ready from its real onstart.
   const speechCommandReceivedAtMs = Date.now();
+  window.ChildDialogue?.emitDialogueLatency?.(
+    "tts_command_received",
+    data.dialogueRequestId,
+    {
+      status: "received",
+      commandReceivedAtClientMs: speechCommandReceivedAtMs,
+      actualAtClientMs: speechCommandReceivedAtMs,
+      clientStageMs: 0,
+    }
+  );
   const browserSpeechAccepted = window.BrowserTts.speakBrowserText(data.text, {
     delayMs: Number(data.delayMs) || 0,
     speechId: incomingIdentity.speechId,
@@ -2417,8 +2558,19 @@ socket.on("behavior_cancel", (data) => {
     requestId: incomingIdentity.requestId,
     sessionId: data.sessionId || currentSessionId,
     onStart: (timing = {}) => {
+      const actualAtClientMs = Date.now();
       const statusEl = document.getElementById("dialogueStatus");
       if (statusEl) statusEl.textContent = `朗读中：${data.text}`;
+      window.ChildDialogue?.emitDialogueLatency?.(
+        "tts_started",
+        data.dialogueRequestId,
+        {
+          status: "started",
+          commandReceivedAtClientMs: speechCommandReceivedAtMs,
+          actualAtClientMs,
+          clientStageMs: actualAtClientMs - speechCommandReceivedAtMs,
+        }
+      );
       if (socket && socket.connected) {
         socket.emit("behavior_modality_started", {
           protocolVersion: data.protocolVersion || "1",
@@ -2427,7 +2579,7 @@ socket.on("behavior_cancel", (data) => {
           behaviorId: incomingIdentity.behaviorId || incomingIdentity.sequenceId || undefined,
           modality: "speech",
           status: "started",
-          actualAtClientMs: Date.now(),
+          actualAtClientMs,
           commandReceivedAtClientMs: speechCommandReceivedAtMs,
           speakCalledAtClientMs: timing.speakCalledAtClientMs || undefined,
           speechAttempt: timing.attempt,
@@ -2438,6 +2590,11 @@ socket.on("behavior_cancel", (data) => {
       const statusEl = document.getElementById("dialogueStatus");
       if (statusEl) statusEl.textContent = "准备就绪";
       window.ChildDialogue?.resumeAsrAfterTts?.();
+      window.ChildDialogue?.emitDialogueLatency?.(
+        "tts_ended",
+        data.dialogueRequestId,
+        { status: (detail && detail.status) || "ended" }
+      );
       notifyInteractiveSpeakEnded({
         intent: data.intent,
         sessionId: data.sessionId,
@@ -2452,6 +2609,14 @@ socket.on("behavior_cancel", (data) => {
       const statusEl = document.getElementById("dialogueStatus");
       if (statusEl) statusEl.textContent = `朗读失败：${reason}`;
       window.ChildDialogue?.resumeAsrAfterTts?.();
+      window.ChildDialogue?.emitDialogueLatency?.(
+        "tts_ended",
+        data.dialogueRequestId,
+        {
+          status: (detail && detail.status) || "error",
+          reason: reason || (detail && detail.reason) || "",
+        }
+      );
       notifyInteractiveSpeakEnded({
         intent: data.intent,
         sessionId: data.sessionId,

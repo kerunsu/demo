@@ -5,6 +5,14 @@ import pytest
 from flask import Flask
 
 
+def test_repository_idle_motion_has_gentle_return_speed():
+    root = Path(__file__).resolve().parents[1]
+    document = json.loads(
+        (root / "doll/data/motions.json").read_text(encoding="utf-8")
+    )
+    assert document["motionMeta"]["空动作"]["speedMultiplier"] == 0.5
+
+
 def test_motion_speed_defaults_scales_and_persists(tmp_path, monkeypatch):
     from app.robot import motion_storage
 
@@ -174,6 +182,13 @@ def test_sequence_busy_duration_uses_scaled_motion(monkeypatch):
         sequence={"expressionDurationMs": 1000},
     )
     assert explicit["expressionDurationMs"] == 500
+    praise = service._build_sequence_plan(
+        motion=None,
+        emotion="happy.mp4",
+        sequence={"expressionDurationMs": 1000},
+        event_data={"aux": {"praise": True}},
+    )
+    assert praise["startLeadMs"] == robot_service.BEHAVIOR_FEEDBACK_START_LEAD_MS
 
 
 def test_asset_tuning_http_contract(monkeypatch):

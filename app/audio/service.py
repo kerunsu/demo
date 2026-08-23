@@ -61,6 +61,7 @@ class AudioService:
         name: Optional[str] = None,
         behavior_id: Optional[str] = None,
         request_id: Optional[str] = None,
+        question_id: Optional[str] = None,
     ) -> bool:
         try:
             from app.dialogue.phrases import pick_phrase
@@ -97,6 +98,9 @@ class AudioService:
             if request_id:
                 payload["requestId"] = str(request_id)
                 payload["request_id"] = str(request_id)
+            if question_id:
+                payload["questionId"] = str(question_id)
+                payload["question_id"] = str(question_id)
             # Never turn a missing/empty session room into a global broadcast:
             # another child must not receive or acknowledge this utterance.
             if not room:
@@ -198,6 +202,7 @@ class AudioService:
         text: Optional[str] = None,
         behavior_id: Optional[str] = None,
         request_id: Optional[str] = None,
+        question_id: Optional[str] = None,
     ) -> bool:
         """
         配对/排序交互页答对或切题时播语音。
@@ -245,6 +250,7 @@ class AudioService:
                 text=spoken,
                 behavior_id=behavior_id,
                 request_id=request_id,
+                question_id=question_id,
             ) or triggered
 
         if use_file:

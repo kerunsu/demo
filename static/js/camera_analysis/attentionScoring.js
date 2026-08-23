@@ -1,6 +1,6 @@
 /**
  * browser-attention-v2：人脸框几何「朝屏」代理分（0–100）
- * 历史设计见 docs/archive/legacy-guides/EMOTION_ATTENTION_REIMPLEMENTATION_GUIDE.md §3
+ * 当前评分规则以 docs/REPORT_SCORING.md 和本实现测试为准。
  */
 
 function clamp(v, lo = 0, hi = 1) {

@@ -60,6 +60,7 @@ export function ControlPagePreview() {
       previewCourses={PREVIEW_COURSES}
       selectedCourses={PREVIEW_SELECTION}
       selectedStudent="1001"
+      mode="training"
       onBack={() => undefined}
       onFinish={() => undefined}
     />

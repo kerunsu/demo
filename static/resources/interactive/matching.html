@@ -76,12 +76,13 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.2s ease;
+      transition: color 160ms ease,
+                  background-color 160ms ease,
+                  transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
       color: #95a5a6;
     }
 
     .hint-btn:active { transform: scale(0.9); }
-    .hint-btn:hover { color: var(--hint-color); transform: scale(1.05); }
     .hint-btn.active {
       background: var(--hint-color);
       color: white;
@@ -189,7 +190,8 @@
       border: 5px solid #f0f9ff;
       box-shadow: var(--shadow-light);
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+                  opacity 160ms cubic-bezier(0.23, 1, 0.32, 1);
       position: relative;
       transform-style: preserve-3d;
       aspect-ratio: 1;
@@ -222,9 +224,12 @@
       border-radius: 22px;
     }
 
-    .option-card:not(.wrong):not(.correct):not(.correct-lvl3):hover {
-      transform: translateY(-5px);
-      box-shadow: var(--shadow-hover);
+    @media (hover: hover) and (pointer: fine) {
+      .hint-btn:hover { color: var(--hint-color); transform: scale(1.05); }
+      .option-card:not(.wrong):not(.correct):not(.correct-lvl3):hover {
+        transform: translateY(-5px);
+        box-shadow: var(--shadow-hover);
+      }
     }
 
     .option-card:not(.wrong):not(.correct):not(.correct-lvl3):active {
@@ -258,10 +263,45 @@
 
     .option-card.wrong {
       opacity: 0.35 !important;
-      filter: grayscale(100%) !important;
-      transform: scale(0.75) !important;
-      transition: opacity 0.4s ease, filter 0.4s ease, transform 0.4s ease !important;
+      transform: scale(0.82) !important;
+      transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+                  transform 180ms cubic-bezier(0.23, 1, 0.32, 1) !important;
       pointer-events: none;
+    }
+
+    .target-frame {
+      transition: transform 240ms cubic-bezier(0.77, 0, 0.175, 1);
+      transform-origin: center;
+    }
+
+    .options-grid {
+      transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+                  transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    body.question-input-locked .target-frame { transform: scale(1.08); }
+    body.question-input-locked .options-grid {
+      opacity: 0;
+      transform: scale(0.98);
+      pointer-events: none;
+    }
+    body.question-input-ready .target-frame { transform: scale(1); }
+    body.question-input-ready .options-grid {
+      opacity: 1;
+      transform: scale(1);
+      pointer-events: auto;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .target-frame { transform: none !important; transition: none !important; }
+      .options-grid {
+        transform: none !important;
+        transition: opacity 160ms ease !important;
+      }
+      .option-card {
+        animation: none !important;
+        transition: opacity 120ms ease !important;
+      }
     }
 
     .option-card.dimmed {
@@ -476,6 +516,7 @@
     <div id="gameArea"></div>
   </div>
 
+  <script src="/static/js/interactive_question_state.js?v=20260823-1"></script>
   <script>
     // ==================== 粒子特效系统 ====================
     const canvas = document.getElementById('confetti-canvas');
@@ -586,6 +627,7 @@
     const itemId = urlParams.get('itemId');
     const trainingSessionId = urlParams.get('trainingSessionId');
     const questionId = urlParams.get('questionId');
+    const operationMode = window.InteractiveQuestionState.normalizeMode(urlParams.get('mode'));
 
     // ==================== 调试日志 ====================
     function debugLog(message) {
@@ -704,6 +746,15 @@
     window.addEventListener('message', (event) => {
       const message = event && event.data;
       if (
+        isEmbeddedInteractiveFrame &&
+        event.source === window.parent &&
+        event.origin === window.location.origin &&
+        message && message.type === 'robot_speak_ended'
+      ) {
+        window.matchingGame?.questionGate?.handleSpeakEnded(message);
+        return;
+      }
+      if (
         !isEmbeddedInteractiveFrame ||
         event.source !== window.parent ||
         event.origin !== window.location.origin ||
@@ -757,6 +808,12 @@
       // 监听教师端提示指令
       socket.on('matching_hint', (data) => {
         if (!isEmbeddedInteractiveFrame) applyMatchingControl('matching_hint', data);
+      });
+
+      socket.on('robot_speak_ended', (data) => {
+        if (!isEmbeddedInteractiveFrame) {
+          window.matchingGame?.questionGate?.handleSpeakEnded(data);
+        }
       });
       
       // 监听 play_resource（兼容旧版本）
@@ -813,6 +870,14 @@
         // 当前题目是否已经答错过（用于统计：只要点错过就不算正确）
         this.hasAnsweredWrong = false;
         this.wrongAttemptsThisQuestion = 0;
+        this.operationMode = operationMode;
+        this.questionGate = new window.InteractiveQuestionState.QuestionInputGate({
+          sessionId,
+          timeoutMs: 8000,
+          onUnlock: () => {
+            if (this.questionStartAt == null) this.questionStartAt = Date.now();
+          },
+        });
         
         this.init();
       }
@@ -831,7 +896,7 @@
         this.loadingImagesPromise = (async () => {
           try {
             debugLog('正在加载配对图片...');
-            const response = await fetch('/api/getMatchingImages', { cache: 'no-store' });
+            const response = await fetch('/api/getMatchingImages', { cache: 'default' });
             const data = await response.json();
 
             if (data.error) {
@@ -965,6 +1030,7 @@
         debugLog('教师强制跳转下一题');
         // 作废进行中的表扬语音等待，避免稍后重复切题
         this._advanceToken = (this._advanceToken || 0) + 1;
+        this.questionGate.cancel();
         this.nextQuestion();
       }
 
@@ -972,7 +1038,7 @@
        * 等表扬/鼓励 browser TTS 结束再切题（与 sequencing 一致）。
        * minMs：最短停留，避免动画过早被清掉；maxMs：TTS 失败时兜底，不永久卡住。
        */
-      waitForFeedbackSpeech(intent, { minMs = 900, maxMs = 2800 } = {}) {
+      waitForFeedbackSpeech(intent, { minMs = 900, maxMs = 6000 } = {}) {
         return new Promise((resolve) => {
           const start = Date.now();
           let settled = false;
@@ -1078,6 +1144,17 @@
           targetImg.style.opacity = '1';
         }, 50);
         
+        this.questionGate.lock(this.buildPageContext().questionId);
+        this.renderOptionCards();
+
+        // 题目先聚焦展示；提问语音结束后才显示选项并开始反应计时。
+        this.questionStartAt = null;
+        this._responseRecordedForQuestion = false;
+        this.publishPageContext();
+        this.emitQuestionReady();
+      }
+
+      renderOptionCards() {
         // 生成选项卡片（单行排布，按数量缩放）
         const optionsGrid = document.getElementById('optionsGrid');
         optionsGrid.innerHTML = '';
@@ -1089,7 +1166,6 @@
           const card = document.createElement('div');
           card.className = 'option-card';
           card.dataset.id = option.id;
-          card.style.animation = `fadeIn 0.3s ease ${index * 0.1}s both`;
           
           // 标记正确答案，方便提示功能使用
           if (option.id === this.currentTarget.id) {
@@ -1105,12 +1181,6 @@
           
           optionsGrid.appendChild(card);
         });
-
-        // 题目展示完成，开始计时作答反应
-        this.questionStartAt = Date.now();
-        this._responseRecordedForQuestion = false;
-        this.publishPageContext();
-        this.emitQuestionReady();
       }
 
       emitQuestionReady() {
@@ -1126,21 +1196,33 @@
           debugLog('提问就绪等待 sessionId');
           return;
         }
-        if (!socket || !socket.connected) {
-          debugLog('提问就绪等待 socket 连接');
-          return;
-        }
         const pageContext = this.buildPageContext();
         const askSeq = this._questionReadySeq || 0;
-        socket.emit('matching_question_ready', {
+        const payload = {
           sessionId,
+          trainingSessionId,
+          courseId,
+          itemId,
           courseType: 'pairing',
           questionId: pageContext.questionId,
           questionIndex: pageContext.questionIndex,
           askSeq,
           pageContext,
           prompt: pageContext.prompt,
-        });
+        };
+        if (isEmbeddedInteractiveFrame) {
+          window.parent.postMessage({
+            type: 'interactive_question_ready',
+            eventName: 'matching_question_ready',
+            payload,
+          }, window.location.origin);
+        } else {
+          if (!socket || !socket.connected) {
+            debugLog('提问就绪等待 socket 连接');
+            return;
+          }
+          socket.emit('matching_question_ready', payload);
+        }
         this._pendingQuestionReady = false;
         debugLog(`提问语音: pairing q=${pageContext.questionIndex} seq=${askSeq}`);
       }
@@ -1203,7 +1285,7 @@
         } catch (e) {
           debugLog(`postMessage pageContext 失败: ${e}`);
         }
-        if (socket && socket.connected && sessionId) {
+        if (!isEmbeddedInteractiveFrame && socket && socket.connected && sessionId) {
           socket.emit('interactive_page_context', {
             sessionId,
             courseType: 'pairing',
@@ -1245,7 +1327,7 @@
       }
       
       selectOption(selectedOption, cardElement, event) {
-        if (!this.isGameActive || this.isProcessing) return;
+        if (!this.isGameActive || this.isProcessing || this.questionGate.locked) return;
         if (cardElement.classList.contains('wrong')) return;
 
         // 本题首次点击记一次反应时
@@ -1299,10 +1381,10 @@
           const token = (this._advanceToken = (this._advanceToken || 0) + 1);
           const waitSpeech = this.waitForFeedbackSpeech('praise', {
             minMs: 900,
-            maxMs: 2800,
+            maxMs: 6000,
           });
           // 发送状态更新给教师端（isCorrect=计分正确；triggerPraise=点对即表扬）
-          this.emitStatusUpdate(isCorrect && !this.hasAnsweredWrong, true);
+          this.emitStatusUpdate(isCorrect && !this.hasAnsweredWrong, true, true);
           waitSpeech.then(() => {
             if (token !== this._advanceToken) return;
             this.nextQuestion();
@@ -1329,10 +1411,31 @@
           }
           this.wrongAttemptsThisQuestion = (this.wrongAttemptsThisQuestion || 0) + 1;
           this.publishPageContext();
-          
+          this.isProcessing = true;
           cardElement.classList.add('wrong');
-          // 点错：播鼓励/安慰（不切题，可继续点）
-          this.emitStatusUpdate(false, false);
+          const token = (this._advanceToken = (this._advanceToken || 0) + 1);
+          const waitSpeech = this.waitForFeedbackSpeech('encourage');
+          this.emitStatusUpdate(false, false, false);
+          waitSpeech.then(() => {
+            if (token !== this._advanceToken) return;
+            if (this.operationMode === window.InteractiveQuestionState.MODE_ASSESSMENT) {
+              this.nextQuestion();
+              return;
+            }
+            // 干预模式保留同一道题，只换选项位置，直到答对或教师跳题。
+            if (this.currentOptions.length > 1) {
+              const firstId = this.currentOptions[0].id;
+              let attempts = 0;
+              do {
+                this.shuffleArray(this.currentOptions);
+                attempts += 1;
+              } while (this.currentOptions[0].id === firstId && attempts < 5);
+              if (this.currentOptions[0].id === firstId) this.currentOptions.reverse();
+            }
+            this.renderOptionCards();
+            this.publishPageContext();
+            this.isProcessing = false;
+          });
         }
       }
       
@@ -1371,7 +1474,7 @@
       
       // ==================== 事件发送 ====================
       
-      emitStatusUpdate(isCorrect, triggerPraise = false) {
+      emitStatusUpdate(isCorrect, triggerPraise = false, selectedCorrect = isCorrect) {
         if (!socket || !socket.connected) return;
         const answered = this.currentQuestion;
         const accuracy = answered > 0
@@ -1389,6 +1492,7 @@
           difficulty: this.currentDifficulty,
           questionIndex: this.currentQuestion,
           isCorrect: isCorrect,
+          selectedCorrect: !!selectedCorrect,
           triggerPraise: !!triggerPraise,
           accuracy: accuracy,
           correct: this.correctAnswers,
@@ -1404,6 +1508,7 @@
           isSimplifiedMode: this.isSimplifiedMode,
           pageContext: this.buildPageContext(),
           wrongAttempts: this.wrongAttemptsThisQuestion || 0,
+          mode: this.operationMode,
         };
         
         socket.emit('matching_status_update', data);

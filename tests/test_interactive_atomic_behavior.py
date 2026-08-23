@@ -86,7 +86,11 @@ def test_actual_ordering_question_commits_voice_and_visual_together():
         category="size",
         rule="bigger",
         text="选出更大的那张。",
-        event_data={"courseId": 12, "studentId": 3},
+        event_data={
+            "courseId": 12,
+            "studentId": 3,
+            "questionId": "ordering-shell-q3",
+        },
         robot_service=robot,
         audio_service=audio,
         runtime_session=SimpleNamespace(
@@ -103,6 +107,7 @@ def test_actual_ordering_question_commits_voice_and_visual_together():
     assert trigger["behaviorId"] == reserve["behavior_id"]
     assert audio.calls[0]["behavior_id"] == reserve["behavior_id"]
     assert audio.calls[0]["request_id"] == reserve["request_id"]
+    assert audio.calls[0]["question_id"] == "ordering-shell-q3"
     assert commit[1] == reserve["behavior_id"]
     assert commit[2] == 1
 

@@ -10,6 +10,7 @@ from typing import Iterable, Optional
 
 
 STANDARD_AUX_TYPES = ("praise", "question", "hint", "silent")
+LIFECYCLE_AUX_TYPES = ("silent",)
 SOCIAL_GREETING_AUX_TYPES = (
     "social_greeting_intro",
     "social_greeting_play",
@@ -43,15 +44,20 @@ def allowed_aux_types(
     *,
     social_role: Optional[str] = None,
 ) -> tuple[str, ...]:
-    """返回特定课程/课点真正可触发的行为槽。"""
+    """返回特定课程/课点真正可触发的行为槽。
+
+    ``silent`` 不是社交话术，而是教师端首次进入/切换课点时发送的
+    生命周期事件。所有课程都必须接受它，否则社交课会在真正的
+    greeting/farewell 指令发出前就拒绝内容加载。
+    """
     if canonical_course_type(course_type) != "social":
         return STANDARD_AUX_TYPES
     role = str(social_role or "").strip().lower()
     if role == "greeting":
-        return SOCIAL_GREETING_AUX_TYPES
+        return LIFECYCLE_AUX_TYPES + SOCIAL_GREETING_AUX_TYPES
     if role == "farewell":
-        return SOCIAL_FAREWELL_AUX_TYPES
-    return SOCIAL_AUX_TYPES
+        return LIFECYCLE_AUX_TYPES + SOCIAL_FAREWELL_AUX_TYPES
+    return LIFECYCLE_AUX_TYPES + SOCIAL_AUX_TYPES
 
 
 def is_aux_allowed(
@@ -75,6 +81,7 @@ def validate_aux_type(aux_type: object) -> str:
 
 __all__ = [
     "ALL_AUX_TYPES",
+    "LIFECYCLE_AUX_TYPES",
     "SOCIAL_AUX_TYPES",
     "SOCIAL_FAREWELL_AUX_TYPES",
     "SOCIAL_GREETING_AUX_TYPES",

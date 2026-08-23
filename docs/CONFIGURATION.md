@@ -4,6 +4,13 @@ Configuration precedence is: explicit request/session value, persisted YAML or
 JSON profile, environment variable, then existing product default. Do not
 change a default as a performance or migration shortcut.
 
+`BEHAVIOR_START_LEAD_MS` keeps the default shared multimodal staging window
+(700ms by default). Correct-answer praise uses the same synchronized anchor with
+the shorter `BEHAVIOR_FEEDBACK_START_LEAD_MS` window (400ms by default), because
+expression assets are already warm and measured classroom LAN/server latency
+leaves sufficient commit margin. `BEHAVIOR_COMMIT_MIN_LEAD_MS` remains the hard
+lower bound.
+
 ## Devices
 
 `/api/v2/capture/devices` stores 0..N server/Runtime camera and microphone
@@ -20,6 +27,13 @@ Actions and GIF emotions are staged, validated, previewed and committed with
 logical `assetId/version` separated from physical filenames. Batch import
 accepts individual files or bounded ZIP archives and reports each item plus
 conflict policy (`skip`, `rename`, `overwrite`).
+
+The state machine returns to its configured idle motion after a foreground
+behavior finishes. That return uses the idle motion's normal per-motion
+`speedMultiplier`, so it is tuned in the Action Library instead of by adding a
+second state-machine delay. The repository default `空动作` uses `0.5` for a
+gentler return; changing that one action updates local, child-agent and Robot
+Runtime playback consistently.
 
 InteractionProfileV2 is keyed by course, then event/scene/line context. A
 binding may describe motions, expressions, fixed audio/TTS speech and timing.

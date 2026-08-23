@@ -13,8 +13,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SNAPSHOT = ROOT / "docs" / "refactor" / "contracts.snapshot.json"
-OUTPUT = ROOT / "docs" / "refactor" / "traceability.matrix.json"
+SNAPSHOT = ROOT / "tests" / "fixtures" / "contracts" / "contracts.snapshot.json"
+OUTPUT = ROOT / "tests" / "fixtures" / "contracts" / "traceability.matrix.json"
 
 
 def _owner(path: str) -> str:
@@ -41,7 +41,7 @@ def _http_rows(snapshot: dict) -> list[dict]:
             "owner": _owner(path),
             "sourceSnapshot": True,
             "runtimeCrossChecked": path != "/static/<path:filename>",
-            "behaviorFixture": "partial; see 01-contract-inventory.md",
+            "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py",
         })
     for route in snapshot.get("runtimeImplicitRoutes", []):
         method, path = route.split(" ", 1)
