@@ -173,10 +173,73 @@ def test_behavior_event_ownership_separates_social_from_ordering():
     assert allowed_aux_types("social", social_role="greeting") == (
         "silent", "social_greeting_intro", "social_greeting_play",
     )
-    # 社交课点 content load 走 silent，必须允许；标准表扬不得泄漏进打招呼。
+    # 首次进入任何课点都由空 aux 解析为 silent。社交课必须先接受
+    # 这个生命周期事件，随后才可能触发打招呼/再见专属行为。
     assert is_aux_allowed("social", "silent", social_role="greeting")
+    assert is_aux_allowed("social", "silent", social_role="farewell")
     assert not is_aux_allowed("social", "praise", social_role="greeting")
     assert not is_aux_allowed("social", "social_farewell_bye", social_role="greeting")
+
+
+def test_social_course_first_content_load_accepts_empty_aux_independent_of_db_ids(monkeypatch):
+    """Regression: an initial social play_resource must not block class start."""
+    import database.models as models
+    from app.robot.robot_service import RobotService
+
+    class Query:
+        def __init__(self, value):
+            self.value = value
+
+        def get(self, _identity):
+            return self.value
+
+    class CourseValue:
+        @staticmethod
+        def to_dict():
+            return {"type": "social"}
+
+    class ItemValue:
+        course_id = 900
+        name = "打招呼"
+
+        @staticmethod
+        def to_dict():
+            return {"config": {"socialRole": "greeting"}}
+
+    class CourseModel:
+        query = Query(CourseValue())
+
+    class ItemModel:
+        query = Query(ItemValue())
+
+    class Resolver:
+        @staticmethod
+        def parse_aux_type(aux):
+            return "silent" if not aux else "unexpected"
+
+        @staticmethod
+        def find_mapping(*_args):
+            return {"motions": [], "emotion": "idle.mp4", "sequence": {}}
+
+    monkeypatch.setattr(models, "Course", CourseModel)
+    monkeypatch.setattr(models, "CourseItem", ItemModel)
+    service = RobotService.__new__(RobotService)
+    service._mapping_resolver = Resolver()
+    service.get_default_emotion = lambda: "idle.mp4"
+
+    result = service.trigger_course_event({
+        "action": "play",
+        "courseId": 900,
+        "itemId": 901,
+        "courseType": "social",
+        "aux": {},
+        "behaviorId": "behavior-social-entry",
+    })
+
+    assert result["success"] is True
+    assert result["skipped"] is True
+    assert result["auxType"] == "silent"
+    assert result["behaviorId"] == "behavior-social-entry"
 
 
 def test_mapping_resolver_accepts_windows_utf8_bom(tmp_path):

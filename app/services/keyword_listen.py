@@ -267,10 +267,10 @@ class KeywordListenService:
         intent: Optional[str] = None,
         item_id: Any = None,
     ) -> bool:
-        """提问 TTS 结束后武装；本课点已自动/教师表扬则不再武装。"""
+        """提问或提示 TTS 结束后武装；已表扬的课点不再武装。"""
         sid = str(session_id)
         intent_l = str(intent or '').strip().lower()
-        if intent_l and intent_l != 'question':
+        if intent_l and intent_l not in ('question', 'hint'):
             return False
         with self._lock:
             state = self._states.get(sid)
@@ -310,6 +310,21 @@ class KeywordListenService:
                 state.keywords,
             )
             return True
+
+    def should_consume_dialogue_turn(self, session_id: str) -> bool:
+        """当前识别属于课程作答窗口时，不允许回落到普通闲聊。
+
+        ``praised`` 也视为课程窗口，避免连续 ASR 的重复尾音又触发一次
+        长对话并占用机器人行为锁。
+        """
+        sid = str(session_id)
+        with self._lock:
+            state = self._states.get(sid)
+            if not state or not self.supports_course(state.course_type):
+                return False
+            if self._expire_if_needed(state):
+                return False
+            return bool(state.keywords and (state.armed or state.praised))
 
     def disarm(self, session_id: str, *, reason: str = '') -> None:
         sid = str(session_id)

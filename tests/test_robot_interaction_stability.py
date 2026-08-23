@@ -89,6 +89,28 @@ def test_behavior_during_active_event_is_rejected_not_queued():
         service._process_behavior_lock.release()
 
 
+def test_high_priority_feedback_keeps_shared_anchor_with_shorter_lead():
+    service = object.__new__(RobotService)
+    service._sequence_queue = queue.Queue(maxsize=1)
+    service._idle_state_lock = threading.RLock()
+    service._idle_generation = 0
+    service._idle_timer = None
+    service._active_sequence_deadline = 0.0
+    service._behavior_busy = False
+    service._busy_event_id = None
+
+    plan = {
+        "id": "fast-praise",
+        "durationMs": 2000,
+        "startLeadMs": robot_service_mod.BEHAVIOR_FEEDBACK_START_LEAD_MS,
+    }
+    assert service._enqueue_sequence(plan) is True
+    try:
+        assert plan["scheduledDelayMs"] == robot_service_mod.BEHAVIOR_FEEDBACK_START_LEAD_MS
+    finally:
+        service._process_behavior_lock.release()
+
+
 def test_formal_behavior_does_not_send_separate_idle_stop_over_lan():
     service = object.__new__(RobotService)
     service._idle_state_lock = threading.RLock()

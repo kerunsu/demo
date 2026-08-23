@@ -627,6 +627,7 @@ function TeacherApp() {
           selectedStudent={selectedStudent}
           initialTrainingSessionId={preparedTrainingSessionId}
           readinessPassed={readinessPassed}
+          mode={assessmentMode ? 'assessment' : 'training'}
         />
       )}
       {currentPage === 'report' && reportTrainingSessionId && (

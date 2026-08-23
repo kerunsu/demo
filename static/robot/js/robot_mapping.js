@@ -306,10 +306,10 @@ function allowedAuxTypesForScope(scope) {
     if (scope.type === 'item') {
         const item = course?.items?.find((i) => String(i.id) === String(scope.itemId));
         const role = String(item?.socialRole || item?.config?.socialRole || '').toLowerCase();
-        if (role === 'greeting') return SOCIAL_AUX_TYPES.slice(0, 2);
-        if (role === 'farewell') return SOCIAL_AUX_TYPES.slice(2);
+        if (role === 'greeting') return ['silent', ...SOCIAL_AUX_TYPES.slice(0, 2)];
+        if (role === 'farewell') return ['silent', ...SOCIAL_AUX_TYPES.slice(2)];
     }
-    return SOCIAL_AUX_TYPES;
+    return ['silent', ...SOCIAL_AUX_TYPES];
 }
 
 function updateVisibleBehaviorSlots(scope) {

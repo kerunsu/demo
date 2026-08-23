@@ -607,6 +607,7 @@ class PlayResourceHandler:
                     'audio_pending': True,
                     'recording_mode': 'continuous',
                     'human_dir_name': (existing_session.metadata or {}).get('human_dir_name'),
+                    'mode': (existing_session.metadata or {}).get('mode'),
                 }
 
             # 训练会话：优先教师 payload（prepare_training 已开），再复用 active
@@ -868,6 +869,9 @@ class PlayResourceHandler:
                 'speech_target': speech_target,
                 'item_name': item_name,
                 'page_context': page_ctx,
+                # prepare_training 写入的会话模式才是服务端事实源；教师端
+                # 刷新或旧缓存不得把评估/干预语义悄悄切换。
+                'mode': (session.metadata or {}).get('mode'),
             }
 
         except Exception as e:

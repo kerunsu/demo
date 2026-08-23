@@ -20,7 +20,7 @@ def test_child_resource_transition_is_staged_and_acknowledged():
     assert 'socket.emit("resource_transition_failed", terminal)' in child
     assert "await preloadStagingResource(spec, pair.staging, token)" in child
     assert "await delayMs(RESOURCE_CROSSFADE_MS)" in child
-    assert "transition: opacity 320ms ease-in-out" in css
+    assert "transition: opacity 160ms cubic-bezier(0.77, 0, 0.175, 1)" in css
     assert "imageEl.onclick" not in child
 
 
@@ -67,7 +67,7 @@ def test_prepare_behavior_animation_does_not_start_playback():
         'clearHeldPraiseOverlay("content_committed")'
     )
     template = _read("templates/child.html")
-    assert 'child.js?v=20260820-interactive-praise-v3' in template
+    assert 'child.js?v=20260823-resource-latency-v1' in template
     handle_play = child[
         child.index("function handlePlayResource") :
         child.index('socket.on("play_resource"')
@@ -86,12 +86,12 @@ def test_interactive_questions_are_idempotent_and_answers_do_not_cut_speech():
     events = _read("app/sockets/events.py")
 
     matching_start = matching[
-        matching.index("socket.on('matching_start'") :
-        matching.index("socket.on('matching_set_difficulty'")
+        matching.index("function applyMatchingControl") :
+        matching.index("function initSocket")
     ]
     ordering_start = sequencing[
-        sequencing.index("socket.on('sequencing_start'") :
-        sequencing.index("socket.on('sequencing_set_config'")
+        sequencing.index("function applySequencingControl") :
+        sequencing.index("function initSocket")
     ]
     assert "flushQuestionReady()" in matching_start
     assert "emitQuestionReady()" not in matching_start
@@ -102,7 +102,7 @@ def test_interactive_questions_are_idempotent_and_answers_do_not_cut_speech():
 
     matching_status = events[
         events.index("def handle_matching_status_update") :
-        events.index("@socketio.on('matching_hint')")
+        events.index("@socketio.on('matching_game_end')")
     ]
     ordering_status = events[
         events.index("def handle_sequencing_status_update") :
@@ -252,7 +252,8 @@ def test_interactive_shell_prefers_course_entry_file():
         child.index("function buildResourceSpec")
     ]
     assert helper.index("course && course.file") < helper.index("item && item.file")
-    assert 'params.set("_transition", transitionId)' in helper
+    assert 'params.set("_transition", transitionId)' not in helper
+    assert 'params.set("mode", mode)' in helper
 
 
 def test_logical_context_and_video_start_commit_with_the_staged_frame():
@@ -275,8 +276,10 @@ def test_logical_context_and_video_start_commit_with_the_staged_frame():
     assert "await staging.play()" not in preload
     assert "try { staging.pause(); }" in preload
     assert "await pair.staging.play()" in transition
-    assert "event.source !== interactiveEl.contentWindow" in child
+    assert "event.source === interactiveEl.contentWindow" in child
     assert "stagingInteractiveEl.__pendingPageContext = data.pageContext" in child
+    assert "stagingInteractiveEl.__pendingQuestionReady" in child
+    assert "relayInteractiveQuestionReady(promoted, stagedQuestionReady)" in child
 
 
 def test_child_rejects_old_session_media_and_praise_is_request_correlated():
@@ -322,3 +325,193 @@ def test_teacher_waits_for_correlated_resource_ready_and_replays_after_reconnect
     assert "socketRef.current.emit('freeze_course_frame'" in control
     assert "!socketRef.current?.connected ||" in control
     assert "scheduleTimeout(flushDeferredAutoQuestion, 0);" in control
+
+
+def test_ordering_teacher_config_is_applied_atomically_on_the_next_question():
+    control = _read("teacher_frontend/components/ControlPage.tsx")
+    ordering = _read("static/resources/interactive/sequencing.html")
+
+    config_handler = control[
+        control.index("const handleSequencingConfigChange") :
+        control.index("// 排序游戏：发送提示")
+    ]
+    assert "sequencingConfigRef.current = nextConfig" in config_handler
+    assert "socketRef.current.emit('sequencing_set_config'" in config_handler
+    assert "...nextConfig" in config_handler
+
+    set_config = ordering[
+        ordering.index("setConfig(config)") :
+        ordering.index("async startGame()")
+    ]
+    generate = ordering[
+        ordering.index("async generateQuestion()") :
+        ordering.index("getRandomRule()")
+    ]
+    assert "this.pendingConfig = {" in set_config
+    assert "await this.applyPendingConfig();" in generate
+    assert generate.index("await this.applyPendingConfig();") < generate.index(
+        "if (this.autoMode)"
+    )
+    assert "await this.loadImages();" in set_config
+
+    question_ready = control[
+        control.index("socket.on('sequencing_question_ready'") :
+        control.index("socket.on('sequencing_game_end'")
+    ]
+    assert "sequencingActiveQuestionRef.current =" in question_ready
+    assert "setSequencingStatus" in question_ready
+
+    play = control[
+        control.index("const playCurrentItem = useCallback") :
+        control.index("const retryFailedPlayback")
+    ]
+    assert "!isContent" in play
+    assert "sequencingActiveQuestionRef.current" in play
+    assert "category: orderingQuestionConfig.category" in play
+    assert "rule: orderingQuestionConfig.rule" in play
+    assert "下一题类别" in control
+    assert "下一题规则" in control
+
+
+def test_interactive_controls_use_authorized_parent_socket_bridge():
+    child = _read("static/js/child.js")
+    matching = _read("static/resources/interactive/matching.html")
+    sequencing = _read("static/resources/interactive/sequencing.html")
+    template = _read("templates/child.html")
+    events = _read("app/sockets/events.py")
+
+    for event_name in (
+        "matching_set_difficulty",
+        "matching_hint",
+        "sequencing_set_config",
+        "sequencing_hint",
+    ):
+        assert f'"{event_name}"' in child
+    assert 'type: "interactive_control"' in child
+    assert "relayInteractiveControl(eventName" in child
+    assert 'frame.dataset.pageContextActive !== "true"' in child
+    assert "}, window.location.origin);" in child
+    assert 'child.js?v=20260823-resource-latency-v1' in template
+
+    for page, prefix, apply_name in (
+        (matching, "matching_", "applyMatchingControl"),
+        (sequencing, "sequencing_", "applySequencingControl"),
+    ):
+        assert "const isEmbeddedInteractiveFrame" in page
+        assert "message.type !== 'interactive_control'" in page
+        assert "event.origin !== window.location.origin" in page
+        assert f"eventName.startsWith('{prefix}')" in page
+        assert apply_name in page
+        assert "sessionId && !isEmbeddedInteractiveFrame" in page
+        assert "pendingInteractiveControls" in page
+
+    matching_start = matching[
+        matching.index("function applyMatchingControl") :
+        matching.index("window.addEventListener('message'")
+    ]
+    ordering_start = sequencing[
+        sequencing.index("function applySequencingControl") :
+        sequencing.index("window.addEventListener('message'")
+    ]
+    assert "flushQuestionReady()" in matching_start
+    assert "emitQuestionReady()" not in matching_start
+    assert "flushQuestionReady()" in ordering_start
+    assert "emitQuestionReady()" not in ordering_start
+
+    # The bridge must not weaken the one-owner child session rule.
+    assert "_claim_child_session_owner" in events
+
+
+def test_interactive_question_state_separates_mode_gate_and_teacher_next():
+    control = _read("teacher_frontend/components/ControlPage.tsx")
+    app = _read("teacher_frontend/App.tsx")
+    child = _read("static/js/child.js")
+    gate = _read("static/js/interactive_question_state.js")
+    matching = _read("static/resources/interactive/matching.html")
+    sequencing = _read("static/resources/interactive/sequencing.html")
+    events = _read("app/sockets/events.py")
+
+    assert "mode={assessmentMode ? 'assessment' : 'training'}" in app
+    assert "mode," in control
+    assert "handleInteractiveNextQuestion" in control
+    assert "source: 'teacher_next_question'" in control
+    assert "interactiveNextPending ? '切题中…' : '下一题'" in control
+    assert "下一题正在准备，请不要连续点击" in control
+    assert 'params.set("mode", mode)' in child
+    assert "class QuestionInputGate" in gate
+    assert 'data.intent || ""' in gate
+    assert "question-input-locked" in matching
+    assert "question-input-locked" in sequencing
+    assert "this.questionGate.lock" in matching
+    assert "this.questionGate.lock" in sequencing
+    assert "type: 'interactive_question_ready'" in matching
+    assert "type: 'interactive_question_ready'" in sequencing
+    assert "!isEmbeddedInteractiveFrame && socket && socket.connected" in matching
+    assert "!isEmbeddedInteractiveFrame && socket && socket.connected" in sequencing
+    assert "MODE_ASSESSMENT" in matching
+    assert "MODE_ASSESSMENT" in sequencing
+    assert "this.currentOptions.reverse()" in matching
+    assert "this.options = [this.options[1], this.options[0]]" in sequencing
+    # Only an explicit teacher next interrupts a prompt; child answers wait for
+    # the active question sentence to finish before feedback starts.
+    assert events.count("_interrupt_interactive_prompt(session_id, data)") == 2
+
+
+def test_matching_teacher_difficulty_overrides_simplified_mode_on_next_question():
+    control = _read("teacher_frontend/components/ControlPage.tsx")
+    matching = _read("static/resources/interactive/matching.html")
+
+    difficulty_handler = control[
+        control.index("const handleSetMatchingDifficulty") :
+        control.index("// 配对游戏：启动游戏")
+    ]
+    assert "matchingDifficultyRef.current = level" in difficulty_handler
+    assert "socketRef.current.emit('matching_set_difficulty'" in difficulty_handler
+
+    apply_difficulty = matching[
+        matching.index("applyTeacherDifficulty()") :
+        matching.index("async startGame()")
+    ]
+    next_question = matching[
+        matching.index("      nextQuestion() {") :
+        matching.index("      generateQuestion() {")
+    ]
+    assert "this.autoDifficulty = this.teacherDifficulty" in apply_difficulty
+    assert "this.isSimplifiedMode = false" in apply_difficulty
+    assert "this.questionsInCurrentLevel = 0" in apply_difficulty
+    assert "this.applyTeacherDifficulty();" in next_question
+    assert next_question.index("this.applyTeacherDifficulty();") < next_question.index(
+        "this.generateQuestion();"
+    )
+
+
+def test_teacher_rating_waits_for_praise_animation_without_interrupting_it():
+    control = _read("teacher_frontend/components/ControlPage.tsx")
+
+    ack_handler = control[
+        control.index("socket.on('play_resource_ack'") :
+        control.index("socket.on('audio_status_update'")
+    ]
+    assert "requestedAtMs: Date.now()" in control
+    assert "praiseContext.animationExpected = data?.animationExpected === true" in ack_handler
+    assert "armPraiseRatingFallback(" in ack_handler
+    assert "Math.max(12000, remainingMs + 500)" in ack_handler
+
+    request_advance = control[
+        control.index("const requestAdvance") :
+        control.index("useEffect(() => {\n    handleNextRef.current = requestAdvance")
+    ]
+    assert "source !== 'praise_end'" in request_advance
+
+    animation_start = control.index("socket.on('behavior_animation_ended'")
+    animation_end = control[animation_start : control.index("return socket;", animation_start)]
+    assert "handleNextRef.current('praise_end')" not in animation_end
+    assert "pendingPraiseAdvanceRef.current = praiseContext" not in animation_end
+    assert "queuePraiseRating(praiseContext)" in animation_end
+
+    busy_content = control[
+        control.index("if (\n      playbackPhaseRef.current !== 'idle'") :
+        control.index("// 验证studentId是否存在")
+    ]
+    assert "play-content-deferred" in busy_content
+    assert "deferredContentRetryRef.current" in busy_content

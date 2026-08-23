@@ -273,6 +273,7 @@ def test_play_resource_reuses_prepared_training(monkeypatch):
     assert result is not None
     assert result["training_session_id"] == ts
     assert result["session_id"] == warmup_sid  # 连续录制：同一 media session
+    assert result["mode"] == "training"
     assert get_session_manager().get_session(warmup_sid) is not None
     assert service.store.get_window(ts, result["question_id"]) is not None
     _clear_student_sessions(9003)

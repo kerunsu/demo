@@ -73,6 +73,10 @@ BEHAVIOR_START_LEAD_MS = _positive_env_ms(
     "BEHAVIOR_START_LEAD_MS",
     700,
 )
+BEHAVIOR_FEEDBACK_START_LEAD_MS = _positive_env_ms(
+    "BEHAVIOR_FEEDBACK_START_LEAD_MS",
+    400,
+)
 BEHAVIOR_COMMIT_MIN_LEAD_MS = _positive_env_ms(
     "BEHAVIOR_COMMIT_MIN_LEAD_MS",
     200,
@@ -2032,6 +2036,7 @@ class RobotService:
             or source.get('request_id')
             or str(behavior_id)
         )
+        fast_feedback = bool(aux.get('praise'))
         return {
             'id': str(behavior_id),
             'protocolVersion': '1',
@@ -2046,6 +2051,9 @@ class RobotService:
             'audioOffsetMs': audio_offset_ms,
             'sessionId': str(session_id) if session_id else None,
             'dialogueReply': bool(source.get('dialogueReply')),
+            'startLeadMs': (
+                BEHAVIOR_FEEDBACK_START_LEAD_MS if fast_feedback else None
+            ),
         }
 
     def _run_sequence(self, plan: Dict[str, Any]) -> None:
@@ -2273,9 +2281,14 @@ class RobotService:
                 self._behavior_audio_waiters[behavior_id] = waiter
             now_monotonic = time.monotonic()
             now_epoch_ms = time.time() * 1000.0
+            requested_lead_ms = self._as_ms(plan.get('startLeadMs'))
+            lead_ms = max(
+                BEHAVIOR_COMMIT_MIN_LEAD_MS,
+                requested_lead_ms or BEHAVIOR_START_LEAD_MS,
+            )
             start_at = float(
                 plan.get('startAtMonotonic')
-                or (now_monotonic + BEHAVIOR_START_LEAD_MS / 1000.0)
+                or (now_monotonic + lead_ms / 1000.0)
             )
             plan['startAtMonotonic'] = start_at
             plan['startAtEpochMs'] = int(round(

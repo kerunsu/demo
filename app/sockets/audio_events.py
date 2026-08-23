@@ -121,6 +121,27 @@ def register_audio_events(socketio: SocketIO):
                     'interactionId': str(behavior_id),
                 })
 
+            if status in ('playing', 'started', 'ready', 'prepared'):
+                try:
+                    from app.sockets.events import (
+                        _record_latency_modality_callback,
+                    )
+
+                    _record_latency_modality_callback(
+                        payload,
+                        phase=(
+                            'ready'
+                            if status in ('ready', 'prepared')
+                            else 'started'
+                        ),
+                        modality='audio',
+                    )
+                except Exception as latency_error:
+                    logger.debug(
+                        'audio latency callback audit failed: %s',
+                        latency_error,
+                    )
+
             try:
                 from app.sockets.events import (
                     _interaction_context_for_behavior,

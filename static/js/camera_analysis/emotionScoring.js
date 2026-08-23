@@ -1,6 +1,6 @@
 /**
  * browser-emotion-v1：MediaPipe blendshape → positive / focused / frustrated
- * 历史设计见 docs/archive/legacy-guides/EMOTION_ATTENTION_REIMPLEMENTATION_GUIDE.md §4
+ * 当前评分规则以 docs/REPORT_SCORING.md 和本实现测试为准。
  */
 
 function clamp(v, lo = 0, hi = 1) {

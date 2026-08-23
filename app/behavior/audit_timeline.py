@@ -45,6 +45,13 @@ def _safe_id(value: Any, *, fallback: Optional[str] = None) -> Optional[str]:
     return fallback
 
 
+def _number_for_sort(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _summarize_binary(value: Any) -> Dict[str, Any]:
     if isinstance(value, str):
         raw = value.encode("utf-8", errors="replace")
@@ -96,31 +103,53 @@ class FullInteractionTimeline:
         )
         self._lock = threading.RLock()
         self._sequences: Dict[str, int] = {}
-        self._resolved_paths: Dict[str, Path] = {}
+        # A training can be retried into more than one media folder.  Cache an
+        # exact media binding only; caching by training id alone makes every
+        # later retry append to the first folder that happened to be resolved.
+        self._resolved_paths: Dict[tuple[str, str], Path] = {}
         self._process_lock = InterProcessMutex(self.root / ".full_timeline.lock")
 
-    def _path(self, training_session_id: str) -> Optional[Path]:
+    def _path(
+        self,
+        training_session_id: str,
+        runtime_session_id: Any = None,
+    ) -> Optional[Path]:
         safe = _safe_id(training_session_id)
         if not safe:
             raise ValueError("invalid_training_session_id")
+        runtime_safe = _safe_id(runtime_session_id)
+        if runtime_session_id not in (None, "") and not runtime_safe:
+            raise ValueError("invalid_runtime_session_id")
         if self._direct_layout:
             return self.root / safe / "full_interaction_timeline.jsonl"
-        cached = self._resolved_paths.get(safe)
+        cache_key = (safe, runtime_safe or "")
+        cached = self._resolved_paths.get(cache_key) if runtime_safe else None
         if cached is not None:
             return cached / "full_interaction_timeline.jsonl"
         if self._allow_runtime_registry:
             try:
-                from app.services.recording_timeline import get_recording_session_by_training
-                recording = get_recording_session_by_training(safe)
+                from app.services.recording_timeline import (
+                    get_recording_session,
+                    get_recording_session_by_training,
+                )
+                recording = (
+                    get_recording_session(runtime_safe)
+                    if runtime_safe
+                    else get_recording_session_by_training(safe)
+                )
                 if recording is not None:
+                    if str(recording.training_session_id or "") != safe:
+                        return None
                     directory = Path(recording.dir_path)
-                    self._resolved_paths[safe] = directory
+                    if runtime_safe:
+                        self._resolved_paths[cache_key] = directory
                     return directory / "full_interaction_timeline.jsonl"
             except Exception:
                 pass
         # Completed sessions are no longer in the active registry. Resolve the
         # same folder from its durable session_meta instead of creating a second
         # tree keyed by an internal UUID.
+        matches: list[tuple[float, Path]] = []
         if self.root.is_dir():
             for directory in self.root.iterdir():
                 if not directory.is_dir():
@@ -133,9 +162,27 @@ class FullInteractionTimeline:
                 except (OSError, ValueError, TypeError):
                     continue
                 training_id = meta.get("trainingSessionId") or meta.get("training_session_id")
-                if str(training_id or "") == safe:
-                    self._resolved_paths[safe] = directory
-                    return directory / "full_interaction_timeline.jsonl"
+                media_id = meta.get("mediaSessionId") or meta.get("sessionId")
+                if str(training_id or "") != safe:
+                    continue
+                if runtime_safe and str(media_id or "") != runtime_safe:
+                    continue
+                started = meta.get("recordingStartedAtUnix")
+                try:
+                    order = float(started)
+                except (TypeError, ValueError):
+                    try:
+                        order = float(meta_path.stat().st_mtime)
+                    except OSError:
+                        order = 0.0
+                matches.append((order, directory))
+        if matches:
+            # An unqualified legacy query resolves the latest media attempt;
+            # exact runtime queries remain stable and cacheable.
+            directory = max(matches, key=lambda item: item[0])[1]
+            if runtime_safe:
+                self._resolved_paths[cache_key] = directory
+            return directory / "full_interaction_timeline.jsonl"
         return None
 
     @staticmethod
@@ -155,8 +202,9 @@ class FullInteractionTimeline:
         except Exception:
             return None
 
-    def _next_sequence(self, training_id: str, path: Path) -> int:
-        current = self._sequences.get(training_id, 0)
+    def _next_sequence(self, path: Path) -> int:
+        sequence_key = str(path.resolve())
+        current = self._sequences.get(sequence_key, 0)
         if path.is_file():
             try:
                 disk_sequence = 0
@@ -179,8 +227,50 @@ class FullInteractionTimeline:
             except OSError:
                 pass
         current += 1
-        self._sequences[training_id] = current
+        self._sequences[sequence_key] = current
         return current
+
+    def _media_id_for_path(self, path: Path) -> Optional[str]:
+        """Resolve the durable media id for an already selected audit file."""
+        if self._direct_layout:
+            return None
+        meta_path = path.parent / "session_meta.json"
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return None
+        return _safe_id(meta.get("mediaSessionId") or meta.get("sessionId"))
+
+    def _audit_paths_for_training(self, training_session_id: str) -> list[Path]:
+        """Return durable audit files for legacy recovery, newest first."""
+        safe = _safe_id(training_session_id)
+        if not safe or self._direct_layout or not self.root.is_dir():
+            return []
+        matches: list[tuple[float, Path]] = []
+        for directory in self.root.iterdir():
+            if not directory.is_dir():
+                continue
+            meta_path = directory / "session_meta.json"
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                continue
+            training_id = meta.get("trainingSessionId") or meta.get(
+                "training_session_id"
+            )
+            if str(training_id or "") != safe:
+                continue
+            try:
+                order = float(meta.get("recordingStartedAtUnix"))
+            except (TypeError, ValueError):
+                try:
+                    order = float(meta_path.stat().st_mtime)
+                except OSError:
+                    order = 0.0
+            matches.append(
+                (order, directory / "full_interaction_timeline.jsonl")
+            )
+        return [path for _order, path in sorted(matches, reverse=True)]
 
     def record(
         self,
@@ -212,14 +302,20 @@ class FullInteractionTimeline:
             client_ms = float(client_timestamp) if client_timestamp is not None else None
         except (TypeError, ValueError):
             client_ms = None
-        path = self._path(training_id)
+        runtime_id = _safe_id(runtime_session_id)
+        path = self._path(training_id, runtime_id)
         if path is None:
             return None
+        # Several internal milestones historically carried only the training
+        # id.  Once the recording folder has been selected, persist its durable
+        # media id so an exact dashboard query neither drops the row nor mixes
+        # it into a later retry of the same training id.
+        runtime_id = runtime_id or self._media_id_for_path(path)
         with self._lock, self._process_lock:
             path.parent.mkdir(parents=True, exist_ok=True)
             item = {
                 "schemaVersion": SCHEMA_VERSION,
-                "sequence": self._next_sequence(training_id, path),
+                "sequence": self._next_sequence(path),
                 "eventId": str(uuid.uuid4()),
                 "timestamp": datetime.fromtimestamp(
                     epoch_ns / 1_000_000_000, tz=timezone.utc
@@ -227,7 +323,7 @@ class FullInteractionTimeline:
                 "serverEpochMs": epoch_ns / 1_000_000,
                 "serverMonotonicMs": monotonic_ns / 1_000_000,
                 "trainingSessionId": training_id,
-                "sessionId": _safe_id(runtime_session_id),
+                "sessionId": runtime_id,
                 "questionId": _safe_id(question_id),
                 "requestId": _safe_id(request_id),
                 "behaviorId": _safe_id(behavior_id),
@@ -251,26 +347,77 @@ class FullInteractionTimeline:
                 stream.flush()
             return item
 
-    def read(self, training_session_id: str) -> list[Dict[str, Any]]:
-        path = self._path(training_session_id)
-        if path is None or not path.is_file():
+    def read(
+        self,
+        training_session_id: str,
+        runtime_session_id: Any = None,
+    ) -> list[Dict[str, Any]]:
+        runtime_id = _safe_id(runtime_session_id)
+        path = self._path(training_session_id, runtime_id)
+        if path is None:
             return []
+        candidates = [path]
+        if runtime_id:
+            # Before media-scoped path caching, retries that reused a training
+            # id could write into the first attempt's file. Recover only rows
+            # whose persisted sessionId proves they belong to this exact media
+            # session; never infer unlabelled rows from a different folder.
+            candidates.extend(
+                candidate
+                for candidate in self._audit_paths_for_training(
+                    training_session_id
+                )
+                if candidate != path
+            )
         rows = []
-        with self._lock, path.open("r", encoding="utf-8") as stream:
-            for line in stream:
-                try:
-                    value = json.loads(line)
-                    if isinstance(value, dict):
-                        rows.append(value)
-                except (ValueError, TypeError):
+        seen: set[str] = set()
+        with self._lock:
+            for candidate in candidates:
+                if not candidate.is_file():
                     continue
+                with candidate.open("r", encoding="utf-8") as stream:
+                    for line in stream:
+                        try:
+                            value = json.loads(line)
+                        except (ValueError, TypeError):
+                            continue
+                        if not isinstance(value, dict):
+                            continue
+                        row_runtime_id = str(value.get("sessionId") or "")
+                        belongs = (
+                            not runtime_id
+                            or row_runtime_id == runtime_id
+                            or (candidate == path and not row_runtime_id)
+                        )
+                        if not belongs:
+                            continue
+                        event_id = str(value.get("eventId") or "")
+                        dedupe_key = event_id or hashlib.sha256(
+                            line.encode("utf-8", errors="replace")
+                        ).hexdigest()
+                        if dedupe_key in seen:
+                            continue
+                        seen.add(dedupe_key)
+                        if candidate != path:
+                            value["_legacyMisplacedAuditRow"] = True
+                        rows.append(value)
+        rows.sort(
+            key=lambda item: (
+                _number_for_sort(item.get("serverEpochMs")),
+                int(item.get("sequence") or 0),
+            )
+        )
         return rows
 
-    def export_csv(self, training_session_id: str) -> str:
+    def export_csv(
+        self,
+        training_session_id: str,
+        runtime_session_id: Any = None,
+    ) -> str:
         output = io.StringIO(newline="")
         writer = csv.DictWriter(output, fieldnames=CSV_FIELDS, extrasaction="ignore")
         writer.writeheader()
-        for item in self.read(training_session_id):
+        for item in self.read(training_session_id, runtime_session_id):
             row = dict(item)
             row["details"] = json.dumps(row.get("details") or {}, ensure_ascii=False)
             writer.writerow(row)

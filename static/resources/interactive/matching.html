@@ -76,12 +76,13 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.2s ease;
+      transition: color 160ms ease,
+                  background-color 160ms ease,
+                  transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
       color: #95a5a6;
     }
 
     .hint-btn:active { transform: scale(0.9); }
-    .hint-btn:hover { color: var(--hint-color); transform: scale(1.05); }
     .hint-btn.active {
       background: var(--hint-color);
       color: white;
@@ -189,7 +190,8 @@
       border: 5px solid #f0f9ff;
       box-shadow: var(--shadow-light);
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+                  opacity 160ms cubic-bezier(0.23, 1, 0.32, 1);
       position: relative;
       transform-style: preserve-3d;
       aspect-ratio: 1;
@@ -222,9 +224,12 @@
       border-radius: 22px;
     }
 
-    .option-card:not(.wrong):not(.correct):not(.correct-lvl3):hover {
-      transform: translateY(-5px);
-      box-shadow: var(--shadow-hover);
+    @media (hover: hover) and (pointer: fine) {
+      .hint-btn:hover { color: var(--hint-color); transform: scale(1.05); }
+      .option-card:not(.wrong):not(.correct):not(.correct-lvl3):hover {
+        transform: translateY(-5px);
+        box-shadow: var(--shadow-hover);
+      }
     }
 
     .option-card:not(.wrong):not(.correct):not(.correct-lvl3):active {
@@ -258,10 +263,45 @@
 
     .option-card.wrong {
       opacity: 0.35 !important;
-      filter: grayscale(100%) !important;
-      transform: scale(0.75) !important;
-      transition: opacity 0.4s ease, filter 0.4s ease, transform 0.4s ease !important;
+      transform: scale(0.82) !important;
+      transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+                  transform 180ms cubic-bezier(0.23, 1, 0.32, 1) !important;
       pointer-events: none;
+    }
+
+    .target-frame {
+      transition: transform 240ms cubic-bezier(0.77, 0, 0.175, 1);
+      transform-origin: center;
+    }
+
+    .options-grid {
+      transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+                  transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    body.question-input-locked .target-frame { transform: scale(1.08); }
+    body.question-input-locked .options-grid {
+      opacity: 0;
+      transform: scale(0.98);
+      pointer-events: none;
+    }
+    body.question-input-ready .target-frame { transform: scale(1); }
+    body.question-input-ready .options-grid {
+      opacity: 1;
+      transform: scale(1);
+      pointer-events: auto;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .target-frame { transform: none !important; transition: none !important; }
+      .options-grid {
+        transform: none !important;
+        transition: opacity 160ms ease !important;
+      }
+      .option-card {
+        animation: none !important;
+        transition: opacity 120ms ease !important;
+      }
     }
 
     .option-card.dimmed {
@@ -476,6 +516,7 @@
     <div id="gameArea"></div>
   </div>
 
+  <script src="/static/js/interactive_question_state.js?v=20260823-1"></script>
   <script>
     // ==================== 粒子特效系统 ====================
     const canvas = document.getElementById('confetti-canvas');
@@ -586,6 +627,7 @@
     const itemId = urlParams.get('itemId');
     const trainingSessionId = urlParams.get('trainingSessionId');
     const questionId = urlParams.get('questionId');
+    const operationMode = window.InteractiveQuestionState.normalizeMode(urlParams.get('mode'));
 
     // ==================== 调试日志 ====================
     function debugLog(message) {
@@ -657,6 +699,75 @@
       return `第${fallbackIndex + 1}张`;
     }
 
+    const isEmbeddedInteractiveFrame = window.parent && window.parent !== window;
+    const pendingInteractiveControls = [];
+
+    function applyMatchingControl(eventName, data = {}) {
+      const activeSessionId = String(sessionId || '');
+      const eventSessionId = String(data.sessionId || data.session_id || '');
+      if (activeSessionId && eventSessionId && activeSessionId !== eventSessionId) {
+        debugLog(`忽略其他会话的 ${eventName}: ${eventSessionId}`);
+        return;
+      }
+      if (!window.matchingGame) {
+        pendingInteractiveControls.push({ eventName, data });
+        return;
+      }
+      if (eventName === 'matching_set_difficulty') {
+        const difficulty = data.difficulty;
+        debugLog(`收到难度设置: ${difficulty}选1`);
+        window.matchingGame.setTeacherDifficulty(difficulty);
+        return;
+      }
+      if (eventName === 'matching_start') {
+        debugLog('收到启动游戏指令');
+        if (!window.matchingGame.isGameActive) {
+          window.matchingGame.startGame();
+        } else if (typeof window.matchingGame.flushQuestionReady === 'function') {
+          window.matchingGame.flushQuestionReady();
+        }
+        return;
+      }
+      if (eventName === 'matching_next') {
+        debugLog('收到下一题指令');
+        if (window.matchingGame.isGameActive) {
+          window.matchingGame.forceNextQuestion();
+        }
+        return;
+      }
+      if (eventName === 'matching_hint') {
+        debugLog('收到提示指令');
+        if (window.matchingGame.isGameActive) {
+          window.matchingGame.showHint();
+        }
+      }
+    }
+
+    window.addEventListener('message', (event) => {
+      const message = event && event.data;
+      if (
+        isEmbeddedInteractiveFrame &&
+        event.source === window.parent &&
+        event.origin === window.location.origin &&
+        message && message.type === 'robot_speak_ended'
+      ) {
+        window.matchingGame?.questionGate?.handleSpeakEnded(message);
+        return;
+      }
+      if (
+        !isEmbeddedInteractiveFrame ||
+        event.source !== window.parent ||
+        event.origin !== window.location.origin ||
+        !message ||
+        message.type !== 'interactive_control'
+      ) {
+        return;
+      }
+      const eventName = String(message.eventName || '');
+      if (!eventName.startsWith('matching_')) return;
+      applyMatchingControl(eventName, message.payload || {});
+    });
+
     // ==================== Socket 初始化 ====================
     function initSocket() {
       socket = io();
@@ -665,7 +776,7 @@
         debugLog('Socket连接成功');
         
         // 如果有 sessionId，加入对应房间
-        if (sessionId) {
+        if (sessionId && !isEmbeddedInteractiveFrame) {
           socket.emit('join_session', { sessionId: sessionId, role: 'child' });
           debugLog(`加入会话房间: ${sessionId}`);
         }
@@ -681,42 +792,27 @@
       
       // 监听教师端启动游戏
       socket.on('matching_start', (data) => {
-        debugLog('收到启动游戏指令');
-        if (window.matchingGame && !window.matchingGame.isGameActive) {
-          window.matchingGame.startGame();
-        } else if (
-          window.matchingGame &&
-          window.matchingGame.isGameActive &&
-          typeof window.matchingGame.flushQuestionReady === 'function'
-        ) {
-          // The page auto-starts. A later teacher start only flushes an ask
-          // that has not been sent yet; it must not replay the visible item.
-          window.matchingGame.flushQuestionReady();
-        }
+        if (!isEmbeddedInteractiveFrame) applyMatchingControl('matching_start', data);
       });
       
       // 监听教师端设置难度
       socket.on('matching_set_difficulty', (data) => {
-        const difficulty = data.difficulty;
-        debugLog(`收到难度设置: ${difficulty}选1`);
-        if (window.matchingGame) {
-          window.matchingGame.setTeacherDifficulty(difficulty);
-        }
+        if (!isEmbeddedInteractiveFrame) applyMatchingControl('matching_set_difficulty', data);
       });
       
       // 监听教师端下一题
       socket.on('matching_next', (data) => {
-        debugLog('收到下一题指令');
-        if (window.matchingGame && window.matchingGame.isGameActive) {
-          window.matchingGame.forceNextQuestion();
-        }
+        if (!isEmbeddedInteractiveFrame) applyMatchingControl('matching_next', data);
       });
       
       // 监听教师端提示指令
       socket.on('matching_hint', (data) => {
-        debugLog('收到提示指令');
-        if (window.matchingGame && window.matchingGame.isGameActive) {
-          window.matchingGame.showHint();
+        if (!isEmbeddedInteractiveFrame) applyMatchingControl('matching_hint', data);
+      });
+
+      socket.on('robot_speak_ended', (data) => {
+        if (!isEmbeddedInteractiveFrame) {
+          window.matchingGame?.questionGate?.handleSpeakEnded(data);
         }
       });
       
@@ -774,6 +870,14 @@
         // 当前题目是否已经答错过（用于统计：只要点错过就不算正确）
         this.hasAnsweredWrong = false;
         this.wrongAttemptsThisQuestion = 0;
+        this.operationMode = operationMode;
+        this.questionGate = new window.InteractiveQuestionState.QuestionInputGate({
+          sessionId,
+          timeoutMs: 8000,
+          onUnlock: () => {
+            if (this.questionStartAt == null) this.questionStartAt = Date.now();
+          },
+        });
         
         this.init();
       }
@@ -792,7 +896,7 @@
         this.loadingImagesPromise = (async () => {
           try {
             debugLog('正在加载配对图片...');
-            const response = await fetch('/api/getMatchingImages', { cache: 'no-store' });
+            const response = await fetch('/api/getMatchingImages', { cache: 'default' });
             const data = await response.json();
 
             if (data.error) {
@@ -850,8 +954,26 @@
       // ==================== 教师端控制方法 ====================
       
       setTeacherDifficulty(level) {
-        this.teacherDifficulty = level;
-        debugLog(`教师设置难度: ${level}选1 (下一题生效)`);
+        const normalizedLevel = Number(level);
+        if (!Number.isInteger(normalizedLevel) || normalizedLevel < 2 || normalizedLevel > 5) {
+          debugLog(`忽略无效教师难度: ${level}`);
+          return;
+        }
+        this.teacherDifficulty = normalizedLevel;
+        debugLog(`教师设置难度: ${normalizedLevel}选1 (下一题生效)`);
+      }
+
+      applyTeacherDifficulty() {
+        if (this.teacherDifficulty === null) return false;
+
+        this.baseDifficulty = this.teacherDifficulty;
+        this.autoDifficulty = this.teacherDifficulty;
+        this.teacherDifficulty = null;
+        this.isSimplifiedMode = false;
+        this.questionsInCurrentLevel = 0;
+        this.consecutiveWrongInLevel1 = 0;
+        debugLog(`应用教师难度: ${this.baseDifficulty}选1`);
+        return true;
       }
       
       async startGame() {
@@ -890,11 +1012,7 @@
         this.responseTimesMs = [];
         
         // 应用教师设置的难度
-        if (this.teacherDifficulty !== null) {
-          this.baseDifficulty = this.teacherDifficulty;
-          this.autoDifficulty = this.teacherDifficulty;
-          this.teacherDifficulty = null;
-        }
+        this.applyTeacherDifficulty();
         
         // 隐藏等待遮罩
         document.getElementById('gameOverlay').classList.add('hidden');
@@ -912,6 +1030,7 @@
         debugLog('教师强制跳转下一题');
         // 作废进行中的表扬语音等待，避免稍后重复切题
         this._advanceToken = (this._advanceToken || 0) + 1;
+        this.questionGate.cancel();
         this.nextQuestion();
       }
 
@@ -1041,13 +1160,8 @@
         this.hasAnsweredWrong = false; // 重置当前题目的错误标记
         this.wrongAttemptsThisQuestion = 0;
         
-        // 如果教师设置了新难度，在这里应用
-        if (this.teacherDifficulty !== null) {
-          this.baseDifficulty = this.teacherDifficulty;
-          this.autoDifficulty = this.teacherDifficulty;
-          this.teacherDifficulty = null;
-          debugLog(`应用教师难度: ${this.baseDifficulty}选1`);
-        }
+        // 教师选择优先于自动调节/简化模式，并从本题开始生效。
+        this.applyTeacherDifficulty();
         
         this.generateQuestion();
       }
@@ -1104,6 +1218,17 @@
           targetImg.style.opacity = '1';
         }, 50);
         
+        this.questionGate.lock(this.buildPageContext().questionId);
+        this.renderOptionCards();
+
+        // 题目先聚焦展示；提问语音结束后才显示选项并开始反应计时。
+        this.questionStartAt = null;
+        this._responseRecordedForQuestion = false;
+        this.publishPageContext();
+        this.emitQuestionReady();
+      }
+
+      renderOptionCards() {
         // 生成选项卡片（单行排布，按数量缩放）
         const optionsGrid = document.getElementById('optionsGrid');
         optionsGrid.innerHTML = '';
@@ -1115,7 +1240,6 @@
           const card = document.createElement('div');
           card.className = 'option-card';
           card.dataset.id = option.id;
-          card.style.animation = `fadeIn 0.3s ease ${index * 0.1}s both`;
           
           // 标记正确答案，方便提示功能使用
           if (option.id === this.currentTarget.id) {
@@ -1131,12 +1255,6 @@
           
           optionsGrid.appendChild(card);
         });
-
-        // 题目展示完成，开始计时作答反应
-        this.questionStartAt = Date.now();
-        this._responseRecordedForQuestion = false;
-        this.publishPageContext();
-        this.emitQuestionReady();
       }
 
       emitQuestionReady() {
@@ -1152,10 +1270,6 @@
           debugLog('提问就绪等待 sessionId');
           return;
         }
-        if (!socket || !socket.connected) {
-          debugLog('提问就绪等待 socket 连接');
-          return;
-        }
         const pageContext = this.buildPageContext();
         const questionReadyKey = `${pageContext.questionId || ''}|${pageContext.questionIndex ?? ''}`;
         if (this._lastQuestionReadyKey === questionReadyKey) {
@@ -1164,15 +1278,31 @@
           return;
         }
         const askSeq = this._questionReadySeq || 0;
-        socket.emit('matching_question_ready', {
+        const payload = {
           sessionId,
+          trainingSessionId,
+          courseId,
+          itemId,
           courseType: 'pairing',
           questionId: pageContext.questionId,
           questionIndex: pageContext.questionIndex,
           askSeq,
           pageContext,
           prompt: pageContext.prompt,
-        });
+        };
+        if (isEmbeddedInteractiveFrame) {
+          window.parent.postMessage({
+            type: 'interactive_question_ready',
+            eventName: 'matching_question_ready',
+            payload,
+          }, window.location.origin);
+        } else {
+          if (!socket || !socket.connected) {
+            debugLog('提问就绪等待 socket 连接');
+            return;
+          }
+          socket.emit('matching_question_ready', payload);
+        }
         this._lastQuestionReadyKey = questionReadyKey;
         this._pendingQuestionReady = false;
         debugLog(`提问语音: pairing q=${pageContext.questionIndex} seq=${askSeq}`);
@@ -1236,7 +1366,7 @@
         } catch (e) {
           debugLog(`postMessage pageContext 失败: ${e}`);
         }
-        if (socket && socket.connected && sessionId) {
+        if (!isEmbeddedInteractiveFrame && socket && socket.connected && sessionId) {
           socket.emit('interactive_page_context', {
             sessionId,
             courseType: 'pairing',
@@ -1278,7 +1408,7 @@
       }
       
       selectOption(selectedOption, cardElement, event) {
-        if (!this.isGameActive || this.isProcessing) return;
+        if (!this.isGameActive || this.isProcessing || this.questionGate.locked) return;
         if (cardElement.classList.contains('wrong')) return;
 
         // 本题首次点击记一次反应时
@@ -1291,21 +1421,24 @@
         this.isProcessing = true;
         
         if (isCorrect) {
-          this.correctAnswers++;
-          this.consecutiveCorrect++;
-          this.consecutiveWrong = 0;
-          this.questionsInCurrentLevel++;
-          
-          if (this.autoDifficulty === 2) {
-            this.consecutiveWrongInLevel1 = 0;
-          }
-          
-          if (this.questionsInCurrentLevel >= this.maxQuestionsInLevel && 
-              this.autoDifficulty < 5 && 
-              !this.isSimplifiedMode) {
-            this.autoDifficulty++;
-            this.questionsInCurrentLevel = 0;
-            debugLog(`难度提升至 ${this.autoDifficulty}选1`);
+          // 干预模式中先错后对仍算该题错误，避免正确率被重复累计。
+          if (!this.hasAnsweredWrong) {
+            this.correctAnswers++;
+            this.consecutiveCorrect++;
+            this.consecutiveWrong = 0;
+            this.questionsInCurrentLevel++;
+
+            if (this.autoDifficulty === 2) {
+              this.consecutiveWrongInLevel1 = 0;
+            }
+
+            if (this.questionsInCurrentLevel >= this.maxQuestionsInLevel &&
+                this.autoDifficulty < 5 &&
+                !this.isSimplifiedMode) {
+              this.autoDifficulty++;
+              this.questionsInCurrentLevel = 0;
+              debugLog(`难度提升至 ${this.autoDifficulty}选1`);
+            }
           }
           
           cardElement.classList.add('correct');
@@ -1317,7 +1450,7 @@
             maxMs: 20000,
             waitAnimation: true,
           });
-          this.emitStatusUpdate(true, true);
+          this.emitStatusUpdate(!this.hasAnsweredWrong, true, true);
           waitPackage.then(() => {
             if (token !== this._advanceToken) return;
             this.nextQuestion();
@@ -1339,18 +1472,34 @@
           }
           this.wrongAttemptsThisQuestion = (this.wrongAttemptsThisQuestion || 0) + 1;
           this.publishPageContext();
-          this.dimAllOptionCards();
-
+          cardElement.classList.add('wrong');
           const token = (this._advanceToken = (this._advanceToken || 0) + 1);
           const waitSpeech = this.waitForFeedbackPackage('encourage', {
             minMs: 900,
             maxMs: 20000,
             waitAnimation: false,
           });
-          this.emitStatusUpdate(false, false);
+          this.emitStatusUpdate(false, false, false);
           waitSpeech.then(() => {
             if (token !== this._advanceToken) return;
-            this.nextQuestion();
+            if (this.operationMode === window.InteractiveQuestionState.MODE_ASSESSMENT) {
+              this.dimAllOptionCards();
+              this.nextQuestion();
+              return;
+            }
+            // 干预模式保留同一道题，只换选项位置，直到答对或教师跳题。
+            if (this.currentOptions.length > 1) {
+              const firstId = this.currentOptions[0].id;
+              let attempts = 0;
+              do {
+                this.shuffleArray(this.currentOptions);
+                attempts += 1;
+              } while (this.currentOptions[0].id === firstId && attempts < 5);
+              if (this.currentOptions[0].id === firstId) this.currentOptions.reverse();
+            }
+            this.renderOptionCards();
+            this.publishPageContext();
+            this.isProcessing = false;
           });
         }
       }
@@ -1390,7 +1539,7 @@
       
       // ==================== 事件发送 ====================
       
-      emitStatusUpdate(isCorrect, triggerPraise = false) {
+      emitStatusUpdate(isCorrect, triggerPraise = false, selectedCorrect = isCorrect) {
         if (!socket || !socket.connected) return;
         const answered = this.currentQuestion;
         const accuracy = answered > 0
@@ -1408,6 +1557,7 @@
           difficulty: this.currentDifficulty,
           questionIndex: this.currentQuestion,
           isCorrect: isCorrect,
+          selectedCorrect: !!selectedCorrect,
           triggerPraise: !!triggerPraise,
           accuracy: accuracy,
           correct: this.correctAnswers,
@@ -1423,6 +1573,7 @@
           isSimplifiedMode: this.isSimplifiedMode,
           pageContext: this.buildPageContext(),
           wrongAttempts: this.wrongAttemptsThisQuestion || 0,
+          mode: this.operationMode,
         };
         
         socket.emit('matching_status_update', data);
@@ -1516,8 +1667,14 @@
       
       // 初始化游戏
       window.matchingGame = new MatchingGame();
+      while (pendingInteractiveControls.length > 0) {
+        const command = pendingInteractiveControls.shift();
+        applyMatchingControl(command.eventName, command.data);
+      }
       debugLog('配对游戏初始化完成，自动启动');
-      await window.matchingGame.startGame();
+      if (!window.matchingGame.isGameActive) {
+        await window.matchingGame.startGame();
+      }
     });
   </script>
 </body>

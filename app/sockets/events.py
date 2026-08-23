@@ -398,6 +398,105 @@ def _record_interaction(event_type: str, context: Optional[Dict[str, Any]], **kw
         return None
 
 
+def _record_latency_modality_callback(
+    data: Optional[Dict[str, Any]],
+    *,
+    phase: str,
+    modality: Optional[str] = None,
+    actor: str = 'child',
+    source: str = 'socketio',
+):
+    """Record the Server receive time of an endpoint readiness/start callback.
+
+    This is deliberately separate from the browser's asynchronous audit upload:
+    the diagnostic report must not count telemetry upload time as playback delay.
+    """
+    payload = dict(data or {})
+    behavior_id = (
+        payload.get('behaviorId')
+        or payload.get('behavior_id')
+        or payload.get('interactionId')
+        or payload.get('sequenceId')
+    )
+    context = _interaction_context_for_behavior(behavior_id) or {}
+    training_session_id = (
+        payload.get('trainingSessionId')
+        or payload.get('training_session_id')
+        or context.get('trainingSessionId')
+        or _training_session_id_for_payload(payload)
+    )
+    if not training_session_id:
+        return None
+    normalized_modality = str(
+        modality or payload.get('modality') or 'unknown'
+    ).strip()
+    if normalized_modality == 'speech':
+        normalized_modality = 'audio'
+    client_timestamp = (
+        payload.get('actualAtClientMs')
+        if phase == 'started'
+        else payload.get('readyAtClientMs')
+    )
+    try:
+        from app.behavior.audit_timeline import record_audit_event
+
+        return record_audit_event(
+            f'latency.modality_{phase}_callback',
+            training_session_id=training_session_id,
+            runtime_session_id=(
+                payload.get('sessionId')
+                or payload.get('session_id')
+                or context.get('sessionId')
+            ),
+            question_id=(
+                payload.get('questionId')
+                or payload.get('question_id')
+                or context.get('questionId')
+            ),
+            request_id=(
+                payload.get('requestId')
+                or payload.get('request_id')
+                or context.get('requestId')
+            ),
+            behavior_id=behavior_id or context.get('behaviorId'),
+            actor=actor,
+            source=source,
+            category='latency',
+            phase=phase,
+            status=str(payload.get('status') or phase),
+            modality=normalized_modality,
+            client_timestamp=client_timestamp,
+            degraded=str(payload.get('status') or '').lower() in {
+                'error', 'failed', 'dropped', 'timeout'
+            },
+            error=payload.get('error') or payload.get('errorMessage'),
+            details={
+                'commandReceivedAtClientMs': payload.get(
+                    'commandReceivedAtClientMs'
+                ),
+                'readyAtClientMs': payload.get('readyAtClientMs'),
+                'actualAtClientMs': payload.get('actualAtClientMs'),
+                'plannedAtClientMs': payload.get('plannedAtClientMs'),
+                'entryId': payload.get('entryId') or payload.get('entry_id'),
+                'filePath': payload.get('filePath') or payload.get('file_path'),
+                'readinessKey': payload.get('readinessKey'),
+                # Resource transitions report the real browser-side stages
+                # (preflight, decode/load, paint and crossfade).  Keeping this
+                # nested object intact lets the Server console explain a slow
+                # lower-screen switch without trusting cross-machine clocks.
+                'timing': payload.get('timing') if isinstance(
+                    payload.get('timing'), dict
+                ) else {},
+            },
+        )
+    except Exception:
+        logger.debug(
+            'latency modality callback audit failed phase=%s modality=%s',
+            phase,
+            normalized_modality,
+            exc_info=True,
+        )
+        return None
 def _interaction_context_from_payload(
     data: Optional[Dict[str, Any]], event_type: str
 ) -> Optional[Dict[str, Any]]:
@@ -1459,6 +1558,7 @@ def _play_interactive_course_audio(
             text=text,
             behavior_id=resolved_behavior_id,
             request_id=resolved_request_id,
+            question_id=(question_data or {}).get('questionId'),
         )
         if not ok:
             robot_service.abort_behavior(resolved_behavior_id)
@@ -1990,6 +2090,7 @@ def _play_atomic_ordering_question(
         text=text,
         behavior_id=behavior_id,
         request_id=request_id,
+        question_id=(event_data or {}).get('questionId'),
     )
     if not emitted:
         robot_service.abort_behavior(behavior_id)
@@ -3256,6 +3357,12 @@ def register_socket_events(socketio):
             return
         payload['sessionId'] = str(session_id)
         payload['session_id'] = str(session_id)
+        if event_name == 'resource_ready':
+            _record_latency_modality_callback(
+                payload,
+                phase='started',
+                modality='display',
+            )
         # The first child can decode before the teacher has processed its own
         # play_resource copy and joined the teacher room. Correlate the original
         # requester so that first-frame readiness cannot be lost in that race.
@@ -3502,6 +3609,48 @@ def register_socket_events(socketio):
         )
         payload['requestId'] = request_id
         payload['request_id'] = request_id
+        received_at_ms = time.time() * 1000.0
+        received_at_monotonic = time.monotonic()
+        try:
+            from app.behavior.audit_timeline import record_audit_event
+
+            record_audit_event(
+                'latency.play_resource_received',
+                training_session_id=payload.get('trainingSessionId'),
+                runtime_session_id=(
+                    payload.get('sessionId') or payload.get('session_id')
+                ),
+                question_id=(
+                    payload.get('questionId') or payload.get('question_id')
+                ),
+                request_id=request_id,
+                behavior_id=(
+                    payload.get('behaviorId') or payload.get('behavior_id')
+                ),
+                actor='server',
+                source='socketio',
+                category='latency',
+                phase='received',
+                status='observed',
+                client_timestamp=payload.get('clientCommandAtMs'),
+                details={
+                    'teacherNetworkRttMs': payload.get('teacherNetworkRttMs'),
+                    'clientTransport': payload.get('clientTransport'),
+                    'serverReceivedAtMs': received_at_ms,
+                    'request': {
+                        'courseType': payload.get('courseType'),
+                        'courseId': payload.get('courseId'),
+                        'itemId': payload.get('itemId'),
+                        'aux': payload.get('aux'),
+                    },
+                },
+            )
+        except Exception:
+            logger.debug(
+                'play_resource latency receive audit failed request=%s',
+                request_id,
+                exc_info=True,
+            )
         access = _teacher_control_access(payload)
         if not access.get('ok') or not access.get('writable'):
             logger.warning(
@@ -3878,6 +4027,8 @@ def register_socket_events(socketio):
                 forward_data['itemName'] = result.get('item_name')
             if result.get('page_context'):
                 forward_data['pageContext'] = result.get('page_context')
+            if result.get('mode'):
+                forward_data['mode'] = result.get('mode')
             forward_data['mediaMode'] = Config.get_child_media_mode()
 
             child_room = f'session_{session_id}_child'
@@ -4080,6 +4231,44 @@ def register_socket_events(socketio):
             forward_data['behaviorStartDelayMs'] = (
                 _remaining_behavior_start_delay_ms(robot_result)
             )
+            try:
+                from app.behavior.audit_timeline import record_audit_event
+
+                record_audit_event(
+                    'latency.multimodal_dispatched',
+                    training_session_id=training_session_id,
+                    runtime_session_id=session_id,
+                    question_id=question_id,
+                    request_id=request_id,
+                    behavior_id=behavior_id,
+                    actor='server',
+                    source='socketio',
+                    category='latency',
+                    phase='dispatched',
+                    status='observed',
+                    modality='multimodal',
+                    details={
+                        'serverElapsedMs': int(round(
+                            (time.monotonic() - received_at_monotonic) * 1000
+                        )),
+                        'startAtServerMs': robot_result.get('startAtEpochMs'),
+                        'remainingLeadMs': forward_data['behaviorStartDelayMs'],
+                        'audioDispatched': bool(
+                            (audio_details or {}).get('triggered')
+                        ),
+                        'audioDispatchCount': int(
+                            (audio_details or {}).get('dispatchCount') or 0
+                        ),
+                        'childOnline': bool(child_sid),
+                        'animationExpected': bool(behavior_animation),
+                    },
+                )
+            except Exception:
+                logger.debug(
+                    'play_resource latency dispatch audit failed request=%s',
+                    request_id,
+                    exc_info=True,
+                )
             if not wants_aux and not is_aux_op:
                 # Publish the correlation before the child can return a very
                 # fast first-frame ACK.
@@ -4797,6 +4986,7 @@ def register_socket_events(socketio):
         }
         """
         session_id = data.get('sessionId')
+        _interrupt_interactive_prompt(session_id, data)
         _record_interaction(
             'next_question',
             _interaction_context_from_payload(data, 'next_question'),
@@ -4841,6 +5031,7 @@ def register_socket_events(socketio):
 
         _store_interactive_page_context(session_id, data, course_type='pairing')
         if data.get('isCorrect') is not None:
+            selected_correct = data.get('selectedCorrect')
             _record_interaction(
                 'child_response',
                 _interaction_context_from_payload(data, 'child_response'),
@@ -4848,7 +5039,12 @@ def register_socket_events(socketio):
                 client_timestamp=data.get('clientTimestamp'),
                 metadata={
                     'courseType': 'pairing',
-                    'isCorrect': bool(data.get('isCorrect')),
+                    'isCorrect': bool(
+                        data.get('isCorrect')
+                        if selected_correct is None
+                        else selected_correct
+                    ),
+                    'scoredCorrect': bool(data.get('isCorrect')),
                 },
             )
 
@@ -4962,6 +5158,7 @@ def register_socket_events(socketio):
         }
         """
         session_id = data.get('sessionId')
+        _interrupt_interactive_prompt(session_id, data)
         _record_interaction(
             'next_question',
             _interaction_context_from_payload(data, 'next_question'),
@@ -5030,6 +5227,7 @@ def register_socket_events(socketio):
         if not _is_authorized_child_sender(request.sid, payload):
             logger.warning('拒绝非 owner 模态 ready 事件 sid=%s', request.sid)
             return
+        _record_latency_modality_callback(payload, phase='ready')
         from app.robot import get_robot_service
 
         result = get_robot_service().mark_behavior_modality_ready(
@@ -5052,6 +5250,7 @@ def register_socket_events(socketio):
         if not _is_authorized_child_sender(request.sid, payload):
             logger.warning('拒绝非 owner 模态 started 事件 sid=%s', request.sid)
             return
+        _record_latency_modality_callback(payload, phase='started')
         from app.robot import get_robot_service
 
         result = get_robot_service().mark_behavior_modality_started(
@@ -5386,8 +5585,8 @@ def register_socket_events(socketio):
                         session_id,
                         gate_error,
                     )
-        # 命名/拟声：提问播完后武装关键词监听（不经对话唤醒）
-        if session_id and intent == 'question':
+        # 命名/拟声：提问/提示播完后恢复关键词监听（不经对话唤醒）
+        if session_id and intent in ('question', 'hint'):
             try:
                 from app.services.keyword_listen import get_keyword_listen_service
 

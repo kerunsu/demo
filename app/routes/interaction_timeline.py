@@ -6,6 +6,8 @@ import json
 from flask import Blueprint, Response, jsonify, request
 
 from app.behavior.audit_timeline import get_full_interaction_timeline, record_audit_event
+from app.diagnostics.latency_report import build_latency_report, render_latency_markdown
+from app.storage.session_catalog import build_session_catalog
 
 
 interaction_timeline_bp = Blueprint("interaction_timeline", __name__, url_prefix="/api/v2/timeline")
@@ -40,11 +42,76 @@ def append_timeline_event():
     return jsonify({"success": True, "event": item}), 201
 
 
+@interaction_timeline_bp.route("/latency/sessions", methods=["GET"])
+def list_latency_sessions():
+    """List recording sessions that can own a persistent latency report."""
+    try:
+        limit = max(1, min(int(request.args.get("limit") or 100), 500))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "limit_must_be_integer"}), 400
+    catalog = build_session_catalog(limit=limit)
+    sessions = []
+    for item in catalog.get("sessions") or []:
+        training_id = item.get("trainingSessionId")
+        if not training_id:
+            continue
+        student = item.get("student") if isinstance(item.get("student"), dict) else {}
+        sessions.append({
+            "trainingSessionId": str(training_id),
+            "mediaSessionId": item.get("mediaSessionId"),
+            "folderName": item.get("folderName"),
+            "studentName": student.get("name") or "未关联儿童",
+            "recordingStartedAt": item.get("recordingStartedAt"),
+            "status": item.get("status"),
+            "liveActive": bool(item.get("liveActive")),
+        })
+    return jsonify({
+        "success": True,
+        "schemaVersion": "interaction-latency-session-list-v1",
+        "sessions": sessions,
+    })
+
+
+@interaction_timeline_bp.route("/<training_session_id>/latency", methods=["GET"])
+def get_latency_report(training_session_id: str):
+    store = get_full_interaction_timeline()
+    media_session_id = str(
+        request.args.get("mediaSessionId")
+        or request.args.get("sessionId")
+        or ""
+    ).strip() or None
+    try:
+        report = build_latency_report(
+            training_session_id,
+            store.read(training_session_id, media_session_id),
+            media_session_id=media_session_id,
+        )
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    output_format = str(request.args.get("format") or "json").strip().lower()
+    if output_format in {"md", "markdown"}:
+        return Response(
+            render_latency_markdown(report),
+            mimetype="text/markdown",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{training_session_id}-latency-report.md"'
+                )
+            },
+        )
+    return jsonify(report)
+
+
 @interaction_timeline_bp.route("/<training_session_id>", methods=["GET"])
 def get_timeline(training_session_id: str):
     store = get_full_interaction_timeline()
+    media_session_id = str(
+        request.args.get("mediaSessionId")
+        or request.args.get("sessionId")
+        or ""
+    ).strip() or None
     try:
-        rows = store.read(training_session_id)
+        rows = store.read(training_session_id, media_session_id)
     except ValueError as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
     output_format = str(request.args.get("format") or "json").lower()
@@ -54,18 +121,28 @@ def get_timeline(training_session_id: str):
             "Content-Disposition": f'attachment; filename="{training_session_id}-timeline.jsonl"'
         })
     if output_format == "csv":
-        return Response(store.export_csv(training_session_id), mimetype="text/csv", headers={
+        return Response(store.export_csv(training_session_id, media_session_id), mimetype="text/csv", headers={
             "Content-Disposition": f'attachment; filename="{training_session_id}-timeline.csv"'
         })
+    media_query = (
+        f"&mediaSessionId={media_session_id}" if media_session_id else ""
+    )
     return jsonify({
         "success": True,
         "schemaVersion": "full-interaction-timeline-v1",
         "trainingSessionId": training_session_id,
+        "mediaSessionId": media_session_id,
         "count": len(rows),
         "events": rows,
         "exports": {
-            "jsonl": f"/api/v2/timeline/{training_session_id}?format=jsonl",
-            "csv": f"/api/v2/timeline/{training_session_id}?format=csv",
+            "jsonl": (
+                f"/api/v2/timeline/{training_session_id}?format=jsonl"
+                f"{media_query}"
+            ),
+            "csv": (
+                f"/api/v2/timeline/{training_session_id}?format=csv"
+                f"{media_query}"
+            ),
         },
     })
 

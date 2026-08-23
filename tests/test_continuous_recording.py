@@ -202,6 +202,7 @@ def test_play_resource_reuses_media_session_no_restart(monkeypatch):
     assert result1["training_session_id"] == ts
     assert result1["session_id"] == media_sid
     assert result1.get("recording_mode") == "continuous"
+    assert result1.get("mode") == "training"
     assert get_session_manager().get_session(media_sid) is not None
     assert service.store.get_window(ts, result1["question_id"]) is not None
     assert media_calls["start"] == [media_sid]

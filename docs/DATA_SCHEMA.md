@@ -72,12 +72,16 @@ not a replacement for either legacy timeline. Each row has a server-assigned
 client timestamp/clock offset, correlation IDs, actor/source/category,
 event/phase/status/modality, degradation/error data and bounded `details`.
 
-The recording folder is resolved by the exact `trainingSessionId` stored in
-`session_meta.json`; no second audit folder is created under the internal UUID.
+The recording folder is resolved by the pair `trainingSessionId + mediaSessionId`
+stored in `session_meta.json`; no second audit folder is created under the
+internal UUID. A training ID may be reused by a retry, so the writer cache,
+sequence counter, read API and exports are all bound to the exact media session.
+An unqualified legacy read selects only the latest matching media session and
+must never merge rows from multiple recording folders.
 Raw audio/video payloads are replaced by byte length and SHA-256; credentials
 are redacted. Same-host writers use an OS file lock. Query with
-`GET /api/v2/timeline/<trainingSessionId>` and export with `?format=csv` or
-`?format=jsonl`.
+`GET /api/v2/timeline/<trainingSessionId>?mediaSessionId=<id>` and export with
+`?format=csv` or `?format=jsonl` while retaining the same media-session filter.
 
 Recorded events include browser-emitted socket traffic (teacher and child UI,
 recorded by the browser itself before dispatch), robot execution/modality
@@ -87,6 +91,24 @@ server is recorded as `event: play_resource_ack` with `phase: response`; its
 `control_lease_missing`, `observer_read_only`, `behavior_start_failed`, …),
 with `details.busy`, `details.remainingMs` and `details.activeBehaviorId` so
 "clicked but nothing happened" can be attributed to an exact refusal branch.
+
+Latency instrumentation is additive. Teacher `play_resource` may carry
+`clientCommandAtMs`, `teacherNetworkRttMs` and `clientTransport`; old clients
+remain valid when these fields are absent. The Server records
+`latency.play_resource_received`, `latency.multimodal_dispatched`, and exact
+Socket callback receipts as `latency.modality_ready_callback` /
+`latency.modality_started_callback`. Endpoint callbacks may additionally carry
+`commandReceivedAtClientMs`, `readyAtClientMs` and `actualAtClientMs`. A child
+`resource_ready` also carries bounded `timing` for preflight, load/decode,
+paint wait, crossfade and total client transition. Natural-dialogue rounds use
+one `requestId` from VAD capture through STT, answer/wake/LLM decision, TTS
+dispatch, browser receipt, actual speech start and speech end. These fields are
+diagnostics only and cannot alter scheduling, acceptance or state transitions.
+The derived `interaction-latency-report-v1` contains per-session P50/P95/max
+summaries, per-request Server/network/sync stages, per-modality observations,
+natural-dialogue stage summaries, data-isolation status, automatic findings
+and the static voice-strategy review. See
+`docs/INTERACTION_LATENCY.md` for formulas and clock-domain limits.
 
 ## Robot asset display tuning
 

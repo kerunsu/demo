@@ -110,6 +110,8 @@ def test_animation_rename_ui_and_api_contract():
     template = (root / "templates" / "server" / "config.html").read_text(encoding="utf-8")
     script = (root / "static" / "js" / "config_content_animations.js").read_text(encoding="utf-8")
     assert 'id="btn-rename-animation"' in template
+    assert "config_content_animations.js?v=20260823-module-guard-v1" in template
+    assert "document.body?.dataset?.module !== 'content'" in script
     assert "/animations/${encodeURIComponent(selected)}/rename" in script
     assert "referencesUpdated" in script or "newName" in script
 

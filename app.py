@@ -420,6 +420,12 @@ def server_config_devices():
     return render_template("server/config.html", active_module="devices")
 
 
+@app.route("/server/config/latency")
+def server_config_latency():
+    """配置中心 · 只读交互延迟诊断。"""
+    return render_template("server/config.html", active_module="latency")
+
+
 @app.route("/robot")
 def robot_page():
     """机械臂控制面板页面"""

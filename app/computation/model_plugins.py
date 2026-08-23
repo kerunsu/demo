@@ -10,7 +10,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Mapping, Optional
 
@@ -222,7 +222,7 @@ class ModelPipeline:
                     schema_version=result.schema_version,
                 )
             return result
-        except TimeoutError:
+        except FuturesTimeoutError:
             future.cancel()
             return _degraded(
                 model_id=model_id,

@@ -38,6 +38,9 @@
       <a class="cc-nav-item{% if active_module == 'devices' %} active{% endif %}" href="/server/config/devices" data-module="devices">
         设备与录制
       </a>
+      <a class="cc-nav-item{% if active_module == 'latency' %} active{% endif %}" href="/server/config/latency" data-module="latency">
+        交互延迟诊断
+      </a>
       <a class="cc-nav-item{% if active_module == 'camera' %} active{% endif %}" href="/server/config/camera" data-module="camera">
         摄像头与注意力
       </a>
@@ -769,6 +772,100 @@
     </div>
 
     <!-- ========== F-Algo：报告与评分 ========== -->
+    <div id="module-latency" class="cc-module"{% if active_module != 'latency' %} hidden{% endif %}>
+      <section class="cc-page cc-latency-page">
+        <div class="cc-page-head">
+          <div>
+            <div class="cc-breadcrumb">配置中心 / 交互延迟诊断</div>
+            <h1 class="cc-page-title">交互延迟诊断</h1>
+            <p class="cc-page-subtitle">只读观测教师指令 → Server → 表情 / 动作 / 下屏 / 语音，不改变播放时序。</p>
+          </div>
+          <div class="cc-head-actions">
+            <button type="button" class="cc-btn soft" id="latency-refresh">刷新数据</button>
+            <a class="cc-btn soft" id="latency-export-md" href="#" download>下载诊断文档</a>
+            <a class="cc-btn soft" id="latency-export-csv" href="#" download>下载原始日志</a>
+          </div>
+        </div>
+
+        <div class="cc-notice info">
+          页面把延迟拆成网络基线、Server 内部处理、系统有意的多模态同步预留，以及终端素材准备/启动尾延迟。跨电脑时不会直接拿两台机器的墙上时钟相减。
+        </div>
+
+        <section class="cc-card latency-session-bar">
+          <label for="latency-session-select">训练会话</label>
+          <select class="cc-inp" id="latency-session-select"><option value="">加载中…</option></select>
+          <span class="cc-tiny" id="latency-updated-at">尚未加载</span>
+          <label class="cc-tiny latency-auto-label"><input type="checkbox" id="latency-auto-refresh" /> 每 5 秒自动刷新</label>
+        </section>
+
+        <div class="latency-quality" id="latency-quality" role="status"></div>
+
+        <div class="cc-grid cols-4 latency-summary-grid" id="latency-summary-grid">
+          <div class="cc-card"><div class="cc-metric-label">教师网络 RTT · P95</div><div class="cc-metric-value" id="latency-network">—</div><div class="cc-metric-note">同一教师浏览器往返</div></div>
+          <div class="cc-card"><div class="cc-metric-label">Server 下发 · P95</div><div class="cc-metric-value" id="latency-server">—</div><div class="cc-metric-note">接收指令到多模态下发</div></div>
+          <div class="cc-card"><div class="cc-metric-label">同步预留 · P50</div><div class="cc-metric-value" id="latency-sync">—</div><div class="cc-metric-note">有意等待各模态对齐</div></div>
+          <div class="cc-card"><div class="cc-metric-label">主要延迟来源</div><div class="cc-metric-value latency-source" id="latency-source">—</div><div class="cc-metric-note" id="latency-sample-count">0 个交互样本</div></div>
+        </div>
+
+        <section class="cc-card" style="margin-top:14px;">
+          <h2 class="cc-card-title">四模态端到端观测</h2>
+          <p class="cc-tiny">数值从 Server 收到教师指令开始，到 Server 观察到终端真实启动回执；包含同步预留和回传网络。</p>
+          <div class="latency-modality-grid" id="latency-modality-grid"></div>
+        </section>
+
+        <section class="cc-card latency-focus" style="margin-top:14px;">
+          <div class="latency-focus-head">
+            <div><h2 class="cc-card-title">最慢一次交互的时间轨</h2><p class="cc-tiny" id="latency-focus-caption">等待日志…</p></div>
+            <div class="latency-focus-total" id="latency-focus-total">—</div>
+          </div>
+          <div class="latency-rail" id="latency-focus-rail" aria-label="延迟分段时间轨"></div>
+          <div class="latency-rail-legend" id="latency-focus-legend"></div>
+        </section>
+
+        <div class="cc-grid cols-2 latency-detail-grid" style="margin-top:14px;">
+          <section class="cc-card">
+            <h2 class="cc-card-title">自动归因</h2>
+            <div id="latency-findings" class="latency-findings"></div>
+          </section>
+          <section class="cc-card">
+            <h2 class="cc-card-title">测量边界</h2>
+            <ul id="latency-notes" class="latency-notes"></ul>
+          </section>
+        </div>
+
+        <section class="cc-card" style="margin-top:14px;">
+          <h2 class="cc-card-title">最近交互拆解</h2>
+          <div class="latency-table-wrap">
+            <table class="latency-table">
+              <thead><tr><th>时间/意图</th><th>网络 RTT</th><th>Server</th><th>同步预留</th><th>表情</th><th>动作</th><th>下屏</th><th>语音</th><th>判断</th></tr></thead>
+              <tbody id="latency-interaction-body"><tr><td colspan="9">等待加载…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="cc-card" style="margin-top:14px;">
+          <div class="latency-focus-head">
+            <div><h2 class="cc-card-title">自然对话耗时</h2><p class="cc-tiny">停声截句 → 音频编码 → FunASR → 课程关键词/回复生成 → 浏览器开口。</p></div>
+            <div class="cc-badge gray" id="dialogue-round-count">0 轮</div>
+          </div>
+          <div class="dialogue-stage-grid" id="dialogue-stage-grid"></div>
+          <div class="latency-table-wrap" style="margin-top:12px;">
+            <table class="latency-table dialogue-table">
+              <thead><tr><th>时间/结果</th><th>停声截句</th><th>音频编码</th><th>FunASR</th><th>回复生成</th><th>收到到决策</th><th>TTS 启动</th></tr></thead>
+              <tbody id="dialogue-latency-body"><tr><td colspan="7">等待新的自然对话日志…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="cc-card" style="margin-top:14px;">
+          <h2 class="cc-card-title">儿童真实语音交互模拟</h2>
+          <p class="cc-tiny" id="voice-strategy-summary"></p>
+          <div class="voice-scenario-grid" id="voice-scenario-grid"></div>
+          <div id="voice-strategy-findings" class="latency-findings" style="margin-top:12px;"></div>
+        </section>
+      </section>
+    </div>
+
     <div id="module-report" class="cc-module"{% if active_module != 'report' %} hidden{% endif %}>
       <section class="cc-page">
         <div class="cc-page-head">
@@ -826,7 +923,7 @@
   <script src="/static/js/config_center.js"></script>
   <script src="/static/js/config_sync.js"></script>
   <script src="/static/js/config_content_expressions.js"></script>
-  <script src="/static/js/config_content_animations.js"></script>
+  <script src="/static/js/config_content_animations.js?v=20260823-module-guard-v1"></script>
   <script src="/static/js/config_content_motions.js"></script>
   <script src="/static/js/config_content_media.js"></script>
   <script src="/static/js/config_content_courses.js"></script>
@@ -838,5 +935,6 @@
   <script src="/static/js/config_behavior_sequence.js"></script>
   <script src="/static/js/config_dialogue_expressions.js?v=20260819-dialogue-length-v1"></script>
   <script src="/static/js/config_phase5.js"></script>
+  <script src="/static/js/config_latency.js"></script>
 </body>
 </html>

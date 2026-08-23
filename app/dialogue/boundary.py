@@ -10,7 +10,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import replace
 from typing import Any, Callable, Mapping, Optional
 
@@ -208,7 +208,7 @@ class DialogueGateway:
             if cancel_event is not None and cancel_event.is_set():
                 raise RuntimeError("cancelled")
             return result
-        except TimeoutError:
+        except FuturesTimeoutError:
             future.cancel()
             raise RuntimeError("timeout")
 

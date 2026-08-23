@@ -54,7 +54,9 @@
   let capturingTurn = false;
   let voiceStartedAt = null;
   let silenceStartedAt = null;
+  let silenceStartedAtClientMs = null;
   let turnStartedAt = null;
+  let turnCaptureStartedAtClientMs = null;
   let pcmChunks = [];
   /** 最近 PREROLL_MS 的 PCM，在 VAD 确认开说前也持续写入 */
   let prerollChunks = [];
@@ -73,6 +75,23 @@
 
   function getSessionId() {
     return global.currentSessionId || null;
+  }
+
+  function makeDialogueRequestId() {
+    const random = Math.random().toString(36).slice(2, 10);
+    return `dialogue-turn-${Date.now()}-${random}`;
+  }
+
+  function emitDialogueLatency(phase, requestId, detail = {}) {
+    const socket = getSocket();
+    if (!socket || !socket.connected || !requestId) return;
+    socket.emit("dialogue_latency_event", {
+      sessionId: getSessionId(),
+      requestId,
+      phase,
+      clientTimestamp: Date.now(),
+      ...detail,
+    });
   }
 
   function applyDialoguePanelVisibility(visible) {
@@ -536,15 +555,19 @@
     appendChildTranscript(trimmed);
     setListenButtonState();
     setStatus(dialogueAwake ? "思考中…" : "识别唤醒中…");
+    const requestId = makeDialogueRequestId();
+    const sentAtClientMs = Date.now();
     socket.emit("child_dialogue_text", {
       sessionId: getSessionId(),
+      requestId,
       text: trimmed,
       pageContext: buildPageContext(),
+      clientTiming: { sentAtClientMs },
     });
     return true;
   }
 
-  async function emitDialogueAudioWav(blob) {
+  async function emitDialogueAudioWav(blob, captureTiming = {}) {
     const socket = getSocket();
     if (!socket) {
       setStatus("未连接");
@@ -560,12 +583,24 @@
     setListenButtonState();
     setStatus(dialogueAwake ? "识别中（FunASR）…" : "识别唤醒中…");
     try {
+      const requestId = makeDialogueRequestId();
+      const encodingStartedAtClientMs = Date.now();
       const audioBase64 = await blobToBase64(blob);
+      const encodedAtClientMs = Date.now();
+      const sentAtClientMs = Date.now();
       socket.emit("child_dialogue_audio", {
         sessionId: getSessionId(),
+        requestId,
         audioBase64,
         mimeType: "audio/wav",
         pageContext: buildPageContext(),
+        clientTiming: {
+          ...captureTiming,
+          encodingStartedAtClientMs,
+          encodedAtClientMs,
+          encodingMs: encodedAtClientMs - encodingStartedAtClientMs,
+          sentAtClientMs,
+        },
       });
     } catch (err) {
       console.error("上传对话音频失败", err);
@@ -617,8 +652,8 @@
     if (!merged.length) return false;
     let sum = 0;
     for (let i = 0; i < merged.length; i += 1) {
-      const v = merged[i];
-      sum += v * v;
+      const value = merged[i];
+      sum += value * value;
     }
     return Math.sqrt(sum / merged.length) >= START_LEVEL * 0.7;
   }
@@ -627,15 +662,34 @@
     if (!capturingTurn) return;
     capturingTurn = false;
     const chunks = pcmChunks;
+    const captureEndedAtClientMs = Date.now();
+    const captureStartedAtClientMs = turnCaptureStartedAtClientMs;
+    const speechEndedAtClientMs = silenceStartedAtClientMs;
     pcmChunks = [];
     voiceStartedAt = null;
     silenceStartedAt = null;
+    silenceStartedAtClientMs = null;
     turnStartedAt = null;
+    turnCaptureStartedAtClientMs = null;
     if (!chunks.length) return;
     const merged = concatenateFloat32(chunks);
     const down = downsampleBuffer(merged, captureSampleRate, TARGET_SAMPLE_RATE);
     const wav = encodePcm16Wav(down, TARGET_SAMPLE_RATE);
-    void emitDialogueAudioWav(wav);
+    void emitDialogueAudioWav(wav, {
+      captureStartedAtClientMs,
+      speechEndedAtClientMs,
+      captureEndedAtClientMs,
+      captureDurationMs: captureStartedAtClientMs != null
+        ? captureEndedAtClientMs - captureStartedAtClientMs
+        : null,
+      vadSilenceTailMs: speechEndedAtClientMs != null
+        ? captureEndedAtClientMs - speechEndedAtClientMs
+        : null,
+      audioDurationMs: Math.round((down.length / TARGET_SAMPLE_RATE) * 1000),
+      vadConfirmationMs: MIN_VOICE_MS,
+      configuredSilenceEndMs: SILENCE_END_MS,
+      prerollMs: PREROLL_MS,
+    });
   }
 
   function onPcmFrame(input) {
@@ -667,10 +721,11 @@
         pcmChunks = [];
         voiceStartedAt = null;
         silenceStartedAt = null;
+        silenceStartedAtClientMs = null;
         turnStartedAt = null;
+        turnCaptureStartedAtClientMs = null;
       }
-      // Only wipe preroll while the robot is actually speaking. During the
-      // post-TTS cooldown the child may already have started answering.
+      // 机器人正在说话时清空回声；说完后的短冷却期间继续保留孩子的句首。
       if (asrPausedForTts) {
         clearPreroll();
       }
@@ -685,7 +740,10 @@
         if (prerollReady || now - voiceStartedAt >= MIN_VOICE_MS) {
           capturingTurn = true;
           turnStartedAt = now;
+          turnCaptureStartedAtClientMs = Date.now();
           silenceStartedAt = null;
+          silenceStartedAtClientMs = null;
+          // 用开说前环形缓冲作种子，避免丢掉确认窗内的句首音节
           seedPcmFromPreroll();
           setStatus("正在听…");
         }
@@ -696,12 +754,14 @@
     } else {
       if (level <= SILENCE_LEVEL) {
         silenceStartedAt = silenceStartedAt || now;
+        silenceStartedAtClientMs = silenceStartedAtClientMs || Date.now();
         const spoken = now - (turnStartedAt || now);
         if (spoken >= MIN_TURN_MS && now - silenceStartedAt >= SILENCE_END_MS) {
           finalizeCapturedTurn();
         }
       } else if (level >= RESET_LEVEL) {
         silenceStartedAt = null;
+        silenceStartedAtClientMs = null;
       }
     }
 
@@ -740,7 +800,9 @@
     clearPreroll();
     voiceStartedAt = null;
     silenceStartedAt = null;
+    silenceStartedAtClientMs = null;
     turnStartedAt = null;
+    turnCaptureStartedAtClientMs = null;
   }
 
   async function openMicStream() {
@@ -1043,6 +1105,11 @@
     const socket = getSocket();
     if (!socket) return false;
     socket.on("child_dialogue_result", (data) => {
+      const dialogueRequestId = data && (data.requestId || data.request_id);
+      emitDialogueLatency("result_received", dialogueRequestId, {
+        status: data && data.ok ? "ok" : "error",
+        provider: data && data.sttProvider,
+      });
       dialogueBusy = false;
       cooldownUntil = Date.now() + COOLDOWN_MS;
       setListenButtonState();
@@ -1290,6 +1357,7 @@
     bindDialogueUi,
     buildPageContext,
     emitDialogueText,
+    emitDialogueLatency,
     appendDialogueLog,
     syncAwakeForPageContext,
     isAwake: () => dialogueAwake,

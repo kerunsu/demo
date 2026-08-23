@@ -1,5 +1,9 @@
 /** Configuration center: encouragement animation library and praise binding picker. */
 (function () {
+  // 配置中心模板包含所有模块的隐藏 DOM。只在“交互内容”页面加载素材，
+  // 避免延迟诊断/设备页无意义请求素材接口并弹出跨模块错误。
+  if (document.body?.dataset?.module !== 'content') return;
+
   let items = [];
   let selected = '';
 

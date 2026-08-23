@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 import threading
+import time
 
 import uuid
 
@@ -112,6 +113,8 @@ def _emit_speak(
     source: str = "dialogue",
 
     session_id: Optional[str] = None,
+
+    dialogue_request_id: Optional[str] = None,
 
 ) -> bool:
 
@@ -232,6 +235,8 @@ def _emit_speak(
 
         "request_id": request_id,
 
+        "dialogueRequestId": dialogue_request_id,
+
     }
     if expression_match:
         payload["expression"] = expression_match["emotion"]
@@ -273,6 +278,20 @@ def _emit_speak(
         robot_service.abort_behavior(behavior_id)
         logger.error("对话语音下发失败: %s", exc, exc_info=True)
         return False
+
+    _audit_dialogue(
+        "dialogue.tts_dispatched",
+        {"sessionId": resolved_session_id, "requestId": dialogue_request_id},
+        phase="dispatched",
+        status="sent",
+        modality="audio",
+        details={
+            "intent": intent,
+            "textLength": len(spoken),
+            "behaviorRequestId": request_id,
+            "behaviorId": behavior_id,
+        },
+    )
 
     logger.info(
 
@@ -347,22 +366,33 @@ def _try_keyword_auto_praise_from_dialogue(
     text: str,
     page_context: Dict[str, Any],
     stt_provider: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> bool:
-    """Armed keyword hit -> teacher-same praise; skip LLM for this turn."""
+    """Route a curriculum answer before wake/LLM; return whether consumed."""
     transcript = (text or "").strip()
     if not transcript:
         return False
     try:
         from app.services.keyword_listen import get_keyword_listen_service
 
-        praised = get_keyword_listen_service().try_auto_praise_from_transcript(
+        keyword_service = get_keyword_listen_service()
+        praised = keyword_service.try_auto_praise_from_transcript(
             str(session_id),
             transcript,
         )
+        consume_as_course_answer = False
+        if not praised:
+            consume_check = getattr(
+                keyword_service,
+                "should_consume_dialogue_turn",
+                None,
+            )
+            if callable(consume_check):
+                consume_as_course_answer = bool(consume_check(str(session_id)))
     except Exception as exc:  # noqa: BLE001
         logger.debug("keyword_listen dialogue eval failed: %s", exc)
         return False
-    if not praised:
+    if not praised and not consume_as_course_answer:
         return False
 
     awake = False
@@ -377,24 +407,28 @@ def _try_keyword_auto_praise_from_dialogue(
         "ok": True,
         "awake": awake,
         "transcript": transcript,
-        "keywordHit": True,
+        "keywordHit": bool(praised),
+        "courseAnswer": True,
         "reply": None,
+        "requestId": request_id,
     }
     if stt_provider:
         payload["sttProvider"] = stt_provider
     emit("child_dialogue_result", payload)
+    event_name = "dialogue_keyword_hit" if praised else "dialogue_course_answer_miss"
     _audit_dialogue(
-        "dialogue_keyword_hit",
-        {"sessionId": session_id},
+        event_name,
+        {"sessionId": session_id, "requestId": request_id},
         actor="child",
         source="child_ui",
         phase="completed",
-        status="keyword_hit",
+        status="keyword_hit" if praised else "course_answer_miss",
         details={"transcript": transcript, "sttProvider": stt_provider},
     )
     logger.info(
-        "对话关键词命中，跳过LLM sid=%s text=%s",
+        "课程作答由关键词状态机消费，跳过LLM sid=%s hit=%s text=%s",
         session_id,
+        praised,
         transcript[:40],
     )
     return True
@@ -414,11 +448,14 @@ def _handle_dialogue_utterance(
 
     stt_provider: Optional[str] = None,
 
+    request_id: Optional[str] = None,
+
 ) -> None:
 
     """唤醒门控 → LLM。未唤醒时仅接受唤醒词；题目切换后需重新唤醒。"""
 
     svc = get_dialogue_service()
+    request_id = str(request_id or f"dialogue-turn-{uuid.uuid4().hex[:12]}")
 
     # 题目指纹变化时清空历史并退出唤醒
 
@@ -431,7 +468,7 @@ def _handle_dialogue_utterance(
     llm_text = transcript
     _audit_dialogue(
         "dialogue_utterance_received",
-        {"sessionId": session_id},
+        {"sessionId": session_id, "requestId": request_id},
         actor="child",
         source="child_ui",
         phase="received",
@@ -439,12 +476,19 @@ def _handle_dialogue_utterance(
         details={"transcript": transcript, "sttProvider": stt_provider},
     )
 
-    # 命名/拟声关键词：对话 STT 与连续分析双通路；命中只表扬，不走 LLM
-    if _try_keyword_auto_praise_from_dialogue(
+    # 唤醒词优先建立对话状态；其余命名/拟声作答全部由课程状态机消费。
+    wake_candidate = False
+    if not svc.is_session_awake(session_id, page_context):
+        try:
+            wake_candidate, _ = parse_wake_utterance(transcript)
+        except Exception:
+            wake_candidate = False
+    if not wake_candidate and _try_keyword_auto_praise_from_dialogue(
         session_id=str(session_id),
         text=transcript,
         page_context=page_context,
         stt_provider=stt_provider,
+        request_id=request_id,
     ):
         return
 
@@ -455,7 +499,7 @@ def _handle_dialogue_utterance(
         if not bool(Config.DIALOGUE_WAKE_WORD_ENABLED):
             _audit_dialogue(
                 "dialogue_utterance_rejected",
-                {"sessionId": session_id},
+                {"sessionId": session_id, "requestId": request_id},
                 phase="wake_gate",
                 status="not_awake",
                 details={"wakeWordEnabled": False, "textLength": len(transcript)},
@@ -468,6 +512,7 @@ def _handle_dialogue_utterance(
                     "awake": False,
                     "transcript": transcript,
                     "hint": "请由教师端点击唤醒智能体",
+                    "requestId": request_id,
                 },
             )
             return
@@ -502,6 +547,8 @@ def _handle_dialogue_utterance(
 
                     "hint": "请说：麦麦，麦麦",
 
+                    "requestId": request_id,
+
                 },
 
             )
@@ -513,7 +560,7 @@ def _handle_dialogue_utterance(
         svc.set_awake(session_id, page_context)
         _audit_dialogue(
             "dialogue_wake_word_matched",
-            {"sessionId": session_id},
+            {"sessionId": session_id, "requestId": request_id},
             actor="child",
             source="wake_word",
             phase="applied",
@@ -549,6 +596,8 @@ def _handle_dialogue_utterance(
 
                 session_id=session_id,
 
+                dialogue_request_id=request_id,
+
             )
 
             emit(
@@ -575,6 +624,8 @@ def _handle_dialogue_utterance(
 
                     },
 
+                    "requestId": request_id,
+
                 },
 
             )
@@ -592,9 +643,11 @@ def _handle_dialogue_utterance(
             text=remainder,
             page_context=page_context,
             stt_provider=stt_provider,
+            request_id=request_id,
         ):
             return
 
+    reply_started = time.perf_counter()
     reply = svc.generate_reply(
 
         llm_text,
@@ -604,6 +657,7 @@ def _handle_dialogue_utterance(
         page_context=page_context,
 
     )
+    reply_duration_ms = round((time.perf_counter() - reply_started) * 1000, 3)
 
     _emit_speak(
 
@@ -619,6 +673,8 @@ def _handle_dialogue_utterance(
 
         session_id=session_id,
 
+        dialogue_request_id=request_id,
+
     )
 
     payload: Dict[str, Any] = {
@@ -630,6 +686,8 @@ def _handle_dialogue_utterance(
         "transcript": transcript,
 
         "reply": reply,
+
+        "requestId": request_id,
 
     }
 
@@ -646,7 +704,7 @@ def _handle_dialogue_utterance(
     emit("child_dialogue_result", payload)
     _audit_dialogue(
         "dialogue_reply_generated",
-        {"sessionId": session_id},
+        {"sessionId": session_id, "requestId": request_id},
         phase="completed",
         status="ok",
         modality="audio_text",
@@ -656,6 +714,7 @@ def _handle_dialogue_utterance(
             "provider": reply.get("provider"),
             "strategy": reply.get("strategy"),
             "sttProvider": stt_provider,
+            "replyDurationMs": reply_duration_ms,
         },
     )
 
@@ -780,6 +839,12 @@ def register_dialogue_events(socketio) -> None:
 
             child_text = (data.get("text") or "").strip()
 
+            dialogue_request_id = str(
+                data.get("requestId")
+                or data.get("request_id")
+                or f"dialogue-turn-{uuid.uuid4().hex[:12]}"
+            )
+
             raw_ctx = data.get("pageContext") or data.get("page_context") or {}
 
             page_context = merge_page_context(
@@ -796,9 +861,24 @@ def register_dialogue_events(socketio) -> None:
 
             if not child_text:
 
-                emit("child_dialogue_result", {"ok": False, "error": "empty_text"})
+                emit("child_dialogue_result", {
+                    "ok": False,
+                    "error": "empty_text",
+                    "requestId": dialogue_request_id,
+                })
 
                 return
+
+            _audit_dialogue(
+                "dialogue.text_received",
+                {"sessionId": session_id, "requestId": dialogue_request_id},
+                actor="child",
+                source="child_ui",
+                phase="received",
+                status="accepted",
+                client_timestamp=(data.get("clientTiming") or {}).get("sentAtClientMs"),
+                details={"clientTiming": data.get("clientTiming") or {}},
+            )
 
 
 
@@ -830,6 +910,8 @@ def register_dialogue_events(socketio) -> None:
 
                 room=room,
 
+                request_id=dialogue_request_id,
+
             )
 
         except Exception as exc:  # noqa: BLE001
@@ -856,6 +938,18 @@ def register_dialogue_events(socketio) -> None:
 
             mime_type = data.get("mimeType") or data.get("mime_type") or "audio/webm"
 
+            dialogue_request_id = str(
+                data.get("requestId")
+                or data.get("request_id")
+                or f"dialogue-turn-{uuid.uuid4().hex[:12]}"
+            )
+
+            client_timing = (
+                data.get("clientTiming")
+                if isinstance(data.get("clientTiming"), dict)
+                else {}
+            )
+
             raw_ctx = data.get("pageContext") or data.get("page_context") or {}
 
             page_context = merge_page_context(
@@ -870,7 +964,39 @@ def register_dialogue_events(socketio) -> None:
 
 
 
+            _audit_dialogue(
+                "dialogue.audio_received",
+                {"sessionId": session_id, "requestId": dialogue_request_id},
+                actor="child",
+                source="child_ui",
+                phase="received",
+                status="accepted",
+                client_timestamp=client_timing.get("sentAtClientMs"),
+                details={
+                    "mimeType": mime_type,
+                    "base64Chars": len(str(audio_b64 or "")),
+                    "clientTiming": client_timing,
+                },
+            )
+
+            stt_started = time.perf_counter()
             stt = transcribe_audio_base64(audio_b64, mime_type=mime_type)
+            stt_duration_ms = round((time.perf_counter() - stt_started) * 1000, 3)
+
+            _audit_dialogue(
+                "dialogue.stt_completed",
+                {"sessionId": session_id, "requestId": dialogue_request_id},
+                phase="completed",
+                status="ok" if stt.get("ok") else "failed",
+                degraded=not bool(stt.get("ok")),
+                error=stt.get("error") if not stt.get("ok") else None,
+                details={
+                    "durationMs": stt_duration_ms,
+                    "provider": stt.get("provider"),
+                    "timing": stt.get("timing") or {},
+                    "transcriptLength": len(str(stt.get("transcript") or "")),
+                },
+            )
 
             if not stt.get("ok"):
 
@@ -885,6 +1011,7 @@ def register_dialogue_events(socketio) -> None:
                         "error": stt.get("error") or "stt_failed",
 
                         "stage": "stt",
+                        "requestId": dialogue_request_id,
 
                     },
 
@@ -926,6 +1053,8 @@ def register_dialogue_events(socketio) -> None:
 
                 stt_provider=stt.get("provider"),
 
+                request_id=dialogue_request_id,
+
             )
 
         except Exception as exc:  # noqa: BLE001
@@ -933,6 +1062,38 @@ def register_dialogue_events(socketio) -> None:
             logger.error("child_dialogue_audio 失败: %s", exc, exc_info=True)
 
             emit("child_dialogue_result", {"ok": False, "error": str(exc)})
+
+
+    @socketio.on("dialogue_latency_event")
+    def handle_dialogue_latency_event(data):
+        """Persist child-side result/TTS milestones without trusting its clock."""
+        payload = data if isinstance(data, dict) else {}
+        phase = str(payload.get("phase") or "").strip().lower()
+        if phase not in {
+            "result_received", "tts_command_received", "tts_started", "tts_ended"
+        }:
+            return
+        session_id = payload.get("sessionId") or payload.get("session_id")
+        request_id = payload.get("requestId") or payload.get("request_id")
+        if not session_id or not request_id:
+            return
+        _audit_dialogue(
+            f"dialogue.client_{phase}",
+            {"sessionId": session_id, "requestId": request_id},
+            actor="child",
+            source="child_ui",
+            phase=phase,
+            status=str(payload.get("status") or "observed"),
+            modality="audio" if phase.startswith("tts_") else None,
+            client_timestamp=payload.get("clientTimestamp"),
+            details={
+                "commandReceivedAtClientMs": payload.get("commandReceivedAtClientMs"),
+                "actualAtClientMs": payload.get("actualAtClientMs"),
+                "clientStageMs": payload.get("clientStageMs"),
+                "provider": payload.get("provider"),
+                "reason": payload.get("reason"),
+            },
+        )
 
 
 
