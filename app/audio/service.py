@@ -385,7 +385,21 @@ class AudioService:
             use_browser = tts_mode in ("browser", "both")
             use_file = tts_mode in ("file", "both")
 
-            if aux.get('question'):
+            if aux.get('attention') or aux.get('reward'):
+                # These live engagement states have no legacy MP3 branch.
+                # Server selects the text and the child renders browser TTS.
+                intent = 'attention' if aux.get('attention') else 'reward'
+                record_dispatch(self._emit_browser_phrase(
+                    room=child_room,
+                    intent=intent,
+                    course_type='global',
+                    delay_ms=delay_ms,
+                    session_id=session_id,
+                    behavior_id=behavior_id,
+                    request_id=request_id,
+                ))
+
+            elif aux.get('question'):
                 # 排序提问应由 sequencing_question_ready（带 category+rule）触发；
                 # 忽略教师端裸 aux.question，避免盖成「按规则选一选」。
                 ct = str(course_type or '').strip().lower()

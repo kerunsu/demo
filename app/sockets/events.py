@@ -1042,6 +1042,12 @@ def _clear_pending_item_question(
         if generation and str(pending.get('generation') or '') != str(generation):
             return
         _pending_interactive_questions.pop(sid, None)
+        timer = _pending_interactive_question_timers.pop(sid, None)
+        if timer is not None:
+            try:
+                timer.cancel()
+            except Exception:
+                pass
 
 
 def _item_question_still_current(
@@ -1095,7 +1101,7 @@ def _flush_pending_item_question(session_id: Optional[str]) -> bool:
             event_data=payload.get('event_data'),
             _retry_count=0,
         )
-    return _play_interactive_course_audio(
+    dispatched = _play_interactive_course_audio(
         sid,
         str(payload.get('course_type') or 'pairing'),
         'question',
@@ -1105,6 +1111,9 @@ def _flush_pending_item_question(session_id: Optional[str]) -> bool:
         question_data=payload.get('question_data'),
         _retry_count=0,
     )
+    # The call was consumed even when the robot is still busy; the session-owned
+    # timer remains responsible for retrying while the pending entry exists.
+    return bool(dispatched or _pending_item_question_generation(sid))
 
 
 def _remember_pending_interactive_feedback(
@@ -1232,7 +1241,7 @@ def _schedule_pending_item_question_flush(session_id: Optional[str]) -> bool:
             if _pending_interactive_question_timers.get(sid) is timer:
                 _pending_interactive_question_timers.pop(sid, None)
         landed = _flush_pending_interactive_work(sid)
-        if not landed and _has_pending_interactive_work(sid):
+        if _has_pending_interactive_work(sid):
             _schedule_pending_item_question_flush(sid)
 
     with _deferred_question_lock:
@@ -1565,13 +1574,17 @@ def _play_interactive_course_audio(
             return False
         if audio_type == 'praise':
             dispatched_animation = bool(animation_payload and sio is not None)
-            if not robot_service.set_behavior_animation_expected(
-                resolved_behavior_id,
-                dispatched_animation,
-                session_id=str(session_id),
-            ):
-                robot_service.abort_behavior(resolved_behavior_id)
-                return False
+            set_animation_expected = getattr(
+                robot_service, 'set_behavior_animation_expected', None
+            )
+            if callable(set_animation_expected):
+                if not set_animation_expected(
+                    resolved_behavior_id,
+                    dispatched_animation,
+                    session_id=str(session_id),
+                ):
+                    robot_service.abort_behavior(resolved_behavior_id)
+                    return False
             if not dispatched_animation:
                 animation_payload = None
         if not robot_service.set_behavior_audio_expected(

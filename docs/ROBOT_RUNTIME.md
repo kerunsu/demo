@@ -70,10 +70,14 @@ python -m robot_runtime.agent
 
 **热更新（exe 包）：**
 
-1. 开发机重新 `.\scripts\pack_robot_release.ps1`，把 `releases/robot/*.zip` + `manifest.json` 拷到服务器
+1. 开发机重新 `.\scripts\pack_robot_release.ps1`，把完整包、轻量更新包及 `manifest.json` 一起拷到服务器
 2. 机器人机打开 `/ui` →「检查更新」→「立即更新」
-3. Runtime 下载 zip，替换同目录 `RobotRuntime.exe`（及 `start.bat` / `README.txt` / `VERSION` / `Open-ChildLanMic.ps1`），自动重启；**不覆盖 DollSer**
+3. Runtime 优先下载轻量更新包，支持中断续传，并在替换前校验大小、SHA-256、ZIP 完整性、Windows EXE 头和包内 VERSION；替换 `RobotRuntime.exe` 及启动脚本后自动重启，**不覆盖 DollSer**
 4. 源码模式不支持自动换进程，需重新打包后用 exe 测试机更新
+
+`/ui` 会显示下载、校验、解压、替换和重启阶段。失败时直接显示原因，
+并可查看 `%LOCALAPPDATA%\EIArt\robot_runtime\update_runtime.log` 与
+`update_restart.log`。时间戳格式版本不会自动降级到更早的服务器包。
 
 ## 环境变量
 
@@ -101,7 +105,7 @@ python -m robot_runtime.agent
 - 媒体：`/health`、`/record/start|stop`、`/preview.mjpeg`（同原 Media Agent）
 - OSC：`/osc/play`、`/osc/frame`、`/osc/stop`
 - 注册：Runtime → `POST /api/robot/runtime/register`；手动 `POST /register/now`
-- 配置：`POST /config/media-dir`；更新：`GET /update/check`、`POST /update/apply`
+- 配置：`POST /config/media-dir`；更新：`GET /update/check`、`POST /update/apply`、`GET /update/status|log`
 - UI：`GET /ui`；打开儿童页：`POST /ui/open-child`（LAN mic 脚本，失败则浏览器回退）
 - 发布包：后端 `GET /robot/download`、`GET /api/robot/runtime/version`、`GET /api/robot/runtime/download`
 

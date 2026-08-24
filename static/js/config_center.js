@@ -10,6 +10,7 @@
     'motions',
     'media',
     'courses',
+    'presets',
     'phrases',
   ]);
   const PLACEHOLDER = {};
@@ -63,6 +64,9 @@
       }
       if (v === 'courses' && typeof window.loadCourseLibrary === 'function') {
         window.loadCourseLibrary();
+      }
+      if (v === 'presets' && typeof window.loadCoursePresetLibrary === 'function') {
+        window.loadCoursePresetLibrary();
       }
       if (v === 'phrases' && typeof window.loadPhraseLibrary === 'function') {
         window.loadPhraseLibrary();

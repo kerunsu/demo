@@ -114,6 +114,8 @@ if (-not $browser) {
 
 # Do not use $args — automatic/read-only in PowerShell 7+.
 $browserArgs = @(
+    "--new-window",
+    "--start-fullscreen",
     "--unsafely-treat-insecure-origin-as-secure=$origin",
     "--user-data-dir=$userDataDir",
     "--no-first-run",

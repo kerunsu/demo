@@ -52,7 +52,7 @@
       display: flex;
       flex-direction: column;
       padding: clamp(12px, 2.2vh, 24px) clamp(12px, 2.5vw, 28px);
-      max-width: 1080px;
+      max-width: none;
       margin: 0 auto;
       width: 100%;
       height: 100%;
@@ -97,27 +97,15 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      gap: clamp(8px, 1.5vh, 14px);
+      gap: 0;
       padding-top: clamp(4px, 1vh, 12px);
-      min-height: min(40vh, 340px);
-    }
-
-    .speech-bubble {
-      background: #fff;
-      border-radius: 20px;
-      padding: 12px 25px;
-      font-size: clamp(18px, 2.6vh, 22px);
-      font-weight: 900;
-      color: var(--primary-color);
-      box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
-      margin: 0;
-      text-align: center;
+      min-height: min(47vh, 390px);
     }
 
     .target-frame {
       background: rgba(255, 255, 255, 0.55);
-      width: min(37vh, 305px);
-      height: min(37vh, 305px);
+      width: min(44.4vh, 366px);
+      height: min(44.4vh, 366px);
       border-radius: 40px;
       display: flex;
       justify-content: center;
@@ -163,8 +151,12 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
       min-height: 0;
+      overscroll-behavior-x: contain;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(2, 132, 199, 0.35) transparent;
     }
 
     .options-grid {
@@ -174,14 +166,10 @@
       justify-content: center;
       align-items: center;
       gap: clamp(8px, 1.4vw, 18px);
-      width: 100%;
-      max-width: 1040px;
-      padding: 0 4px;
-      --option-count: 3;
+      width: max-content;
+      min-width: 100%;
+      padding: 8px max(8px, 2vw);
     }
-
-    .options-grid[data-count="4"] { gap: clamp(5px, 1vw, 12px); }
-    .options-grid[data-count="5"] { gap: clamp(3px, 0.7vw, 8px); padding: 0 2px; }
 
     .option-card {
       background: var(--card-bg);
@@ -198,30 +186,13 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      /* Share row width evenly; shrink before wrapping (nowrap) */
-      flex: 1 1 0;
-      /* 保证最小可点击尺寸（幼儿手指/触摸屏友好） */
-      min-width: clamp(52px, 9vw, 128px);
-      width: auto;
-      height: auto;
-      max-width: min(30vh, 255px);
+      /* 选项数量只改变横向总宽度，不再压缩儿童的点击目标。 */
+      flex: 0 0 min(36vh, 306px);
+      width: min(36vh, 306px);
+      height: min(36vh, 306px);
+      max-width: none;
       overflow: hidden;
-    }
-
-    /* Fewer options → allow larger cards; more → tighter max so one row fits */
-    .options-grid[data-count="2"] .option-card { max-width: min(36vh, 290px); }
-    .options-grid[data-count="3"] .option-card { max-width: min(32vh, 270px); }
-    .options-grid[data-count="4"] .option-card {
-      max-width: min(28vh, 230px);
-      padding: 7px;
-      border-width: 4px;
-      border-radius: 26px;
-    }
-    .options-grid[data-count="5"] .option-card {
-      max-width: min(24vh, 195px);
-      padding: 5px;
-      border-width: 4px;
-      border-radius: 22px;
+      scroll-snap-align: center;
     }
 
     @media (hover: hover) and (pointer: fine) {
@@ -270,8 +241,12 @@
     }
 
     .target-frame {
-      transition: transform 240ms cubic-bezier(0.77, 0, 0.175, 1);
+      position: relative;
+      z-index: 2;
+      transition: transform 360ms cubic-bezier(0.77, 0, 0.175, 1),
+                  box-shadow 240ms cubic-bezier(0.23, 1, 0.32, 1);
       transform-origin: center;
+      will-change: transform;
     }
 
     .options-grid {
@@ -279,7 +254,11 @@
                   transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
     }
 
-    body.question-input-locked .target-frame { transform: scale(1.08); }
+    body.question-input-locked .target-frame {
+      z-index: 30;
+      transform: translate3d(var(--question-focus-x, 0), var(--question-focus-y, 0), 0) scale(1.58);
+      box-shadow: 0 28px 70px rgba(28, 73, 115, 0.28);
+    }
     body.question-input-locked .options-grid {
       opacity: 0;
       transform: scale(0.98);
@@ -290,6 +269,7 @@
       opacity: 1;
       transform: scale(1);
       pointer-events: auto;
+      transition-delay: 220ms;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -297,6 +277,7 @@
       .options-grid {
         transform: none !important;
         transition: opacity 160ms ease !important;
+        transition-delay: 0ms !important;
       }
       .option-card {
         animation: none !important;
@@ -418,37 +399,33 @@
     #technical-panel { display: none !important; }
 
     @media (max-width: 780px) {
-      .target-zone { min-height: min(34vh, 280px); }
+      .target-zone { min-height: min(41vh, 336px); }
       .target-frame {
-        width: min(34vh, 255px);
-        height: min(34vh, 255px);
+        width: min(40.8vh, 306px);
+        height: min(40.8vh, 306px);
         border-radius: 32px;
       }
       .option-card {
         border-radius: 22px;
         border-width: 4px;
         padding: 6px;
-      }
-      .options-grid[data-count="2"] .option-card { max-width: min(30vh, 220px); }
-      .options-grid[data-count="3"] .option-card { max-width: min(29vh, 205px); }
-      .options-grid[data-count="4"] .option-card { max-width: min(25vh, 170px); }
-      .options-grid[data-count="5"] .option-card { max-width: min(21vh, 150px); }
-      .speech-bubble {
-        font-size: 18px;
-        padding: 10px 16px;
+        flex-basis: min(34.8vh, 246px);
+        width: min(34.8vh, 246px);
+        height: min(34.8vh, 246px);
       }
     }
 
     @media (max-height: 640px) and (orientation: landscape) {
       .target-zone { min-height: auto; }
       .target-frame {
-        width: min(30vh, 220px);
-        height: min(30vh, 220px);
+        width: min(36vh, 264px);
+        height: min(36vh, 264px);
       }
-      .options-grid[data-count="2"] .option-card { max-width: min(29vh, 185px); }
-      .options-grid[data-count="3"] .option-card { max-width: min(26vh, 170px); }
-      .options-grid[data-count="4"] .option-card { max-width: min(23vh, 150px); }
-      .options-grid[data-count="5"] .option-card { max-width: min(20vh, 128px); }
+      .option-card {
+        flex-basis: min(34.8vh, 222px);
+        width: min(34.8vh, 222px);
+        height: min(34.8vh, 222px);
+      }
     }
   </style>
 </head>
@@ -481,7 +458,6 @@
 
     <!-- 顶部目标区 -->
     <div class="target-zone">
-      <p class="speech-bubble">选和上面一样的</p>
       <div class="target-frame" id="targetFrame">
         <img id="targetImg" class="target-image" src="" alt="找到这个">
       </div>
@@ -516,7 +492,7 @@
     <div id="gameArea"></div>
   </div>
 
-  <script src="/static/js/interactive_question_state.js?v=20260823-1"></script>
+  <script src="/static/js/interactive_question_state.js?v=20260823-focus-v2"></script>
   <script>
     // ==================== 粒子特效系统 ====================
     const canvas = document.getElementById('confetti-canvas');
@@ -874,6 +850,7 @@
         this.questionGate = new window.InteractiveQuestionState.QuestionInputGate({
           sessionId,
           timeoutMs: 8000,
+          focusElement: '#targetFrame',
           onUnlock: () => {
             if (this.questionStartAt == null) this.questionStartAt = Date.now();
           },

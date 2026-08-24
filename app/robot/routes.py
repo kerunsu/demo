@@ -11,7 +11,11 @@ from app.robot.motion_storage import (
     import_dollser_motion_file,
     set_motion_speed,
 )
-from app.robot.release_package import load_manifest, resolve_zip_path
+from app.robot.release_package import (
+    load_manifest,
+    resolve_update_zip_path,
+    resolve_zip_path,
+)
 from app.utils.logger import setup_logger
 from app.versioning import version_matrix
 from app.robot.behavior_events import is_aux_allowed, validate_aux_type
@@ -957,8 +961,10 @@ def runtime_status():
 
 @robot_bp.route('/runtime/version', methods=['GET'])
 def runtime_release_version():
-    """当前可下载的机器人端发布包元信息（manifest + zip 是否存在）。"""
-    zip_path, meta = resolve_zip_path(load_manifest())
+    """Validated full-install and lightweight hot-update package metadata."""
+    manifest = load_manifest()
+    zip_path, meta = resolve_zip_path(manifest)
+    update_path, update_meta = resolve_update_zip_path(manifest)
     return jsonify({
         'ok': True,
         'success': True,
@@ -969,19 +975,47 @@ def runtime_release_version():
         'sourceCommit': meta.get('sourceCommit'),
         'filename': meta.get('resolvedFilename') or meta.get('filename'),
         'latest': meta.get('latest'),
-        'sha256': meta.get('sha256'),
-        'sizeBytes': meta.get('sizeBytes') or 0,
+        'sha256': meta.get('resolvedSha256') or meta.get('sha256'),
+        'sizeBytes': meta.get('resolvedSizeBytes') or 0,
         'builtAt': meta.get('builtAt'),
         'error': meta.get('error') if not zip_path else None,
         'downloadUrl': '/api/robot/runtime/download',
+        'updatePackageAvailable': bool(update_path),
+        'updateFilename': (
+            update_meta.get('resolvedFilename')
+            or update_meta.get('updateFilename')
+            or update_meta.get('filename')
+        ),
+        'updateSha256': (
+            update_meta.get('resolvedSha256')
+            or update_meta.get('updateSha256')
+            or update_meta.get('sha256')
+        ),
+        'updateSizeBytes': update_meta.get('resolvedSizeBytes') or 0,
+        'updateDownloadUrl': '/api/robot/runtime/download?kind=update',
+        'updateError': update_meta.get('error') if not update_path else None,
+        'dedicatedUpdatePackage': bool(
+            update_path and update_meta.get('dedicatedUpdatePackage')
+        ),
         'pageUrl': '/robot/download',
     })
 
 
 @robot_bp.route('/runtime/download', methods=['GET'])
 def runtime_release_download():
-    """下载机器人端 EIArt-Robot zip（exe + DollSer）。"""
-    zip_path, meta = resolve_zip_path(load_manifest())
+    """Download a validated full install or lightweight hot-update archive."""
+    kind = str(request.args.get('kind') or 'full').strip().lower()
+    if kind not in {'full', 'update'}:
+        return jsonify({
+            'ok': False,
+            'success': False,
+            'error': 'kind must be full or update',
+        }), 400
+    manifest = load_manifest()
+    if kind == 'update':
+        zip_path, meta = resolve_update_zip_path(manifest)
+    else:
+        zip_path, meta = resolve_zip_path(manifest)
     if not zip_path:
         return jsonify({
             'ok': False,
@@ -990,9 +1024,20 @@ def runtime_release_download():
             'error': meta.get('error') or 'release zip not available',
         }), 404
     download_name = meta.get('resolvedFilename') or zip_path.name
-    return send_file(
+    response = send_file(
         zip_path,
         mimetype='application/zip',
         as_attachment=True,
         download_name=download_name,
+        conditional=True,
+        etag=meta.get('resolvedSha256'),
+        last_modified=zip_path.stat().st_mtime,
+        max_age=0,
     )
+    response.headers['Accept-Ranges'] = 'bytes'
+    response.headers['X-Robot-Package-Kind'] = kind
+    response.headers['X-Robot-Package-Version'] = str(meta.get('version') or '')
+    response.headers['X-Robot-Package-Sha256'] = str(
+        meta.get('resolvedSha256') or ''
+    )
+    return response

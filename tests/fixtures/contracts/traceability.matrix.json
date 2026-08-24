@@ -1,9 +1,17 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-23",
+  "generatedAt": "2026-08-24",
   "sourceSnapshot": "tests/fixtures/contracts/contracts.snapshot.json",
   "interfaces": {
     "http": [
+      {
+        "method": "DELETE",
+        "path": "/api/config/course-presets/<preset_id>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
+      },
       {
         "method": "DELETE",
         "path": "/api/config/courses/<int:course_id>",
@@ -151,6 +159,14 @@
       {
         "method": "GET",
         "path": "/api/config/content/summary",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
+      },
+      {
+        "method": "GET",
+        "path": "/api/config/course-presets",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,
@@ -910,6 +926,14 @@
       },
       {
         "method": "POST",
+        "path": "/api/config/course-presets",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
+      },
+      {
+        "method": "POST",
         "path": "/api/config/courses",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
@@ -1359,6 +1383,14 @@
       {
         "method": "PUT",
         "path": "/api/config/audio/entries/<entry_id>",
+        "owner": "facade + storage/computation/acquisition",
+        "sourceSnapshot": true,
+        "runtimeCrossChecked": true,
+        "behaviorFixture": "partial; see tests/test_phase1_contract_surface.py"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/config/course-presets/<preset_id>",
         "owner": "facade + storage/computation/acquisition",
         "sourceSnapshot": true,
         "runtimeCrossChecked": true,

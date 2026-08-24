@@ -9,7 +9,8 @@ from __future__ import annotations
 from typing import Iterable, Optional
 
 
-STANDARD_AUX_TYPES = ("praise", "question", "hint", "silent")
+ENGAGEMENT_AUX_TYPES = ("attention", "reward")
+STANDARD_AUX_TYPES = ("praise", "question", "hint", "silent") + ENGAGEMENT_AUX_TYPES
 LIFECYCLE_AUX_TYPES = ("silent",)
 SOCIAL_GREETING_AUX_TYPES = (
     "social_greeting_intro",
@@ -55,10 +56,10 @@ def allowed_aux_types(
         return STANDARD_AUX_TYPES
     role = str(social_role or "").strip().lower()
     if role == "greeting":
-        return LIFECYCLE_AUX_TYPES + SOCIAL_GREETING_AUX_TYPES
+        return LIFECYCLE_AUX_TYPES + ENGAGEMENT_AUX_TYPES + SOCIAL_GREETING_AUX_TYPES
     if role == "farewell":
-        return LIFECYCLE_AUX_TYPES + SOCIAL_FAREWELL_AUX_TYPES
-    return LIFECYCLE_AUX_TYPES + SOCIAL_AUX_TYPES
+        return LIFECYCLE_AUX_TYPES + ENGAGEMENT_AUX_TYPES + SOCIAL_FAREWELL_AUX_TYPES
+    return LIFECYCLE_AUX_TYPES + ENGAGEMENT_AUX_TYPES + SOCIAL_AUX_TYPES
 
 
 def is_aux_allowed(
@@ -82,6 +83,7 @@ def validate_aux_type(aux_type: object) -> str:
 
 __all__ = [
     "ALL_AUX_TYPES",
+    "ENGAGEMENT_AUX_TYPES",
     "LIFECYCLE_AUX_TYPES",
     "SOCIAL_AUX_TYPES",
     "SOCIAL_FAREWELL_AUX_TYPES",

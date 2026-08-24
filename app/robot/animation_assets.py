@@ -19,6 +19,8 @@ from app.storage.session_layout import atomic_write_json
 
 logger = setup_logger("animation_assets")
 _animation_lock = threading.RLock()
+_playable_cache_key: tuple = ()
+_playable_cache_names: List[str] = []
 # Upload clients may send a local ``C:\\fakepath\\`` prefix and users may
 # reasonably name assets in Chinese. The basename check below removes the
 # client-side path; this pattern still rejects separators and control chars.
@@ -67,6 +69,7 @@ def find_animation_references(name: str) -> List[str]:
 
 
 def get_animations_payload() -> Dict[str, Any]:
+    global _playable_cache_key, _playable_cache_names
     items = []
     for name in list_animation_files():
         refs = find_animation_references(name)
@@ -85,7 +88,56 @@ def get_animations_payload() -> Dict[str, Any]:
             "referencedBy": refs,
             **media,
         })
+    signature = []
+    directory = ensure_animations_dir()
+    for item in items:
+        try:
+            stat = (directory / item["name"]).stat()
+            signature.append((item["name"], stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            signature.append((item["name"], 0, 0))
+    with _animation_lock:
+        _playable_cache_key = (str(directory.resolve()), tuple(signature))
+        _playable_cache_names = [
+            str(item["name"])
+            for item in items
+            if item.get("validationStatus") in {"compatible", "degraded"}
+        ]
     return {"animations": [item["name"] for item in items], "items": items}
+
+
+def _playable_animation_names() -> List[str]:
+    """Return only assets that passed bounded MP4 inspection.
+
+    Old repositories may contain placeholder files with an ``.mp4`` suffix.
+    They stay visible in the library for repair/removal, but must never enter
+    the runtime random pool where one bad draw makes encouragement disappear.
+    """
+    global _playable_cache_key, _playable_cache_names
+    directory = ensure_animations_dir()
+    names = list_animation_files()
+    signature = []
+    for name in names:
+        try:
+            stat = (directory / name).stat()
+            signature.append((name, stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            signature.append((name, 0, 0))
+    cache_key = (str(directory.resolve()), tuple(signature))
+    with _animation_lock:
+        if cache_key == _playable_cache_key:
+            return list(_playable_cache_names)
+        playable: List[str] = []
+        for name in names:
+            try:
+                media = inspect_mp4((directory / name).read_bytes())
+            except (OSError, ValueError):
+                continue
+            if media.get("validationStatus") in {"compatible", "degraded"}:
+                playable.append(name)
+        _playable_cache_key = cache_key
+        _playable_cache_names = playable
+        return list(playable)
 
 
 def save_uploaded_animation(
@@ -187,14 +239,22 @@ def delete_animation_file(name: str, force: bool = False) -> None:
     logger.info("Deleted encouragement animation: %s (force=%s)", safe_name, force)
 
 
-def resolve_animation(selection: Any) -> str | None:
+def resolve_animation(
+    selection: Any,
+    *,
+    allow_random_fallback: bool = True,
+) -> str | None:
     """Resolve a configured filename, or randomly fall back to the default library."""
     configured = os.path.basename(str(selection or "").strip())
-    available = list_animation_files()
+    available = _playable_animation_names()
     if configured:
         if configured in available:
             return f"resources/Animations/{configured}"
-        logger.warning("Configured encouragement animation is missing: %s", configured)
+        logger.warning("Configured encouragement animation is missing or invalid: %s", configured)
+        if not allow_random_fallback:
+            return None
+    if not allow_random_fallback:
+        return None
     if not available:
         logger.warning("Encouragement animation library is empty: %s", animations_dir())
         return None

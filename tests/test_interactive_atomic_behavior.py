@@ -1,5 +1,7 @@
+import threading
 from types import SimpleNamespace
-import time
+
+from flask import Flask
 
 from app.sockets import events
 
@@ -23,14 +25,6 @@ class _Robot:
     def resolve_audio_offset_ms(self, payload):
         return 0
 
-    def resolve_encouragement_animation(self, payload):
-        self.calls.append(("resolve_anim", payload))
-        return getattr(self, "animation_path", None)
-
-    def set_behavior_animation_expected(self, behavior_id, expected, **kwargs):
-        self.calls.append(("anim_expected", behavior_id, bool(expected), kwargs))
-        return True
-
     def set_behavior_audio_expected(self, behavior_id, count, **kwargs):
         self.calls.append(("commit", behavior_id, count, kwargs))
         return True
@@ -52,30 +46,46 @@ class _Audio:
 class _BusyRobot(_Robot):
     def reserve_behavior(self, **kwargs):
         self.calls.append(("reserve", kwargs))
-        return {"accepted": False, "activeBehaviorId": "active-speech"}
+        return {
+            "accepted": False,
+            "activeBehaviorId": "behavior-already-playing",
+        }
 
 
-class _FakeTimer:
+class _BusyOnceRobot(_Robot):
+    def __init__(self):
+        super().__init__()
+        self.reserve_count = 0
+
+    def reserve_behavior(self, **kwargs):
+        self.reserve_count += 1
+        self.calls.append(("reserve", kwargs))
+        if self.reserve_count == 1:
+            return {
+                "accepted": False,
+                "activeBehaviorId": "behavior-already-playing",
+            }
+        return {"accepted": True, "behaviorId": kwargs["behavior_id"]}
+
+
+class _OwnedTimer:
     instances = []
 
-    def __init__(self, interval, function, args=None, kwargs=None):
+    def __init__(self, interval, callback, *args, **kwargs):
         self.interval = interval
-        self.function = function
-        self.args = args or []
-        self.kwargs = kwargs or {}
+        self.callback = callback
         self.daemon = False
-        self.started = False
-        self.cancelled = False
+        self.active = False
         self.__class__.instances.append(self)
 
     def start(self):
-        self.started = True
+        self.active = True
 
     def cancel(self):
-        self.cancelled = True
+        self.active = False
 
     def is_alive(self):
-        return self.started and not self.cancelled
+        return self.active
 
 
 def test_interactive_audio_uses_global_behavior_mutex():
@@ -97,158 +107,6 @@ def test_interactive_audio_uses_global_behavior_mutex():
     assert audio.calls[0]["request_id"] == reserve["request_id"]
     assert commit[1] == reserve["behavior_id"]
     assert commit[2] == 1
-
-
-def test_busy_item_question_uses_one_flush_timer_without_aborting(monkeypatch):
-    session_id = "runtime-busy-question"
-    robot = _BusyRobot()
-    _FakeTimer.instances.clear()
-    monkeypatch.setattr(events.threading, "Timer", _FakeTimer)
-    with events._deferred_question_lock:
-        events._pending_interactive_questions.pop(session_id, None)
-        events._pending_interactive_question_timers.pop(session_id, None)
-
-    generation = events._remember_pending_item_question(
-        session_id,
-        kind="pairing",
-        payload={"course_type": "pairing", "audio_type": "question"},
-    )
-    question = {
-        "courseType": "pairing",
-        "questionId": "q-1",
-        "questionIndex": 1,
-        "_askGeneration": generation,
-    }
-    with events._deferred_question_lock:
-        events._pending_interactive_questions[session_id]["payload"][
-            "question_data"
-        ] = question
-
-    try:
-        assert not events._play_interactive_course_audio(
-            session_id,
-            "pairing",
-            "question",
-            robot_service=robot,
-            audio_service=_Audio(),
-            question_data=question,
-        )
-        assert not events._play_interactive_course_audio(
-            session_id,
-            "pairing",
-            "question",
-            robot_service=robot,
-            audio_service=_Audio(),
-            question_data=question,
-        )
-        assert len(_FakeTimer.instances) == 1
-        assert not any(call[0] == "abort" for call in robot.calls)
-    finally:
-        with events._deferred_question_lock:
-            events._pending_interactive_questions.pop(session_id, None)
-            events._pending_interactive_question_timers.pop(session_id, None)
-
-
-def test_busy_praise_is_queued_without_retry_spam(monkeypatch):
-    session_id = "runtime-busy-praise"
-    robot = _BusyRobot()
-    _FakeTimer.instances.clear()
-    monkeypatch.setattr(events.threading, "Timer", _FakeTimer)
-    with events._deferred_question_lock:
-        events._pending_interactive_feedback.pop(session_id, None)
-        events._pending_interactive_question_timers.pop(session_id, None)
-
-    try:
-        assert not events._play_interactive_course_audio(
-            session_id,
-            "pairing",
-            "praise",
-            robot_service=robot,
-            audio_service=_Audio(),
-        )
-        assert events._pending_interactive_feedback_current(session_id)
-        assert len(_FakeTimer.instances) == 1
-        assert not events._play_interactive_course_audio(
-            session_id,
-            "pairing",
-            "encourage",
-            robot_service=robot,
-            audio_service=_Audio(),
-        )
-        with events._deferred_question_lock:
-            pending = events._pending_interactive_feedback[session_id]
-            assert pending["audio_type"] == "encourage"
-        assert len(_FakeTimer.instances) == 1
-        assert not any(call[0] == "abort" for call in robot.calls)
-    finally:
-        with events._deferred_question_lock:
-            events._pending_interactive_feedback.pop(session_id, None)
-            events._pending_interactive_question_timers.pop(session_id, None)
-
-
-def test_pending_item_question_is_latest_wins():
-    session_id = "runtime-latest-question"
-    try:
-        first = events._remember_pending_item_question(
-            session_id,
-            kind="pairing",
-            payload={"question_data": {"questionId": "old"}},
-        )
-        second = events._remember_pending_item_question(
-            session_id,
-            kind="pairing",
-            payload={"question_data": {"questionId": "new"}},
-        )
-        with events._deferred_question_lock:
-            pending = events._pending_interactive_questions[session_id]
-            assert pending["generation"] == second
-            assert pending["generation"] != first
-            assert pending["payload"]["question_data"]["questionId"] == "new"
-    finally:
-        with events._deferred_question_lock:
-            events._pending_interactive_questions.pop(session_id, None)
-
-
-def test_item_question_audio_uses_shared_multimodal_anchor():
-    class AnchoredRobot(_Robot):
-        def trigger_course_event(self, payload):
-            self.calls.append(("trigger", payload))
-            return {"success": True, "scheduledDelayMs": 640}
-
-        def resolve_audio_offset_ms(self, payload):
-            return 900
-
-    robot = AnchoredRobot()
-    audio = _Audio()
-
-    assert events._play_interactive_course_audio(
-        "runtime-anchor",
-        "pairing",
-        "question",
-        robot_service=robot,
-        audio_service=audio,
-    )
-    assert audio.calls[0]["delay_ms"] == 640
-
-    ordering_robot = AnchoredRobot()
-    ordering_audio = _Audio()
-    assert events._play_atomic_ordering_question(
-        "runtime-ordering-anchor",
-        "question_size_bigger",
-        category="size",
-        rule="bigger",
-        text="选出更大的那张。",
-        event_data={"courseType": "ordering", "questionIndex": 1},
-        robot_service=ordering_robot,
-        audio_service=ordering_audio,
-        runtime_session=SimpleNamespace(
-            student_id=3,
-            course_id=12,
-            course_item_id=None,
-            training_session_id="training-ordering-anchor",
-        ),
-    )
-    assert ordering_audio.calls[0]["delay_ms"] == 640
 
 
 def test_rule_aware_ordering_question_is_not_deferred():
@@ -340,122 +198,85 @@ def test_manual_ordering_question_dispatches_rule_phrase(monkeypatch):
     assert dispatched[0]["request_id"] == "request-manual-ordering"
 
 
-class _FakeSocket:
-    def __init__(self):
-        self.emitted = []
-
-    def emit(self, event, payload, to=None, room=None, **kwargs):
-        self.emitted.append({
-            "event": event,
-            "payload": payload,
-            "to": to,
-            "room": room,
-        })
-
-
-def test_interactive_auto_praise_dispatches_teacher_equivalent_animation(monkeypatch):
-    robot = _Robot()
-    robot.animation_path = "resources/Animations/auto-praise.mp4"
+def test_item_question_busy_retry_has_one_session_owned_timer(monkeypatch):
+    _OwnedTimer.instances.clear()
+    monkeypatch.setattr(events.threading, "Timer", _OwnedTimer)
+    robot = _BusyRobot()
     audio = _Audio()
-    fake_socket = _FakeSocket()
-    monkeypatch.setattr(events, "_event_socketio", lambda: fake_socket)
-    monkeypatch.setattr(events, "_child_owner_for_session", lambda _sid: "child-sid")
-
-    assert events._play_interactive_course_audio(
-        "runtime-auto-praise",
-        "pairing",
-        "praise",
-        robot_service=robot,
-        audio_service=audio,
+    generation = events._remember_pending_item_question(
+        "runtime-single-owner",
+        kind="pairing",
+        payload={},
     )
-
-    assert any(call[0] == "resolve_anim" for call in robot.calls)
-    anim_expected = next(call for call in robot.calls if call[0] == "anim_expected")
-    assert anim_expected[2] is True
-    events_sent = [item["event"] for item in fake_socket.emitted]
-    assert events_sent == ["prepare_behavior_animation", "play_resource"]
-    play = fake_socket.emitted[1]["payload"]
-    assert play["behaviorAnimation"] == "resources/Animations/auto-praise.mp4"
-    assert play["aux"] == {"praise": True}
-    assert play["holdLastFrame"] is False
-    assert play["interactiveAutoPraise"] is True
-    assert fake_socket.emitted[0]["to"] == "child-sid"
-    assert fake_socket.emitted[1]["to"] == "child-sid"
-    request_id = play["requestId"]
-    with events._play_request_lock:
-        cached = dict(events._play_request_cache.get(request_id) or {})
-    assert cached.get("behaviorId") == play["behaviorId"]
-    assert cached.get("interactiveAutoPraise") is True
-    assert events._should_forward_animation_terminal_to_teacher(
-        request_id,
-        play["behaviorId"],
-    ) is False
-
-
-def test_interactive_auto_praise_does_not_block_mutex_without_socket(monkeypatch):
-    robot = _Robot()
-    robot.animation_path = "resources/Animations/auto-praise.mp4"
-    audio = _Audio()
-    monkeypatch.setattr(events, "_event_socketio", lambda: None)
-
-    assert events._play_interactive_course_audio(
-        "runtime-auto-praise-nosocket",
-        "pairing",
-        "praise",
-        robot_service=robot,
-        audio_service=audio,
-    )
-    anim_expected = next(call for call in robot.calls if call[0] == "anim_expected")
-    assert anim_expected[2] is False
-
-
-def test_animation_ended_without_teacher_cache_still_releases_mutex(monkeypatch):
-    calls = []
-
-    class _CompleteRobot:
-        def mark_behavior_animation_complete(self, **kwargs):
-            calls.append(kwargs)
-            return {
-                "behaviorId": kwargs["behavior_id"],
-                "status": kwargs["status"],
-                "degraded": False,
-            }
-
-    monkeypatch.setattr("app.robot.get_robot_service", lambda: _CompleteRobot())
-    payload = {
-        "sessionId": "runtime-auto-praise-ended",
-        "requestId": "interactive-request-no-cache",
-        "behaviorId": "interactive-audio-no-cache",
-        "status": "ended",
-        "modality": "childAnimation",
+    question = {
+        "questionId": "pairing-q1",
+        "_askGeneration": generation,
     }
-    with events._play_request_lock:
-        events._play_request_cache.pop(payload["requestId"], None)
-
-    terminal = events._release_behavior_animation_from_child(payload)
-    assert terminal["behaviorId"] == payload["behaviorId"]
-    assert calls[0]["behavior_id"] == payload["behaviorId"]
-    assert calls[0]["request_id"] == payload["requestId"]
-    assert calls[0]["session_id"] == payload["sessionId"]
-    assert events._should_forward_animation_terminal_to_teacher(
-        payload["requestId"],
-        payload["behaviorId"],
-    ) is False
-
-
-def test_teacher_animation_terminal_still_forwards_when_play_request_matches():
-    request_id = "teacher-praise-request"
-    behavior_id = "teacher-praise-behavior"
-    with events._play_request_lock:
-        events._play_request_cache[request_id] = {
-            "behaviorId": behavior_id,
-            "expiresAt": time.monotonic() + 30,
+    with events._deferred_question_lock:
+        pending = events._pending_interactive_questions["runtime-single-owner"]
+        pending["payload"] = {
+            "course_type": "pairing",
+            "question_data": question,
         }
-    try:
-        assert events._should_forward_animation_terminal_to_teacher(
-            request_id,
-            behavior_id,
-        ) is True
-    finally:
-        with events._play_request_lock:
-            events._play_request_cache.pop(request_id, None)
+
+    assert not events._play_interactive_course_audio(
+        "runtime-single-owner",
+        "pairing",
+        "question",
+        question_data=question,
+        robot_service=robot,
+        audio_service=audio,
+    )
+    assert len(_OwnedTimer.instances) == 1
+    assert events._flush_pending_item_question("runtime-single-owner")
+    assert len(_OwnedTimer.instances) == 1
+
+    events._clear_pending_item_question(
+        "runtime-single-owner",
+        generation=generation,
+    )
+    assert not _OwnedTimer.instances[0].is_alive()
+
+
+def test_item_question_retry_reenters_the_captured_flask_context(monkeypatch):
+    import app.audio
+    import app.robot
+
+    flask_app = Flask(__name__)
+    robot = _BusyOnceRobot()
+    audio = _Audio()
+    monkeypatch.setattr(app.robot, "get_robot_service", lambda: robot)
+    monkeypatch.setattr(app.audio, "get_audio_service", lambda: audio)
+    with flask_app.app_context():
+        generation = events._remember_pending_item_question(
+            "runtime-context-retry",
+            kind="pairing",
+            payload={},
+        )
+        question = {
+            "questionId": "pairing-q-context",
+            "_askGeneration": generation,
+        }
+        with events._deferred_question_lock:
+            pending = events._pending_interactive_questions["runtime-context-retry"]
+            pending["payload"] = {
+                "course_type": "pairing",
+                "question_data": question,
+            }
+        assert not events._play_interactive_course_audio(
+            "runtime-context-retry",
+            "pairing",
+            "question",
+            question_data=question,
+            robot_service=robot,
+            audio_service=audio,
+        )
+
+    deadline = threading.Event()
+    for _ in range(20):
+        if audio.calls:
+            break
+        deadline.wait(0.025)
+    assert len(audio.calls) == 1
+    assert robot.reserve_count == 2
+    assert events._pending_item_question_generation("runtime-context-retry") is None

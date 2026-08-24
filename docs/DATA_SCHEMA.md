@@ -6,6 +6,9 @@
   training sessions/details and report records. Existing databases are read
   and upgraded in place; reset is never a normal deployment operation.
 - Read-only content catalog: CSV/YAML/JSON/static media and audio manifests.
+- Teacher course presets: versioned `config/course_presets.json`, containing
+  one `defaultPresetId` and ordered `courseIds` per preset. It stores no copied
+  course or item payload and is replaced atomically.
 - Session directory: `static/recordings/sessions/<human-dir>/` when the
   continuous recorder has a human directory binding, otherwise the legacy
   session directory. The directory resolver owns this choice.
@@ -53,7 +56,8 @@ Every line is an immutable `InteractionEvent` with correlation IDs, actor,
 server timestamp, state transition, degradation/error fields and metadata.
 Stable events include `question_presented`, `question_audio_ended`,
 `no_response`, `question_repeat`, `hint`, `reminder`, `child_response`,
-`praise`, `rating` and `next_question`; modality events use the same timeline.
+`praise`, `attention_intervention`, `attention_reward`, `rating` and
+`next_question`; modality events use the same timeline.
 
 Response latency is server-authoritative: first valid `child_response` minus
 first `question_audio_ended`, with latest-prompt latency retained separately.

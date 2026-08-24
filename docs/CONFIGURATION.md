@@ -65,45 +65,23 @@ currently linked course rows on every refresh. Device and recording operations
 are a top-level Configuration Center area at `/server/config/devices`, not an
 Interaction Content subview.
 
-## LLM reply expressions
+## Teacher course presets
 
-Configuration Center -> Interaction Content -> Behavior Binding includes a
-separate length-based expression matcher for generated dialogue replies. Its
-source of truth is `doll/data/emotions_meta.json` under
-`dialogueReplyExpressions`; it does not alter or override course bindings in
-`course_map.json`. Rules contain strictly increasing `maxChars` values and MP4
-emotion filenames. Whitespace is excluded from the runtime character count,
-the first matching upper bound wins, and replies longer than the final bound use
-the final rule. The feature is disabled when omitted, preserving deployments
-that do not configure it.
+Course presets are managed in Configuration Center -> Interaction Content ->
+Course Presets and stored in `config/course_presets.json` with
+`schemaVersion: 1`. Each preset has an immutable `id`, display `name`, optional
+`description`, and an ordered, duplicate-free `courseIds` list. The document
+has exactly one `defaultPresetId` whenever at least one preset exists. Creating
+the first preset makes it the default; deleting the default promotes the first
+remaining preset.
 
-`GET|PUT /api/robot/emotions/dialogue-reply-rules` reads or atomically replaces
-the matcher. Enabling requires at least one valid rule; GIF, missing files,
-duplicate/decreasing bounds, and more than twelve rules are rejected. Referenced
-expressions participate in deletion protection.
-
-## Continuous speech recognition
-
-`config/analyzers.yaml` keeps the continuous course-ASR gate under
-`analyzers.speech`. The gate evaluates the unnormalized 16 kHz PCM before
-Paraformer and requires both whole-window energy and a minimum share of voiced
-20 ms frames. Defaults are `rms_threshold=0.006`,
-`frame_rms_threshold=0.014`, `peak_threshold=0.02`, and
-`min_voiced_ratio=0.12`. With the default two-second window this requires about
-240 ms of sustained voice-level audio, so a short handling noise does not start
-recognition while a short child answer can.
-
-`max_input_gain=3.0` bounds preprocessing gain; accepted low-level audio is no
-longer peak-normalized to full scale. After a course question/hint/praise TTS
-ends, the analyzer keeps about 180 ms of speaker-tail audio as preroll instead
-of wiping the buffer and ignoring 750 ms. Consecutive identical or nested
-transcripts inside an 8-second window are dropped so overlapping 2-second ASR
-chunks do not reprint one child sentence. Raise the frame/peak thresholds or
-voiced ratio when a deployment microphone admits persistent ambient noise.
-Lower only the frame threshold when verified child speech is being missed.
-Historical configurations remain compatible because missing or invalid fields
-use these defaults. Changes apply when the analyzer is recreated or the Server
-restarts.
+The Server rejects a save when a selected course is missing or has no course
+items. A later course deletion or removal of all its items does not rewrite the
+preset silently: `GET /api/config/course-presets` reports `missingCourseIds`,
+`emptyCourseIds`, and `available: false`, and the teacher dropdown disables that
+preset until an operator repairs it. Writes use same-directory `fsync` and
+atomic replacement. The configuration sync package already includes this file
+through its recursive `config/` collection.
 
 ## Collaboration sync
 

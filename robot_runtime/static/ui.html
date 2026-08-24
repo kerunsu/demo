@@ -63,6 +63,7 @@
       font-size: 0.95rem;
     }
     progress { width: 100%; height: 12px; margin: 10px 0 6px; accent-color: var(--ok); }
+    .update-log { margin-top: 10px; padding: 10px; max-height: 140px; overflow: auto; white-space: pre-wrap; background: #111827; color: #d1fae5; border-radius: 8px; font-size: 12px; display: none; }
   </style>
 </head>
 <body>
@@ -108,13 +109,17 @@
       <div class="row"><span class="label">远端版本</span><span class="val" id="remoteVer">—</span></div>
       <div class="row"><span class="label">运行形态</span><span class="val" id="frozen">—</span></div>
       <div class="row"><span class="label">有更新</span><span class="val" id="updAvail">—</span></div>
+      <div class="row"><span class="label">更新阶段</span><span class="val" id="updStage">等待检查</span></div>
+      <progress id="updateProgress" value="0" max="1"></progress>
+      <div class="hint" id="updBytes">—</div>
       <div class="actions">
         <button type="button" id="btn-check-upd">检查更新</button>
         <button type="button" id="btn-apply-upd" class="secondary">立即更新</button>
       </div>
       <div class="okmsg" id="updOk"></div>
       <div class="err" id="updErr"></div>
-      <p class="hint">立即更新会下载服务器发布包并替换 RobotRuntime.exe，然后自动重启（仅 exe 包）。不覆盖 DollSer。</p>
+      <pre class="update-log" id="updLog"></pre>
+      <p class="hint">立即更新优先下载轻量更新包，支持断点续传并校验大小、SHA256 与包内版本；替换完成后自动重启，不覆盖 DollSer。</p>
     </div>
 
     <div class="card">
@@ -130,6 +135,7 @@
 
     <div class="card">
       <div class="row"><span class="label">服务</span><span class="val" id="service">—</span></div>
+      <div class="row"><span class="label">儿童页已连接</span><span class="val" id="childPage">—</span></div>
       <div class="row"><span class="label">录制中</span><span class="val" id="rec">—</span></div>
       <div class="row"><span class="label">设备占用</span><span class="val" id="dev">—</span></div>
       <div class="row"><span class="label">会话</span><span class="val" id="sid">—</span></div>
@@ -172,6 +178,7 @@
       const s = await fetch("/ui/status.json").then((r) => r.json());
       _lastStatus = s;
       document.getElementById("service").textContent = s.service || "robot_runtime";
+      document.getElementById("childPage").innerHTML = onOff(!!(s.childPage && s.childPage.online));
       document.getElementById("reg").innerHTML = onOff(!!s.backendRegistered);
       document.getElementById("adv").textContent = s.advertisedUrl || "—";
       const backend = s.backendUrl || s.backendBaseUrl || "";
@@ -313,11 +320,50 @@
       }
     };
 
+    function formatUpdateBytes(n) {
+      const value = Number(n || 0);
+      if (!value) return "0 MB";
+      return (value / 1048576).toFixed(1) + " MB";
+    }
+
+    function updateBackendUrl() {
+      const input = document.getElementById("input-backend");
+      return input ? input.value.trim() : "";
+    }
+
+    function renderUpdateProgress(data) {
+      const total = Number(data.totalBytes || data.sizeBytes || 0);
+      const downloaded = Number(data.downloadedBytes || 0);
+      const progress = document.getElementById("updateProgress");
+      progress.max = total > 0 ? total : 1;
+      progress.value = total > 0 ? Math.min(downloaded, total) : 0;
+      document.getElementById("updBytes").textContent = total > 0
+        ? formatUpdateBytes(downloaded) + " / " + formatUpdateBytes(total)
+        : "—";
+      const labels = {
+        idle: "等待检查",
+        queued: "等待下载",
+        checking: "核对发布信息",
+        downloading: "下载中（中断会自动续传）",
+        verifying: "校验大小与 SHA256",
+        extracting: "检查并准备文件",
+        prepared: "准备完成",
+        swapping: "等待替换程序",
+        restarting: "Runtime 正在重启",
+        already_latest: "已是最新版",
+        failed: "更新失败",
+      };
+      const stage = data.stage || "idle";
+      document.getElementById("updStage").textContent = labels[stage] || stage;
+    }
+
     async function checkUpdate() {
       document.getElementById("updOk").textContent = "";
       document.getElementById("updErr").textContent = "";
       try {
-        const resp = await fetch("/update/check");
+        const backend = updateBackendUrl();
+        const suffix = backend ? "?backendUrl=" + encodeURIComponent(backend) : "";
+        const resp = await fetch("/update/check" + suffix, { cache: "no-store" });
         const data = await resp.json();
         document.getElementById("localVer").textContent = data.localVersion || "—";
         document.getElementById("remoteVer").textContent = data.remoteVersion || "—";
@@ -327,12 +373,16 @@
           document.getElementById("updErr").textContent = data.error || "检查失败";
         } else if (data.updateAvailable) {
           document.getElementById("updOk").textContent =
-            "发现新版本 " + data.remoteVersion + (data.sizeBytes ? "（约 " + Math.round(data.sizeBytes / 1048576) + " MB）" : "");
+            "发现新版本 " + data.remoteVersion + (data.sizeBytes ? "（约 " + formatUpdateBytes(data.sizeBytes) + "）" : "") +
+            (data.dedicatedUpdatePackage ? "，将使用轻量更新包" : "，首次升级将使用完整安装包");
+        } else if (data.remoteOlder) {
+          document.getElementById("updErr").textContent = "服务器版本比本机旧，已阻止自动降级";
         } else if (!data.available) {
-          document.getElementById("updErr").textContent = "服务器上尚无发布包";
+          document.getElementById("updErr").textContent = data.error || "服务器发布包不可用或校验失败";
         } else {
           document.getElementById("updOk").textContent = "已是最新版本";
         }
+        renderUpdateProgress({ stage: "idle", totalBytes: data.sizeBytes || 0 });
         return data;
       } catch (e) {
         document.getElementById("updErr").textContent = String(e);
@@ -342,6 +392,85 @@
 
     document.getElementById("btn-check-upd").onclick = checkUpdate;
 
+    async function showUpdateLog(fallbackPath) {
+      const log = document.getElementById("updLog");
+      try {
+        const response = await fetch("/update/log", { cache: "no-store" });
+        const data = await response.json();
+        const lines = Array.isArray(data.lines) ? data.lines.slice(-20) : [];
+        if (lines.length) {
+          log.textContent = lines.join("\n");
+          log.style.display = "block";
+          return;
+        }
+      } catch (_) {}
+      if (fallbackPath) {
+        log.textContent = "详细日志：" + fallbackPath;
+        log.style.display = "block";
+      }
+    }
+
+    async function waitForUpdatedRuntime(remoteVersion) {
+      document.getElementById("updOk").textContent = "替换已开始，正在等待 Runtime 重新上线…";
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        try {
+          const backend = updateBackendUrl();
+          const suffix = backend ? "?backendUrl=" + encodeURIComponent(backend) : "";
+          const response = await fetch("/update/check" + suffix, { cache: "no-store" });
+          if (!response.ok) continue;
+          const data = await response.json();
+          if (data.localVersion === remoteVersion) {
+            renderUpdateProgress({ stage: "already_latest", downloadedBytes: 1, totalBytes: 1 });
+            document.getElementById("updOk").textContent = "更新成功，当前版本 " + data.localVersion;
+            document.getElementById("localVer").textContent = data.localVersion;
+            setTimeout(() => window.location.reload(), 1200);
+            return;
+          }
+        } catch (_) {
+          // Runtime exits briefly during the atomic replacement.
+        }
+      }
+      document.getElementById("updOk").textContent = "";
+      document.getElementById("updErr").textContent = "Runtime 两分钟内没有重新上线，请双击 start.bat，并查看更新日志";
+      await showUpdateLog();
+    }
+
+    async function pollUpdateJob(jobId, remoteVersion) {
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        let data;
+        try {
+          const response = await fetch("/update/status?jobId=" + encodeURIComponent(jobId), { cache: "no-store" });
+          data = await response.json();
+        } catch (_) {
+          await waitForUpdatedRuntime(remoteVersion);
+          return;
+        }
+        if (!data.ok) {
+          document.getElementById("updOk").textContent = "";
+          document.getElementById("updErr").textContent = data.error || "无法读取更新进度";
+          await showUpdateLog(data.logPath);
+          return;
+        }
+        renderUpdateProgress(data);
+        if (data.stage === "failed") {
+          document.getElementById("updOk").textContent = "";
+          document.getElementById("updErr").textContent = data.error || "更新失败";
+          await showUpdateLog(data.logPath);
+          return;
+        }
+        if (data.stage === "already_latest") {
+          document.getElementById("updOk").textContent = "已是最新版本";
+          return;
+        }
+        if (data.stage === "restarting") {
+          await waitForUpdatedRuntime(remoteVersion || data.remoteVersion);
+          return;
+        }
+      }
+    }
+
     document.getElementById("btn-apply-upd").onclick = async () => {
       document.getElementById("updOk").textContent = "";
       document.getElementById("updErr").textContent = "";
@@ -349,7 +478,18 @@
         document.getElementById("updErr").textContent = "录制中，请先停止录制";
         return;
       }
-      if (!confirm("将下载服务器发布包并替换 RobotRuntime.exe，进程会自动重启。继续？")) {
+      const release = await checkUpdate();
+      if (!release || !release.ok) return;
+      if (!release.frozen) {
+        document.getElementById("updErr").textContent = "当前是源码运行模式，不能在线更新，请安装 exe 包";
+        return;
+      }
+      if (release.remoteOlder) return;
+      if (!release.updateAvailable) {
+        document.getElementById("updOk").textContent = "已是最新版本";
+        return;
+      }
+      if (!confirm("将下载已校验的更新包并替换 RobotRuntime.exe，完成后会自动重启。继续？")) {
         return;
       }
       document.getElementById("btn-apply-upd").disabled = true;
@@ -358,7 +498,7 @@
         const resp = await fetch("/update/apply", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: "{}",
+          body: JSON.stringify({ backendUrl: updateBackendUrl() || undefined }),
         });
         const data = await resp.json();
         if (!data.ok) {
@@ -368,17 +508,21 @@
           if (data.preparedDir) {
             document.getElementById("updErr").textContent += "（已下载到 " + data.preparedDir + "）";
           }
+          await showUpdateLog(data.logPath);
+        } else if (data.alreadyLatest) {
+          document.getElementById("updOk").textContent = "已是最新版本";
+        } else if (data.jobId) {
+          renderUpdateProgress(data);
+          document.getElementById("updOk").textContent = "更新任务已开始，请勿关闭本页…";
+          await pollUpdateJob(data.jobId, data.remoteVersion || release.remoteVersion);
         } else {
-          document.getElementById("updOk").textContent =
-            "更新已准备，进程即将重启…（若版本未变，请查看 %LOCALAPPDATA%\\EIArt\\robot_runtime\\update_restart.log）";
+          document.getElementById("updErr").textContent = "服务器没有返回更新任务编号";
         }
       } catch (e) {
-        // 进程退出时 fetch 可能失败，属正常
-        document.getElementById("updOk").textContent = "进程可能已重启，请稍后刷新本页";
+        document.getElementById("updOk").textContent = "";
+        document.getElementById("updErr").textContent = "启动更新失败：" + String(e);
       } finally {
-        setTimeout(() => {
-          document.getElementById("btn-apply-upd").disabled = false;
-        }, 5000);
+        document.getElementById("btn-apply-upd").disabled = false;
       }
     };
 
@@ -443,11 +587,13 @@
         const data = await resp.json();
         if (!data.ok) {
           document.getElementById("actionErr").textContent = data.error || "打开 /child 失败";
+        } else if (data.alreadyOpen || data.verified) {
+          document.getElementById("actionErr").textContent = "儿童页已连接。";
         } else if (data.mode === "browser_fallback" && data.hint) {
           document.getElementById("actionErr").textContent = data.hint;
         } else if (data.mode === "lan_mic_script") {
           document.getElementById("actionErr").textContent =
-            "已用 LAN mic 脚本打开 /child（独立 Edge/Chrome 配置）。请在该窗口点「开始自动聆听」。";
+            "已打开儿童页，正在等待页面连接；若 15 秒后仍未连接，请再点一次。";
         }
       } catch (e) {
         document.getElementById("actionErr").textContent = String(e);

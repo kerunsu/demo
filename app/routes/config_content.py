@@ -14,8 +14,9 @@ from typing import Any, Dict, List, Optional, Set
 from flask import Blueprint, jsonify, request
 from sqlalchemy import text
 
-from app.config import Config
+from app.config import BASE_DIR, Config
 from app.robot.config import COURSE_MAP_FILE
+from app.storage.repositories.course_preset_store import JsonCoursePresetStore
 from app.utils.logger import setup_logger
 from database.models import Course, CourseItem, CourseType, db
 
@@ -39,6 +40,7 @@ TYPE_EN_TO_CN = {
     'social': '社交',
 }
 TYPE_CN_TO_EN = {v: k for k, v in TYPE_EN_TO_CN.items()}
+_COURSE_PRESET_STORE = JsonCoursePresetStore(BASE_DIR / 'config' / 'course_presets.json')
 
 
 def ensure_speech_target_column() -> None:
@@ -235,6 +237,139 @@ def _item_admin_dict(item: CourseItem) -> Dict[str, Any]:
         d['socialRole'] = role
         d['socialButtons'] = buttons
     return d
+
+
+def _course_preset_catalog() -> tuple[List[Dict[str, Any]], Dict[int, Dict[str, Any]]]:
+    catalog: List[Dict[str, Any]] = []
+    by_id: Dict[int, Dict[str, Any]] = {}
+    for course in Course.query.order_by(Course.id).all():
+        item = {
+            'id': course.id,
+            'title': course.title,
+            'type': TYPE_CN_TO_EN.get(
+                course.course_type.name if course.course_type else '',
+                course.course_type.name if course.course_type else '',
+            ),
+            'typeName': course.course_type.name if course.course_type else None,
+            'itemCount': len(course.items or []),
+        }
+        catalog.append(item)
+        by_id[course.id] = item
+    return catalog, by_id
+
+
+def _course_preset_response() -> Dict[str, Any]:
+    document = _COURSE_PRESET_STORE.get_document()
+    catalog, by_id = _course_preset_catalog()
+    presets = []
+    for raw in document['presets']:
+        preset = dict(raw)
+        missing = [course_id for course_id in preset['courseIds'] if course_id not in by_id]
+        empty = [
+            course_id for course_id in preset['courseIds']
+            if course_id in by_id and by_id[course_id]['itemCount'] == 0
+        ]
+        preset['courses'] = [by_id[course_id] for course_id in preset['courseIds'] if course_id in by_id]
+        preset['missingCourseIds'] = missing
+        preset['emptyCourseIds'] = empty
+        preset['available'] = not missing and not empty
+        preset['isDefault'] = raw['id'] == document['defaultPresetId']
+        presets.append(preset)
+    return {
+        'success': True,
+        'schemaVersion': document['schemaVersion'],
+        'defaultPresetId': document['defaultPresetId'],
+        'presets': presets,
+        'courseCatalog': catalog,
+    }
+
+
+def _validated_course_preset_payload(data: Mapping[str, Any]) -> tuple[str, str, List[int], bool]:
+    raw_ids = data.get('courseIds')
+    if not isinstance(raw_ids, list):
+        raise ValueError('courseIds must be an array')
+    course_ids = JsonCoursePresetStore._normalize_course_ids(raw_ids)
+    courses = Course.query.filter(Course.id.in_(course_ids)).all()
+    existing = {course.id for course in courses}
+    missing = [course_id for course_id in course_ids if course_id not in existing]
+    if missing:
+        raise ValueError(f'课程不存在: {", ".join(str(value) for value in missing)}')
+    empty = [course.id for course in courses if not course.items]
+    if empty:
+        raise ValueError(f'课程没有课点: {", ".join(str(value) for value in empty)}')
+    return (
+        str(data.get('name') or ''),
+        str(data.get('description') or ''),
+        course_ids,
+        data.get('isDefault') is True,
+    )
+
+
+def _course_preset_error_message(error: ValueError) -> str:
+    messages = {
+        'course_ids_must_be_positive_integers': 'courseIds 只能包含正整数',
+        'course_ids_required': '请至少选择一门课程',
+        'preset_name_required': '请填写预设名称',
+        'preset_name_too_long': '预设名称不能超过 80 个字符',
+        'preset_description_too_long': '预设说明不能超过 240 个字符',
+        'preset_name_already_exists': '预设名称已存在',
+    }
+    return messages.get(str(error), str(error))
+
+
+# ========== 教师端课程预设 ==========
+
+@config_content_bp.route('/course-presets', methods=['GET'])
+def list_course_presets():
+    return jsonify(_course_preset_response())
+
+
+@config_content_bp.route('/course-presets', methods=['POST'])
+def create_course_preset():
+    data = request.get_json(silent=True) or {}
+    try:
+        name, description, course_ids, is_default = _validated_course_preset_payload(data)
+        preset = _COURSE_PRESET_STORE.create(
+            name=name,
+            description=description,
+            course_ids=course_ids,
+            is_default=is_default,
+        )
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': _course_preset_error_message(exc)}), 400
+    response = _course_preset_response()
+    response['preset'] = next(item for item in response['presets'] if item['id'] == preset['id'])
+    return jsonify(response), 201
+
+
+@config_content_bp.route('/course-presets/<preset_id>', methods=['PUT'])
+def update_course_preset(preset_id: str):
+    data = request.get_json(silent=True) or {}
+    try:
+        name, description, course_ids, is_default = _validated_course_preset_payload(data)
+        preset = _COURSE_PRESET_STORE.update(
+            preset_id,
+            name=name,
+            description=description,
+            course_ids=course_ids,
+            is_default=is_default,
+        )
+    except KeyError:
+        return jsonify({'success': False, 'error': '课程预设不存在'}), 404
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': _course_preset_error_message(exc)}), 400
+    response = _course_preset_response()
+    response['preset'] = next(item for item in response['presets'] if item['id'] == preset['id'])
+    return jsonify(response)
+
+
+@config_content_bp.route('/course-presets/<preset_id>', methods=['DELETE'])
+def delete_course_preset(preset_id: str):
+    try:
+        _COURSE_PRESET_STORE.delete(preset_id)
+    except KeyError:
+        return jsonify({'success': False, 'error': '课程预设不存在'}), 404
+    return jsonify(_course_preset_response())
 
 
 # ========== 课型（只读） ==========
@@ -616,6 +751,22 @@ def get_dialogue_phrases():
     from app.dialogue.phrases import base_lines_for
 
     course_types = []
+    global_slots = []
+    for intent, slot_label in (
+        ('attention', '吸引 · 重新集中注意'),
+        ('reward', '夸奖 · 注意力回归'),
+    ):
+        slot = get_slot(base_lines_for(intent, 'global'), intent, 'global')
+        slot['label'] = slot_label
+        global_slots.append(slot)
+    course_types.append({
+        'type': 'global',
+        'label': '全局注意力互动',
+        'courses': [],
+        'courseCount': 0,
+        'slots': global_slots,
+        'globalInteraction': True,
+    })
     for type_key, label in TYPE_EN_TO_CN.items():
         db_type = CourseType.query.filter_by(name=label).first()
         linked_courses = []

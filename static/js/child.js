@@ -730,6 +730,41 @@ const ROBOT_AGENT_BASE = window.ROBOT_AGENT_BASE || window.CHILD_MEDIA_AGENT_BAS
 const ROBOT_AGENT_KEY = window.ROBOT_AGENT_KEY || window.CHILD_MEDIA_AGENT_KEY || "";
 let robotAgentHeartbeatTimer = null;
 let robotAgentOnline = false;
+const CHILD_RUNTIME_PAGE_ID = `child-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+let childRuntimePresenceTimer = null;
+
+function emitRuntimeChildPresence(active = true) {
+  const headers = { "Content-Type": "application/json" };
+  if (ROBOT_AGENT_KEY) headers["X-Robot-Runtime-Key"] = ROBOT_AGENT_KEY;
+  return fetch(`${ROBOT_AGENT_BASE}/ui/child-presence`, {
+    method: "POST",
+    mode: "cors",
+    credentials: "omit",
+    keepalive: !active,
+    headers,
+    body: JSON.stringify({
+      pageId: CHILD_RUNTIME_PAGE_ID,
+      url: window.location.href,
+      visible: document.visibilityState === "visible",
+      active,
+      ts: Date.now(),
+    }),
+  }).catch(() => null);
+}
+
+function startRuntimeChildPresence() {
+  if (childRuntimePresenceTimer) return;
+  void emitRuntimeChildPresence(true);
+  childRuntimePresenceTimer = setInterval(() => {
+    void emitRuntimeChildPresence(true);
+  }, 4000);
+  document.addEventListener("visibilitychange", () => {
+    void emitRuntimeChildPresence(true);
+  });
+  window.addEventListener("pagehide", () => {
+    void emitRuntimeChildPresence(false);
+  });
+}
 
 function updateAgentStatusBadge(online, text) {
   const badge = document.getElementById("agent-status-badge");
@@ -1214,7 +1249,9 @@ async function preloadBehaviorAnimations() {
     const response = await fetch('/api/robot/animations', { credentials: 'include' });
     if (!response.ok) throw new Error(`animation_catalog_http_${response.status}`);
     const data = await response.json();
-    const items = Array.isArray(data?.items) ? data.items : [];
+    const items = (Array.isArray(data?.items) ? data.items : []).filter(
+      (item) => item && (item.validationStatus === 'compatible' || item.validationStatus === 'degraded')
+    );
     items.forEach((item) => {
       const source = item && (item.url || item.name);
       if (!source || preloadedBehaviorAnimationVideos.has(source)) return;
@@ -1657,6 +1694,7 @@ function interactiveResourceUrl(payload, course, item, transitionId) {
   if (!base) throw new Error("interactive_resource_missing");
 
   const params = new URLSearchParams();
+  params.set("uiVersion", "20260823-focus-v2");
   params.set("courseId", firstDefined(payload.courseId, course && course.id, ""));
   params.set("courseType", firstDefined(payload.courseType, course && course.type, "interactive"));
   const itemId = firstDefined(payload.itemId, item && item.id);
@@ -2043,6 +2081,7 @@ function handlePlayResource(payload) {
   // 如果收到新的sessionId（与当前不同），说明是初次播放，即使带question也要加载内容
   const hasAuxFlag = aux && (
     aux.question || aux.praise || aux.hint
+    || aux.attention || aux.reward
     || aux.socialGreetingIntro || aux.socialGreetingPlay
     || aux.socialFarewellBye || aux.socialFarewellReply
   );
@@ -2122,11 +2161,12 @@ function handlePlayResource(payload) {
     console.log("收到aux操作，只播放音频，不重新加载内容", aux);
     // browser TTS：提问/表扬/提示/社交打招呼再见由 robot_speak_text 朗读，跳过预录直链
     const isBrowserSpokenAux = aux.question || aux.praise || aux.hint
+      || aux.attention || aux.reward
       || aux.socialGreetingIntro || aux.socialGreetingPlay
       || aux.socialFarewellBye || aux.socialFarewellReply;
-    if (dialogueTtsMode === "browser" && isBrowserSpokenAux) {
+    if ((dialogueTtsMode === "browser" || aux.attention || aux.reward) && isBrowserSpokenAux) {
       console.log("⏭️ [child.js] browser TTS 模式，跳过 aux 预录直链:", aux);
-      if (aux.praise && payload.behaviorAnimation) {
+      if ((aux.praise || aux.attention || aux.reward) && payload.behaviorAnimation) {
         playBehaviorAnimation(payload.behaviorAnimation, payload);
       }
       return;
@@ -2935,6 +2975,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   // 尽早注册 play_audio 监听，避免 training_prepare/play_resource 之前的首句丢失。
   ensureAudioPlayer(announcedSessionId || currentSessionId || "readiness");
   window.BrowserTts?.loadBrowserSpeechVoices?.();
+  // 把浏览器语音进程的冷启动放在待机阶段，避免第一句课程语音承担
+  // 数秒初始化延迟；后续用户点击麦克风时还会再尝试一次。
+  window.BrowserTts?.warmBrowserSpeechOutput?.();
+  startRuntimeChildPresence();
 
   // Presence also carries the persisted binding/capability handshake so a
   // refreshed child can be rejoined and receive the last committed content.
@@ -2965,8 +3009,9 @@ window.addEventListener("DOMContentLoaded", async () => {
 });
 
 if (socket) {
-  socket.on("connect", () => {
+socket.on("connect", () => {
     ensureAudioPlayer(announcedSessionId || currentSessionId || "readiness");
+    window.BrowserTts?.warmBrowserSpeechOutput?.();
     const sessionId = announcedSessionId || currentSessionId;
     if (sessionId) {
       attachChildSession(sessionId);

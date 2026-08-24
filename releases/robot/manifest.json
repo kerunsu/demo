@@ -1,12 +1,17 @@
 {
   "available": true,
-  "version": "20260818-1240-73ae283",
-  "buildVersion": "20260818-1240-73ae283",
+  "version": "20260824-0036-DJT823",
+  "buildVersion": "20260824-0036-DJT823",
   "protocolVersion": "1",
-  "sourceCommit": "73ae283",
-  "filename": "EIArt-Robot-20260818-1240-73ae283.zip",
+  "sourceCommit": "21b92c1d",
+  "sourceDirty": true,
+  "filename": "EIArt-Robot-20260824-0036-DJT823.zip",
   "latest": "EIArt-Robot-latest.zip",
-  "sha256": "b07917e7a383f6065f8e685687b49685c833923f1f70347ebc4ce0df57b55004",
-  "sizeBytes": 99211073,
-  "builtAt": "2026-08-18T04:42:03.831399+00:00"
+  "sha256": "a385d591da9220d923a7d6ad5e845f1c5d4e8e6548985989f6662414119049c5",
+  "sizeBytes": 102534260,
+  "updateFilename": "EIArt-Robot-Update-20260824-0036-DJT823.zip",
+  "updateLatest": "EIArt-Robot-Update-latest.zip",
+  "updateSha256": "6c2f8010d49ef64c1fc23cbd68b5af49edbe3b6dfe71479b4c29c572329ba527",
+  "updateSizeBytes": 62913241,
+  "builtAt": "2026-08-23T16:41:55.793842+00:00"
 }

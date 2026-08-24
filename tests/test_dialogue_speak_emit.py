@@ -225,6 +225,55 @@ def test_handle_utterance_wake_ack_emits_speak(monkeypatch):
         assert speak_calls[0].args[1]["intent"] == "wake_ack"
 
 
+def test_wake_with_question_course_miss_falls_through_to_dialogue(monkeypatch):
+    _install_robot(monkeypatch)
+    monkeypatch.setattr("app.config.Config.DIALOGUE_WAKE_WORD_ENABLED", True)
+
+    class FakeSvc:
+        def is_session_awake(self, *_a, **_k):
+            return False
+
+        def set_awake(self, *_a, **_k):
+            return None
+
+        def _sync_history_for_context(self, *_a, **_k):
+            return None
+
+        def generate_reply(self, text, **_kwargs):
+            assert text == "小狗怎么叫啊"
+            return {"reply": "小狗会汪汪叫。", "strategy": "llm", "provider": "test"}
+
+    class FakeKw:
+        def try_auto_praise_from_transcript(self, *_args):
+            return False
+
+        def should_consume_dialogue_turn(self, *_args):
+            raise AssertionError("explicit wake remainder must not be swallowed as a course miss")
+
+    monkeypatch.setattr("app.dialogue.sockets.get_dialogue_service", lambda: FakeSvc())
+    monkeypatch.setattr(
+        "app.dialogue.sockets.parse_wake_utterance",
+        lambda _text: (True, "小狗怎么叫啊"),
+    )
+    monkeypatch.setattr(
+        "app.services.keyword_listen.get_keyword_listen_service", lambda: FakeKw()
+    )
+    with patch("app.dialogue.sockets.emit") as emit:
+        _handle_dialogue_utterance(
+            session_id="wake-question",
+            child_text="麦麦麦麦小狗怎么叫啊",
+            page_context={"courseType": "onomatopoeia", "target": "猫"},
+            room="session_wake-question_child",
+        )
+
+    spoken = [
+        call.args[1] for call in emit.call_args_list
+        if call.args and call.args[0] == "robot_speak_text"
+    ]
+    assert spoken[-1]["text"] == "小狗会汪汪叫。"
+    assert spoken[-1]["intent"] == "dialogue"
+
+
 def test_handle_utterance_keyword_hit_skips_llm(monkeypatch):
     """对话 STT 命中武装关键词 → 表扬且不走 LLM。"""
     _install_robot(monkeypatch)

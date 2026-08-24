@@ -59,17 +59,26 @@
     });
   }
 
-  function renderAnimationBinding(value) {
-    const select = document.getElementById('animation-praise');
-    if (!select) return;
-    select.innerHTML = '<option value="">默认库随机</option>';
-    items.forEach((item) => {
-      const option = document.createElement('option');
-      option.value = item.name;
-      option.textContent = item.name;
-      select.appendChild(option);
+  function renderAnimationBinding(values) {
+    const selectedValues = values && typeof values === 'object'
+      ? values : { praise: String(values || '') };
+    ['attention', 'reward', 'praise'].forEach((auxType) => {
+      const select = document.getElementById(`animation-${auxType}`);
+      if (!select) return;
+      select.innerHTML = auxType === 'attention'
+        ? '<option value="">不播放下屏动画</option>'
+        : '<option value="">默认库随机</option>';
+      items
+        .filter((item) => item.validationStatus === 'compatible' || item.validationStatus === 'degraded')
+        .forEach((item) => {
+          const option = document.createElement('option');
+          option.value = item.name;
+          option.textContent = item.name;
+          select.appendChild(option);
+        });
+      const value = String(selectedValues[auxType] || '');
+      select.value = items.some((item) => item.name === value) ? value : '';
     });
-    select.value = items.some((item) => item.name === value) ? value : '';
   }
 
   async function loadAnimationLibrary() {
@@ -80,7 +89,7 @@
       items = payload.items || [];
       renderLibrary();
       const current = typeof window.getConfigForScope === 'function' && window.currentScope
-        ? window.getConfigForScope(window.currentScope).__animation?.praise || '' : '';
+        ? window.getConfigForScope(window.currentScope).__animation || {} : {};
       renderAnimationBinding(current);
       if (selected && items.some((item) => item.name === selected)) selectAnimation(selected);
       else selectAnimation('');

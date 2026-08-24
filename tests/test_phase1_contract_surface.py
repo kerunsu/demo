@@ -156,6 +156,8 @@ def test_phase1_mapping_resolver_uses_global_course_item_precedence(tmp_path):
 
     assert resolver.parse_aux_type({"question": True}) == "question"
     assert resolver.parse_aux_type({"praise": True, "question": True}) == "praise"
+    assert resolver.parse_aux_type({"attention": True}) == "attention"
+    assert resolver.parse_aux_type({"reward": True}) == "reward"
     assert resolver.parse_aux_type({"socialGreetingIntro": True}) == "social_greeting_intro"
     assert resolver.parse_aux_type({}) == "silent"
     assert resolver.find_mapping(3, 7, 11, "question")["motions"] == ["item-question"]
@@ -168,16 +170,18 @@ def test_phase1_mapping_resolver_uses_global_course_item_precedence(tmp_path):
 def test_behavior_event_ownership_separates_social_from_ordering():
     from app.robot.behavior_events import allowed_aux_types, is_aux_allowed
 
-    assert allowed_aux_types("ordering") == ("praise", "question", "hint", "silent")
+    assert allowed_aux_types("ordering") == (
+        "praise", "question", "hint", "silent", "attention", "reward",
+    )
     assert not is_aux_allowed("ordering", "social_greeting_intro")
     assert allowed_aux_types("social", social_role="greeting") == (
-        "silent", "social_greeting_intro", "social_greeting_play",
+        "silent", "attention", "reward", "social_greeting_intro", "social_greeting_play",
     )
     # 首次进入任何课点都由空 aux 解析为 silent。社交课必须先接受
     # 这个生命周期事件，随后才可能触发打招呼/再见专属行为。
     assert is_aux_allowed("social", "silent", social_role="greeting")
     assert is_aux_allowed("social", "silent", social_role="farewell")
-    assert not is_aux_allowed("social", "praise", social_role="greeting")
+    assert is_aux_allowed("social", "attention", social_role="farewell")
     assert not is_aux_allowed("social", "social_farewell_bye", social_role="greeting")
 
 

@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 
@@ -6,6 +7,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _read(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
+
+
+def test_child_entry_module_is_valid_javascript():
+    result = subprocess.run(
+        ["node", "--check", str(ROOT / "static/js/child.js")],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_child_resource_transition_is_staged_and_acknowledged():
@@ -67,7 +80,7 @@ def test_prepare_behavior_animation_does_not_start_playback():
         'clearHeldPraiseOverlay("content_committed")'
     )
     template = _read("templates/child.html")
-    assert 'child.js?v=20260823-resource-latency-v1' in template
+    assert 'child.js?v=20260824-speech-warm-v1' in template
     handle_play = child[
         child.index("function handlePlayResource") :
         child.index('socket.on("play_resource"')
@@ -228,6 +241,17 @@ def test_browser_tts_delay_does_not_start_watchdog_before_speak():
     assert speak_call < watchdog_arm
     assert "kickTimer = window.setTimeout" in attempt
     assert "clearKickTimer();" in attempt
+
+
+def test_browser_tts_is_preheated_and_does_not_cancel_churn_while_cold():
+    browser_tts = _read("static/js/browser_tts.js")
+    child = _read("static/js/child.js")
+
+    assert "function warmBrowserSpeechOutput()" in browser_tts
+    assert 'speechWarmState = "warming"' in browser_tts
+    assert "COLD_START_WATCHDOG_MS = 6500" in browser_tts
+    assert "WARM_START_WATCHDOG_MS = 2200" in browser_tts
+    assert "warmBrowserSpeechOutput" in child
 
 
 def test_class_start_has_no_resource_prewarm_and_behavior_uses_shared_start():
@@ -391,7 +415,7 @@ def test_interactive_controls_use_authorized_parent_socket_bridge():
     assert "relayInteractiveControl(eventName" in child
     assert 'frame.dataset.pageContextActive !== "true"' in child
     assert "}, window.location.origin);" in child
-    assert 'child.js?v=20260823-resource-latency-v1' in template
+    assert 'child.js?v=20260824-speech-warm-v1' in template
 
     for page, prefix, apply_name in (
         (matching, "matching_", "applyMatchingControl"),

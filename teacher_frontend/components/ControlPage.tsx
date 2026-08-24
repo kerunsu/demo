@@ -96,6 +96,9 @@ type SocialAuxKey =
   | 'socialFarewellReply';
 
 type PlayAux = {
+  attention?: boolean;
+  reward?: boolean;
+  behaviorAnimationOverride?: string;
   question?: boolean;
   praise?: boolean;
   hint?: boolean;
@@ -106,7 +109,7 @@ type PlayAux = {
 };
 
 type PlaybackPhase = 'idle' | 'pending' | 'busy';
-type PlayIntent = 'content' | 'question' | 'praise' | 'hint' | 'social';
+type PlayIntent = 'content' | 'attention' | 'reward' | 'question' | 'praise' | 'hint' | 'social';
 
 interface PendingPlayRequest {
   requestId: string;
@@ -145,6 +148,8 @@ function normalizeId(value: unknown): string | null {
 }
 
 function getPlayIntent(aux: PlayAux): PlayIntent {
+  if (aux.attention) return 'attention';
+  if (aux.reward) return 'reward';
   if (aux.question) return 'question';
   if (aux.praise) return 'praise';
   if (aux.hint) return 'hint';
@@ -355,12 +360,42 @@ export function ControlPage({
   const [dialoguePanelVisible, setDialoguePanelVisible] = useState(true);
   const [dialogueControlBusy, setDialogueControlBusy] = useState(false);
   const [dialogueControlNotice, setDialogueControlNotice] = useState<string | null>(null);
+  const [engagementAnimations, setEngagementAnimations] = useState<Array<{ name: string }>>([]);
+  const [rewardAnimation, setRewardAnimation] = useState('');
+  const [engagementSettingsOpen, setEngagementSettingsOpen] = useState(false);
   const [awaitingResourceReady, setAwaitingResourceReady] = useState(false);
   const [interactiveNextPending, setInteractiveNextPending] = useState(false);
   const lastGameEndRef = useRef<number>(0);
   const matchingGameStartedRef = useRef(false);
   const sequencingGameStartedRef = useRef(false);
   const [currentResolvedFile, setCurrentResolvedFile] = useState<string | null>(null); // 服务端随机选择的真实图片路径
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/api/robot/animations`, { cache: 'no-store', credentials: 'include' })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (cancelled || !payload?.success) return;
+        const playable = (Array.isArray(payload.items) ? payload.items : [])
+          .filter((item: any) => item?.validationStatus === 'compatible' || item?.validationStatus === 'degraded')
+          .map((item: any) => ({ name: String(item.name) }));
+        setEngagementAnimations(playable);
+      })
+      .catch((error) => console.warn('加载夸奖下屏素材失败:', error));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedStudent) {
+      setRewardAnimation('');
+      return;
+    }
+    try {
+      setRewardAnimation(localStorage.getItem(`maimai.reward-animation.${selectedStudent}`) || '');
+    } catch (_) {
+      setRewardAnimation('');
+    }
+  }, [selectedStudent]);
 
   // 音频播放状态
   const [audioStatus, setAudioStatus] = useState<{
@@ -1979,7 +2014,7 @@ export function ControlPage({
         
         // 判断是否是 aux 操作（表扬、提示、社交语音等）
         const isAuxOperation = aux && (
-          aux.question || aux.praise || aux.hint || isSocialAux(aux)
+          aux.question || aux.praise || aux.hint || aux.attention || aux.reward || isSocialAux(aux)
         );
         
         if (sessionId) {
@@ -2768,6 +2803,8 @@ export function ControlPage({
           };
         }
         const intentLabel: Record<Exclude<PlayIntent, 'content'>, string> = {
+          attention: '吸引',
+          reward: '夸奖',
           question: '提问',
           praise: '表扬',
           hint: '提示',
@@ -2818,8 +2855,9 @@ export function ControlPage({
     const targetImage = item?.file || selectedItem.course.file || null;
     
     // 构建完整的 aux 数据
+    const { behaviorAnimationOverride, ...auxFlags } = aux;
     const fullAux = {
-      ...aux,
+      ...auxFlags,
       targetImage: targetImage,  // 添加目标图片路径
       targetText: item?.speechTarget || item?.name || selectedItem.course.title,  // speech_target 优先，空则回退 name
     };
@@ -2843,6 +2881,7 @@ export function ControlPage({
       itemId: itemId,
       courseType: selectedItem.course.type,  // 添加课程类型
       mode,
+      ...(behaviorAnimationOverride ? { behaviorAnimationOverride } : {}),
       ...(selectedItem.course.type === 'ordering'
         ? {
             category: orderingQuestionConfig.category,
@@ -3382,6 +3421,26 @@ export function ControlPage({
     playCurrentItem({ praise: true });
   }, [playCurrentItem]);
 
+  const handleAttention = useCallback(() => {
+    playCurrentItem({ attention: true });
+  }, [playCurrentItem]);
+
+  const handleAttentionReward = useCallback(() => {
+    playCurrentItem({
+      reward: true,
+      ...(rewardAnimation ? { behaviorAnimationOverride: rewardAnimation } : {}),
+    });
+  }, [playCurrentItem, rewardAnimation]);
+
+  const handleRewardAnimationChange = useCallback((value: string) => {
+    setRewardAnimation(value);
+    if (!selectedStudent) return;
+    try {
+      if (value) localStorage.setItem(`maimai.reward-animation.${selectedStudent}`, value);
+      else localStorage.removeItem(`maimai.reward-animation.${selectedStudent}`);
+    } catch (_) { /* private browsing may disable storage */ }
+  }, [selectedStudent]);
+
   const handleSocialVoice = useCallback((key: SocialAuxKey) => {
     playCurrentItem({ [key]: true });
   }, [playCurrentItem]);
@@ -3762,6 +3821,40 @@ export function ControlPage({
           )}
         </div>
         
+        <section
+          className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5"
+          aria-label="全局注意力支持"
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleAttention}
+              disabled={commandControlsLocked}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Target className="h-4 w-4" />
+              吸引
+            </button>
+            <button
+              type="button"
+              onClick={handleAttentionReward}
+              disabled={commandControlsLocked}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-rose-500 px-3 text-sm font-semibold text-white shadow-sm hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Award className="h-4 w-4" />
+              夸奖
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEngagementSettingsOpen(true)}
+            className="mt-1.5 flex h-7 w-full items-center justify-between rounded-md px-2 text-xs text-slate-500 hover:bg-white hover:text-slate-800"
+          >
+            <span>个性化配置</span>
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </section>
+
         <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium text-sky-900">儿童端智能体</span>
@@ -4393,6 +4486,64 @@ export function ControlPage({
         onCancel={cancelTeacherRating}
         onConfirm={submitTeacherRating}
       />
+
+      {engagementSettingsOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="engagement-settings-title"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setEngagementSettingsOpen(false);
+          }}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 id="engagement-settings-title" className="text-lg font-semibold text-slate-900">
+                  吸引与夸奖设置
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  吸引使用 Server 端预设；夸奖可为当前儿童单独选择下屏动画。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEngagementSettingsOpen(false)}
+                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="关闭个性化配置"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <label htmlFor="reward-animation" className="mt-6 block text-sm font-medium text-slate-700">
+              夸奖下屏动画
+              <select
+                id="reward-animation"
+                value={rewardAnimation}
+                onChange={(event) => handleRewardAnimationChange(event.target.value)}
+                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+              >
+                <option value="">使用 Server 默认</option>
+                {engagementAnimations.map((item) => (
+                  <option key={item.name} value={item.name}>{item.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setEngagementSettingsOpen(false)}
+                className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700"
+              >
+                完成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showBackConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

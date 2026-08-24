@@ -1,0 +1,18 @@
+{
+  "defaultPresetId": "quick-core",
+  "presets": [
+    {
+      "courseIds": [
+        2,
+        3,
+        9,
+        10,
+        11
+      ],
+      "description": "命名、拟声、配对、排序、社交",
+      "id": "quick-core",
+      "name": "快速课程方案"
+    }
+  ],
+  "schemaVersion": 1
+}

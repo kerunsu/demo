@@ -29,6 +29,18 @@ function Get-RuntimeState([string]$Path = "/health") {
     }
 }
 
+function Wait-ChildPage([int]$TimeoutSeconds = 15) {
+    $Deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        $State = Get-RuntimeState
+        if ($State -and $State.childPage -and $State.childPage.online) {
+            return $true
+        }
+        Start-Sleep -Milliseconds 500
+    } until ((Get-Date) -ge $Deadline)
+    return $false
+}
+
 function Open-RuntimeInterfaces {
     Start-Process ($RuntimeUrl + "/ui")
     try {
@@ -59,6 +71,18 @@ function Open-RuntimeInterfaces {
             throw ($OpenChildResult.error | Out-String)
         }
         Write-StartupLog ("Child page launch requested. mode={0} url={1}" -f $OpenChildResult.mode, $OpenChildResult.url)
+        if (-not (Wait-ChildPage 15)) {
+            Write-StartupLog "Child page did not heartbeat after first launch; forcing one visible retry."
+            $RetryResult = Invoke-RestMethod -Method Post `
+                -Uri ($RuntimeUrl + "/ui/open-child") `
+                -ContentType "application/json" `
+                -Body '{"force":true}' `
+                -TimeoutSec 10
+            if (-not $RetryResult.ok -or -not (Wait-ChildPage 15)) {
+                throw "Child browser was launched but did not connect to Runtime/Server."
+            }
+        }
+        Write-StartupLog "Child page heartbeat verified."
     } catch {
         Write-StartupLog ("WARNING: Child page was not opened automatically: " + $_.Exception.Message)
     }

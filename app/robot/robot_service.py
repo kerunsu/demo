@@ -2792,19 +2792,28 @@ class RobotService:
         )
 
     def resolve_encouragement_animation(self, data: Dict[str, Any]) -> Optional[str]:
-        """Resolve the praise binding animation, with library fallback only when unset."""
+        """Resolve a lower-screen behavior animation from the same 3-level map."""
         from app.robot.animation_assets import resolve_animation
 
         aux_type = self._mapping_resolver.parse_aux_type(data.get('aux'))
-        if aux_type != 'praise':
+        if aux_type not in ('praise', 'reward', 'attention'):
             return None
+        override = str(data.get('behaviorAnimationOverride') or '').strip()
+        if aux_type == 'reward' and override:
+            return resolve_animation(override, allow_random_fallback=False)
         mapping = self._mapping_resolver.find_mapping(
             data.get('studentId'),
             data.get('courseId'),
             data.get('itemId'),
             aux_type,
         )
-        return resolve_animation(mapping.get('animation'))
+        selection = mapping.get('animation')
+        # Praise/reward preserve the familiar random encouragement fallback.
+        # Attention stays visually quiet unless explicitly configured.
+        return resolve_animation(
+            selection,
+            allow_random_fallback=aux_type in ('praise', 'reward'),
+        )
 
     def start_dialogue_reply_behavior(
         self,

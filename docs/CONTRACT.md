@@ -37,6 +37,12 @@ real behavior. Social greeting and farewell action slots remain mutually
 exclusive; accepting `silent` does not make either social action available to
 ordinary naming, pairing or ordering courses.
 
+`attention`（教师端“吸引”）和 `reward`（教师端“夸奖”）是所有课程都可用的
+全局注意力状态。它们继续使用 `defaults -> course -> item` 三级行为解析，但
+不会计分、推进课点或打开教师评分框。实时话术由虚拟的 `global` 话术组管理。
+教师端只允许给 `reward` 传递经 Server 校验的 `behaviorAnimationOverride`，并按
+儿童在本机记住选择；`course_map.json` 仍是共享三级事实源，不恢复学生覆盖层。
+
 The production teacher SPA is served by Flask at `/teacher/`; `/teacher` and
 the legacy `/therapist` entry redirect there by default. API, session cookie
 and Socket.IO therefore share the 8080 origin. Port 5173 is only an explicit
@@ -50,19 +56,22 @@ console manages a per-course-type enabled phrase set through
 `GET /api/config/phrases`, `PUT /api/config/phrases/<intent>/<courseType>` and
 `POST /api/config/phrases/<intent>/<courseType>/custom`. Every slot must retain
 at least one enabled phrase; ordering rule questions keep separate variants.
+虚拟的“全局注意力互动”组单独提供可选择、可新增的 `attention` 和 `reward`
+话术槽。
+
+教师端课程预设的共享事实源是 `config/course_presets.json`（schema v1），
+不再在教师前端硬编码课程组合。配置中心通过
+`GET/POST /api/config/course-presets`、
+`PUT/DELETE /api/config/course-presets/<presetId>` 管理有序的 `courseIds`、名称、
+说明和唯一的 `defaultPresetId`。写入时课程必须存在且至少包含一个课点；读取时
+若课程后来被删除或清空，预设返回 `available=false`，教师端不得应用。接口始终
+返回当前课程目录，因此预设只保存课程身份与顺序，不复制会过期的课点列表。
+评估选课页自动应用可用的默认预设；评估和干预选课页都提供预设下拉框，选中后
+按预设顺序展开每门课程当前的全部课点。手动增删课点会退出“预设已应用”状态，
+但不会修改 Server 端预设。
 The Server configuration console exposes device and recording operations as a
 top-level page at `GET /server/config/devices`; the historical
 `/server/config/content?view=phase5` browser URL redirects there.
-
-Generated LLM dialogue replies may add a configured MP4 expression selected by
-effective reply length. When matched, speech and expression share one reserved
-behavior ID, request ID, session ID and start anchor; both completion barriers
-must settle before the behavior slot is released. If the behavior slot is still
-held by a course utterance, the reply is queued and starts after that terminal
-event; a leftover formal expression from the already-released previous behavior
-must not block the matched MP4. Missing, disabled or invalid configuration
-preserves the existing audio-only dialogue path. Wake replies and course
-question/praise/hint speech are outside this matcher.
 
 During an active ordering question, `sequencing_set_config` stages the complete
 teacher configuration without changing the category, rule, or scoring context
@@ -100,8 +109,10 @@ new visible question, additional clicks are ignored; a six-second watchdog
 restores the control without issuing another advance. Skipping an unresolved
 question records it as not independently completed and never double-counts an
 intervention attempt that was already wrong. A new question starts in
-prompt-only state. Options
-remain non-interactive and hidden until the correlated
+prompt-only state. The pairing target or ordering rule first moves to the
+viewport centre at an emphasized scale; after correlated question speech ends
+it returns to normal layout, then the options appear. Options remain
+non-interactive and hidden until the correlated
 `robot_speak_ended(intent=question, questionId=...)` event. A stale terminal
 event from the previous ordering/pairing question cannot unlock the new one;
 an eight-second failure watchdog prevents a missing TTS callback from blocking
@@ -125,7 +136,11 @@ After question or hint speech ends the keyword window is armed again. While this
 curriculum answer window is active, a non-matching transcript is surfaced as a
 course-answer miss and must not fall through to general dialogue or reserve a
 long robot behavior. An explicit wake phrase remains higher priority so a child
-can still wake the agent before answering.
+can still wake the agent before answering. When the same utterance contains a
+wake phrase and a remainder, a true course hit still triggers praise, but a
+course miss falls through to the dialogue reply instead of being silently
+consumed. Browser VAD derives its thresholds from a rolling classroom noise
+floor and still requires a continuous confirmation window before upload.
 
 ## Versioned additive APIs
 
@@ -201,68 +216,34 @@ can still wake the agent before answering.
   the display runs any queued formal expression or returns to random idle. A
   successful pool update emits `robot_idle_pool_changed` so an online robot
   display applies the new pool without a page refresh.
-  MP4 display uses two alternating browser buffers: the outgoing expression
-  reaches its natural media end and holds its final decoded frame while the
-  incoming expression renders its first frame off-screen. The display then
-  performs a short crossfade and only the active buffer may emit completion.
-  A load or decode failure keeps the last valid frame visible instead of
-  exposing the black page background.
-- `GET|PUT /api/robot/emotions/dialogue-reply-rules` manages the ordered MP4
-  expression rules used only by generated LLM dialogue replies. Rules match
-  whitespace-free character counts by increasing upper bound; the final rule
-  is also the overflow fallback.
+- `GET /api/robot/runtime/version` advertises a release only after the Server
+  verifies the selected ZIP size, SHA-256 and embedded `VERSION` against
+  `releases/robot/manifest.json`. A missing versioned file may use the `latest`
+  alias only when the alias contains those exact declared bytes; an unrelated
+  old package is never exposed with new metadata. Additive `update*` fields
+  describe the lightweight Runtime hot-update archive. The existing
+  `GET /api/robot/runtime/download` remains the full first-install package;
+  `?kind=update` selects the lightweight archive and both variants support HTTP
+  range requests. Robot Runtime `/update/apply` runs asynchronously and
+  `/update/status` reports download, verification, extraction, swap, restart or
+  failure stages; `/update/log` exposes only the local machine's bounded update
+  log through the local-only operations UI.
+- The robot `/child` page posts a local-only heartbeat to Robot Runtime. Runtime
+  health exposes `childPage.online`; packaged startup and online-update restart
+  restore the page and only report readiness after this browser heartbeat. A
+  successful PowerShell process launch alone is not child-page readiness.
 
-For a praise action, `course_map.json` may carry an `animation` filename next
+For `praise`, `reward`, and optionally `attention`, `course_map.json` may carry
+an `animation` filename next
 to `motions`, `emotion`, and `sequence`. The server sends the resolved static
 path as `behaviorAnimation`; the child reports completion through
-`behavior_animation_ended`. When `animation` is empty or missing, the server
-chooses a random MP4 from `static/resources/Animations/`. For one compatibility
+`behavior_animation_ended`. Automatic pairing/ordering praise and teacher
+praise use the same preparation event, start anchor and completion barrier.
+When praise/reward animation is empty, the server chooses a random MP4 that
+passes bounded inspection; invalid placeholders remain visible for repair but
+never enter the random pool. Empty attention animation means no overlay. For one compatibility
 release, `praiseVideo` and `praise_video_ended` remain aliases only; they no
 longer select assets or contain a separate playback implementation.
-After a praise animation reaches its media end, the child keeps its final frame
-visible while still emitting `behavior_animation_ended` on time. The frame is
-cleared only after the next course resource commits successfully, or when the
-teacher leaves; duplicate, pending, or failed resource transitions do not
-restore the previous question screen.
-Pairing and ordering in-item auto-praise uses the same `aux.praise` animation
-resolver as a teacher praise click, but sets `holdLastFrame=false` /
-`interactiveAutoPraise=true` so the overlay clears at media end. That automatic
-package does not open the teacher rating dialog and does not advance the course
-item. `behavior_animation_ended` still releases the reserved behavior even when
-there is no teacher `play_request`; otherwise the next item question stays
-queued behind `animationExpected`. A pairing wrong tap ends the question: all
-options dim and the game waits for encourage speech before the next item
-question.
-
-The teacher arms praise-to-rating correlation before emitting `play_resource`.
-The rating dialog is queued once by the correlated animation terminal event or
-the overall `behavior_completed` event, with a bounded timeout as fallback.
-Missing or degraded animation must show a notice but must not suppress rating.
-
-Pairing and ordering item questions are idempotent by course type, question ID
-and question index. A duplicate game-start or ready event for the visible item
-must not replay or preempt its active question. Child answer submission does not
-cancel a question already being spoken; feedback waits for that sentence to
-reach its terminal event. A real transition to a newer item may supersede the
-older pending question.
-Each runtime session has at most one pending item-question flush loop. A busy
-behavior is never aborted to make room for a question: the latest visible item
-wins and starts immediately after the active utterance ends. Question speech,
-expression and motion share the same behavior start anchor. Pairing and ordering
-advance normally only on an `ended` speech terminal; stopped or dropped speech
-waits for the bounded failure timeout instead of being treated as complete.
-Praise and encourage clicked while a question is still speaking are queued and
-start as soon as that question reaches a terminal event; they must not exhaust a
-short retry budget and leave the game waiting. Generated LLM replies that arrive
-while a course utterance still owns the behavior slot are likewise queued, and
-their matched expression may immediately replace leftover formal media from the
-previous already-released behavior.
-
-After robot question speech ends, continuous ASR keeps a short speaker-tail
-preroll instead of muting for most of a second, so a child answer that starts
-quickly is still recognized. Identical or nested transcripts from overlapping
-ASR windows are suppressed for several seconds so one spoken sentence does not
-appear many times in the child dialogue UI.
 
 Robot Runtime `POST /devices/check` proves first samples. Its additive
 `record/start.captureDevices[]` freezes Runtime-owned environment tracks; a
