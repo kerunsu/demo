@@ -91,6 +91,17 @@ def test_browser_tts_delay_does_not_start_watchdog_before_speak():
     assert "clearKickTimer();" in attempt
 
 
+def test_browser_tts_is_preheated_and_does_not_cancel_churn_while_cold():
+    browser_tts = _read("static/js/browser_tts.js")
+    child = _read("static/js/child.js")
+
+    assert "function warmBrowserSpeechOutput()" in browser_tts
+    assert 'speechWarmState = "warming"' in browser_tts
+    assert "COLD_START_WATCHDOG_MS = 6500" in browser_tts
+    assert "WARM_START_WATCHDOG_MS = 2200" in browser_tts
+    assert "warmBrowserSpeechOutput" in child
+
+
 def test_class_start_has_no_resource_prewarm_and_behavior_uses_shared_start():
     child = _read("static/js/child.js")
     animation = child[child.index("function playBehaviorAnimation") :]
@@ -252,7 +263,7 @@ def test_interactive_controls_use_authorized_parent_socket_bridge():
     assert "relayInteractiveControl(eventName" in child
     assert 'frame.dataset.pageContextActive !== "true"' in child
     assert "}, window.location.origin);" in child
-    assert 'child.js?v=20260824-child-recovery-v1' in template
+    assert 'child.js?v=20260824-speech-warm-v1' in template
 
     for page, prefix, apply_name in (
         (matching, "matching_", "applyMatchingControl"),

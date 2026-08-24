@@ -2868,6 +2868,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   // 尽早注册 play_audio 监听，避免 training_prepare/play_resource 之前的首句丢失。
   ensureAudioPlayer(announcedSessionId || currentSessionId || "readiness");
   window.BrowserTts?.loadBrowserSpeechVoices?.();
+  // 把浏览器语音进程的冷启动放在待机阶段，避免第一句课程语音承担
+  // 数秒初始化延迟；后续用户点击麦克风时还会再尝试一次。
+  window.BrowserTts?.warmBrowserSpeechOutput?.();
   startRuntimeChildPresence();
 
   // Presence also carries the persisted binding/capability handshake so a
@@ -2899,8 +2902,9 @@ window.addEventListener("DOMContentLoaded", async () => {
 });
 
 if (socket) {
-  socket.on("connect", () => {
+socket.on("connect", () => {
     ensureAudioPlayer(announcedSessionId || currentSessionId || "readiness");
+    window.BrowserTts?.warmBrowserSpeechOutput?.();
     const sessionId = announcedSessionId || currentSessionId;
     if (sessionId) {
       attachChildSession(sessionId);

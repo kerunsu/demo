@@ -362,6 +362,7 @@ export function ControlPage({
   const [dialogueControlNotice, setDialogueControlNotice] = useState<string | null>(null);
   const [engagementAnimations, setEngagementAnimations] = useState<Array<{ name: string }>>([]);
   const [rewardAnimation, setRewardAnimation] = useState('');
+  const [engagementSettingsOpen, setEngagementSettingsOpen] = useState(false);
   const [awaitingResourceReady, setAwaitingResourceReady] = useState(false);
   const [interactiveNextPending, setInteractiveNextPending] = useState(false);
   const lastGameEndRef = useRef<number>(0);
@@ -3706,6 +3707,40 @@ export function ControlPage({
           )}
         </div>
         
+        <section
+          className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5"
+          aria-label="全局注意力支持"
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleAttention}
+              disabled={commandControlsLocked}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Target className="h-4 w-4" />
+              吸引
+            </button>
+            <button
+              type="button"
+              onClick={handleAttentionReward}
+              disabled={commandControlsLocked}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-rose-500 px-3 text-sm font-semibold text-white shadow-sm hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Award className="h-4 w-4" />
+              夸奖
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEngagementSettingsOpen(true)}
+            className="mt-1.5 flex h-7 w-full items-center justify-between rounded-md px-2 text-xs text-slate-500 hover:bg-white hover:text-slate-800"
+          >
+            <span>个性化配置</span>
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </section>
+
         <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium text-sky-900">儿童端智能体</span>
@@ -3980,75 +4015,6 @@ export function ControlPage({
         
         {/* 中央可滚动区域 */}
         <div className="flex-1 overflow-y-auto">
-          <section className="sticky top-0 z-20 mx-4 mt-4 rounded-2xl border border-gray-200 bg-slate-50/95 p-4 shadow-md backdrop-blur sm:mx-6" aria-label="全局注意力支持">
-            <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <div className="text-sm font-semibold text-gray-900">全局注意力支持</div>
-                <div className="mt-0.5 text-xs text-gray-500">随时介入当前互动，不切换课程，也不改变评分进度</div>
-              </div>
-              <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-500">
-                当前课程保持不变
-              </span>
-            </div>
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-              <div className="flex min-w-0 flex-col justify-between gap-3 rounded-xl border border-violet-100 bg-white p-3.5 sm:flex-row sm:items-center">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700">
-                    <Target className="h-5 w-5" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-gray-900">重新吸引注意</span>
-                    <span className="mt-0.5 block text-xs leading-5 text-gray-500">播放全局吸引语音、动作和表情</span>
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAttention}
-                  disabled={commandControlsLocked}
-                  className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:ring-offset-2 active:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Target className="h-4 w-4" />
-                  吸引
-                </button>
-              </div>
-              <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-rose-100 bg-white p-3.5">
-                <div className="flex items-start gap-3">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-rose-100 text-rose-600">
-                    <Award className="h-5 w-5" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-gray-900">即时夸奖鼓励</span>
-                    <span className="mt-0.5 block text-xs leading-5 text-gray-500">播放全局夸奖，并可指定儿童端鼓励动画</span>
-                  </span>
-                </div>
-                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
-                  <label htmlFor="reward-animation" className="min-w-0 flex-1 text-xs font-medium text-gray-600">
-                    <span className="mb-1 block">夸奖下屏</span>
-                    <select
-                      id="reward-animation"
-                      value={rewardAnimation}
-                      onChange={(event) => handleRewardAnimationChange(event.target.value)}
-                      className="min-h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
-                    >
-                      <option value="">使用 Server 默认</option>
-                      {engagementAnimations.map((item) => (
-                        <option key={item.name} value={item.name}>{item.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleAttentionReward}
-                    disabled={commandControlsLocked}
-                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-rose-500 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-offset-2 active:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Award className="h-4 w-4" />
-                    夸奖
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
           {/* 排序课程专用控制面板 */}
           {currentCourse?.type === 'ordering' && (
             <div className="bg-white rounded-2xl p-4 sm:p-5 mx-4 sm:mx-6 mt-6 shadow-lg border border-gray-200">
@@ -4406,6 +4372,64 @@ export function ControlPage({
         onCancel={cancelTeacherRating}
         onConfirm={submitTeacherRating}
       />
+
+      {engagementSettingsOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="engagement-settings-title"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setEngagementSettingsOpen(false);
+          }}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 id="engagement-settings-title" className="text-lg font-semibold text-slate-900">
+                  吸引与夸奖设置
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  吸引使用 Server 端预设；夸奖可为当前儿童单独选择下屏动画。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEngagementSettingsOpen(false)}
+                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="关闭个性化配置"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <label htmlFor="reward-animation" className="mt-6 block text-sm font-medium text-slate-700">
+              夸奖下屏动画
+              <select
+                id="reward-animation"
+                value={rewardAnimation}
+                onChange={(event) => handleRewardAnimationChange(event.target.value)}
+                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+              >
+                <option value="">使用 Server 默认</option>
+                {engagementAnimations.map((item) => (
+                  <option key={item.name} value={item.name}>{item.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setEngagementSettingsOpen(false)}
+                className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700"
+              >
+                完成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showBackConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

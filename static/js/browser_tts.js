@@ -12,12 +12,16 @@
   let availableVoices = [];
   let preferredVoice = null;
   let speechUnlocked = false;
+  let speechWarmState = "cold";
+  let warmWatchdog = null;
   let speakGeneration = 0;
   let activeSpeech = null;
   const completedSpeechIds = new Map();
   const COMPLETED_SPEECH_TTL_MS = 2 * 60 * 1000;
   const COMPLETED_SPEECH_MAX = 256;
   const SPEECH_ENGINE_STARTUP_COMPENSATION_MS = 350;
+  const COLD_START_WATCHDOG_MS = 6500;
+  const WARM_START_WATCHDOG_MS = 2200;
 
   function normalizeSpeechIdentity(options, content) {
     const speechId = String(options.speechId || options.speech_id || "").trim();
@@ -149,27 +153,65 @@
     return speechUnlocked;
   }
 
-  function unlockBrowserSpeechOutput() {
+  function warmBrowserSpeechOutput() {
     const synth = getSpeechSynthesis();
-    if (!synth || speechUnlocked) return;
-    loadBrowserSpeechVoices();
-    // 已在朗读/排队：只记解锁，禁止 cancel（否则会掐掉刚下发的切课提问）
-    if (synth.speaking || synth.pending) {
-      speechUnlocked = true;
+    if (!synth || speechWarmState === "ready") return;
+    if (speechWarmState === "warming") {
+      // A later user gesture (for example enabling the microphone) should
+      // resume a warm-up that page-load autoplay policy may have suspended.
+      if (typeof synth.resume === "function") {
+        try { synth.resume(); } catch (_) {}
+      }
       return;
     }
+    loadBrowserSpeechVoices();
+    // 正式朗读已经占用引擎时绝不 cancel；它自己的 onstart 会完成预热。
+    if (synth.speaking || synth.pending) {
+      return;
+    }
+    speechWarmState = "warming";
     const utterance = new SpeechSynthesisUtterance("。");
     utterance.lang = "zh-CN";
     utterance.volume = 0.01;
-    utterance.rate = 1;
+    utterance.rate = 10;
     if (preferredVoice) utterance.voice = preferredVoice;
-    utterance.onend = () => {
+    const finishWarmup = () => {
+      if (warmWatchdog != null) {
+        clearTimeout(warmWatchdog);
+        warmWatchdog = null;
+      }
       speechUnlocked = true;
+      speechWarmState = "ready";
     };
-    utterance.onerror = () => {
-      speechUnlocked = true;
+    utterance.onstart = finishWarmup;
+    utterance.onend = finishWarmup;
+    // Chrome 偶尔只回 error，但此时语音进程已经被拉起，可视为完成预热。
+    utterance.onerror = (event) => {
+      if (event && event.error === "not-allowed") {
+        if (warmWatchdog != null) clearTimeout(warmWatchdog);
+        warmWatchdog = null;
+        speechWarmState = "cold";
+        return;
+      }
+      finishWarmup();
     };
-    synth.speak(utterance);
+    try {
+      synth.speak(utterance);
+      if (typeof synth.resume === "function") synth.resume();
+      warmWatchdog = window.setTimeout(() => {
+        warmWatchdog = null;
+        if (speechWarmState === "warming") {
+          if (!activeSpeech) safeCancel(synth);
+          speechWarmState = "cold";
+        }
+      }, COLD_START_WATCHDOG_MS);
+    } catch (_) {
+      speechWarmState = "cold";
+    }
+  }
+
+  function unlockBrowserSpeechOutput() {
+    warmBrowserSpeechOutput();
   }
 
   function stopBrowserSpeech() {
@@ -370,6 +412,11 @@
         if (!isCurrentAttempt()) return;
         started = true;
         speechUnlocked = true;
+        speechWarmState = "ready";
+        if (warmWatchdog != null) {
+          clearTimeout(warmWatchdog);
+          warmWatchdog = null;
+        }
         clearStartWatch();
         options.onStart?.({
           acceptedAtClientMs: operation.acceptedAtMs,
@@ -430,10 +477,13 @@
           // delayMs 只决定何时启动；watchdog 必须从真正调用 speak()
           // 之后计时，否则较大的时间轴偏移会在开声前制造多个 retry。
           if (!started && isCurrentAttempt()) {
+            const startWatchdogMs = speechWarmState === "ready"
+              ? WARM_START_WATCHDOG_MS + attempt * 350
+              : COLD_START_WATCHDOG_MS;
             startWatchdog = setTimeout(() => {
               if (!isCurrentAttempt() || started) return;
               retryOrFail("BROWSER_SPEECH_WATCHDOG");
-            }, 1400 + attempt * 250);
+            }, startWatchdogMs);
           }
         } catch (err) {
           retryOrFail((err && err.message) || "BROWSER_SPEECH_OUTPUT_FAILED");
@@ -452,9 +502,11 @@
     setPreferredBrowserSpeechVoice,
     isBrowserSpeechSynthesisSupported,
     isBrowserSpeechUnlocked,
+    isBrowserSpeechWarm: () => speechWarmState === "ready",
     isBrowserSpeechBusy: () => Boolean(activeSpeech),
     getActiveSpeechIdentity: () => activeSpeech && { ...activeSpeech.identity },
     unlockBrowserSpeechOutput,
+    warmBrowserSpeechOutput,
     stopBrowserSpeech,
     cancelBrowserSpeechForBehavior,
     speakBrowserText,

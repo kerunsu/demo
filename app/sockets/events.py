@@ -18,7 +18,7 @@ WebSocket事件处理
 - trigger_action: 触发动作（后端 -> 儿童端）[新增]
 - analysis_result: 分析结果（后端 -> 教师端）[新增]
 """
-from flask import request, session
+from flask import current_app, has_app_context, request, session
 from flask_socketio import emit, join_room, leave_room
 from app.sockets.handlers import (
     PlayResourceHandler,
@@ -551,7 +551,10 @@ def _purge_runtime_delivery_state(
     with _deferred_question_lock:
         for session_id in sessions:
             _deferred_ordering_questions.pop(session_id, None)
-            _pending_interactive_questions.pop(session_id, None)
+            pending = _pending_interactive_questions.pop(session_id, None)
+            timer = (pending or {}).get('retryTimer')
+            if timer is not None:
+                timer.cancel()
     with _presence_lock:
         for session_id in sessions:
             _child_session_owners.pop(session_id, None)
@@ -975,6 +978,7 @@ def _remember_pending_item_question(
     generation = uuid.uuid4().hex
     if not sid:
         return generation
+    app = current_app._get_current_object() if has_app_context() else None
     with _deferred_question_lock:
         now = time.monotonic()
         expired = [
@@ -983,12 +987,23 @@ def _remember_pending_item_question(
             if float(item.get('expiresAt') or 0) <= now
         ]
         for key in expired:
-            _pending_interactive_questions.pop(key, None)
+            expired_item = _pending_interactive_questions.pop(key, None)
+            expired_timer = (expired_item or {}).get('retryTimer')
+            if expired_timer is not None:
+                expired_timer.cancel()
+        previous = _pending_interactive_questions.pop(sid, None)
+        previous_timer = (previous or {}).get('retryTimer')
+        if previous_timer is not None:
+            previous_timer.cancel()
         _pending_interactive_questions[sid] = {
             'kind': str(kind or '').strip().lower(),
             'payload': dict(payload or {}),
             'generation': generation,
             'expiresAt': now + _PENDING_ITEM_QUESTION_TTL_SECONDS,
+            'retryCount': 0,
+            'retryTimer': None,
+            'dispatching': False,
+            'app': app,
         }
     return generation
 
@@ -1002,7 +1017,10 @@ def _pending_item_question_generation(session_id: Optional[str]) -> Optional[str
         if not pending:
             return None
         if float(pending.get('expiresAt') or 0) <= time.monotonic():
-            _pending_interactive_questions.pop(sid, None)
+            expired = _pending_interactive_questions.pop(sid, None)
+            timer = (expired or {}).get('retryTimer')
+            if timer is not None:
+                timer.cancel()
             return None
         return str(pending.get('generation') or '') or None
 
@@ -1021,7 +1039,10 @@ def _clear_pending_item_question(
             return
         if generation and str(pending.get('generation') or '') != str(generation):
             return
-        _pending_interactive_questions.pop(sid, None)
+        removed = _pending_interactive_questions.pop(sid, None)
+        timer = (removed or {}).get('retryTimer')
+        if timer is not None:
+            timer.cancel()
 
 
 def _item_question_still_current(
@@ -1071,8 +1092,11 @@ def _preempt_busy_behavior_for_item_question(
         return False
 
 
-def _flush_pending_item_question(session_id: Optional[str]) -> bool:
-    """Replay latest pending pairing/ordering ask after other speech frees."""
+def _dispatch_pending_item_question(
+    session_id: Optional[str],
+    generation: Optional[str] = None,
+) -> bool:
+    """Dispatch the latest item ask through its single session-owned chain."""
     sid = str(session_id or '').strip()
     if not sid:
         return False
@@ -1081,39 +1105,127 @@ def _flush_pending_item_question(session_id: Optional[str]) -> bool:
         if not pending:
             return False
         if float(pending.get('expiresAt') or 0) <= time.monotonic():
-            _pending_interactive_questions.pop(sid, None)
+            expired = _pending_interactive_questions.pop(sid, None)
+            timer = (expired or {}).get('retryTimer')
+            if timer is not None:
+                timer.cancel()
             return False
+        current_generation = str(pending.get('generation') or '')
+        if generation and current_generation != str(generation):
+            return False
+        if pending.get('dispatching'):
+            return True
+        pending['dispatching'] = True
         kind = str(pending.get('kind') or '')
         payload = dict(pending.get('payload') or {})
-        generation = str(pending.get('generation') or '')
+        retry_count = int(pending.get('retryCount') or 0)
+        app = pending.get('app')
     if not payload:
+        with _deferred_question_lock:
+            current = _pending_interactive_questions.get(sid)
+            if current and current.get('generation') == current_generation:
+                current['dispatching'] = False
         return False
     logger.info(
-        '补发题切换提问: session=%s kind=%s gen=%s',
+        '发送题切换提问: session=%s kind=%s gen=%s retry=%s',
         sid,
         kind,
-        generation[:8],
+        current_generation[:8],
+        retry_count,
     )
-    if kind in ('ordering', 'sequencing'):
-        return _play_atomic_ordering_question(
-            sid,
-            str(payload.get('audio_type') or 'question'),
-            category=payload.get('category'),
-            rule=payload.get('rule'),
-            text=payload.get('text'),
-            event_data=payload.get('event_data'),
-            _retry_count=0,
-        )
-    return _play_interactive_course_audio(
-        sid,
-        str(payload.get('course_type') or 'pairing'),
-        'question',
-        category=payload.get('category'),
-        rule=payload.get('rule'),
-        text=payload.get('text'),
-        question_data=payload.get('question_data'),
-        _retry_count=0,
-    )
+    try:
+        def dispatch() -> bool:
+            if kind in ('ordering', 'sequencing'):
+                return _play_atomic_ordering_question(
+                    sid,
+                    str(payload.get('audio_type') or 'question'),
+                    category=payload.get('category'),
+                    rule=payload.get('rule'),
+                    text=payload.get('text'),
+                    event_data=payload.get('event_data'),
+                    _retry_count=retry_count,
+                )
+            return _play_interactive_course_audio(
+                sid,
+                str(payload.get('course_type') or 'pairing'),
+                'question',
+                category=payload.get('category'),
+                rule=payload.get('rule'),
+                text=payload.get('text'),
+                question_data=payload.get('question_data'),
+                _retry_count=retry_count,
+            )
+
+        if app is not None and not has_app_context():
+            with app.app_context():
+                return dispatch()
+        return dispatch()
+    finally:
+        with _deferred_question_lock:
+            current = _pending_interactive_questions.get(sid)
+            if current and current.get('generation') == current_generation:
+                current['dispatching'] = False
+
+
+def _schedule_pending_item_question_retry(
+    session_id: Optional[str],
+    generation: Optional[str],
+    retry_count: int,
+) -> bool:
+    """Own exactly one retry timer for one pending question generation."""
+    sid = str(session_id or '').strip()
+    gen = str(generation or '').strip()
+    if not sid or not gen:
+        return False
+
+    def fire() -> None:
+        with _deferred_question_lock:
+            current = _pending_interactive_questions.get(sid)
+            if not current or str(current.get('generation') or '') != gen:
+                return
+            if current.get('dispatching'):
+                timer = threading.Timer(
+                    _INTERACTIVE_QUESTION_BUSY_RETRY_SEC,
+                    fire,
+                )
+                timer.daemon = True
+                current['retryTimer'] = timer
+                timer.start()
+                return
+            current['retryTimer'] = None
+        _dispatch_pending_item_question(sid, gen)
+
+    with _deferred_question_lock:
+        pending = _pending_interactive_questions.get(sid)
+        if not pending or str(pending.get('generation') or '') != gen:
+            return False
+        existing = pending.get('retryTimer')
+        if existing is not None and existing.is_alive():
+            return True
+        pending['retryCount'] = max(0, int(retry_count))
+        timer = threading.Timer(_INTERACTIVE_QUESTION_BUSY_RETRY_SEC, fire)
+        timer.daemon = True
+        pending['retryTimer'] = timer
+        timer.start()
+    return True
+
+
+def _flush_pending_item_question(session_id: Optional[str]) -> bool:
+    """Ensure the latest ask has one active dispatch/retry owner."""
+    sid = str(session_id or '').strip()
+    if not sid:
+        return False
+    with _deferred_question_lock:
+        pending = _pending_interactive_questions.get(sid)
+        if not pending:
+            return False
+        timer = pending.get('retryTimer')
+        if pending.get('dispatching') or (
+            timer is not None and timer.is_alive()
+        ):
+            return True
+        generation = str(pending.get('generation') or '')
+    return _dispatch_pending_item_question(sid, generation)
 
 
 def _schedule_pairing_item_question(
@@ -1139,12 +1251,7 @@ def _schedule_pairing_item_question(
         pending = _pending_interactive_questions.get(sid)
         if pending and pending.get('generation') == generation:
             pending['payload']['question_data'] = event_data
-    return _play_interactive_course_audio(
-        sid,
-        'pairing',
-        'question',
-        question_data=event_data,
-    )
+    return _dispatch_pending_item_question(sid, generation)
 
 
 def _schedule_ordering_item_question(
@@ -1178,14 +1285,7 @@ def _schedule_ordering_item_question(
         pending = _pending_interactive_questions.get(sid)
         if pending and pending.get('generation') == generation:
             pending['payload']['event_data'] = payload_event
-    return _play_atomic_ordering_question(
-        sid,
-        audio_type,
-        category=category,
-        rule=rule,
-        text=text,
-        event_data=payload_event,
-    )
+    return _dispatch_pending_item_question(sid, generation)
 
 
 def _play_interactive_course_audio(
@@ -1232,8 +1332,33 @@ def _play_interactive_course_audio(
                 reservation.get('activeBehaviorId'),
                 _retry_count,
             )
-            # Hard rule for questions: preempt chatter, then keep retrying
-            # until the ask lands or a newer item supersedes it.
+            generation = (
+                question_data.get('_askGeneration')
+                if isinstance(question_data, dict)
+                else None
+            )
+            # Item-switch asks have one session-owned retry chain.  The
+            # completion event may flush it, but must never create a second
+            # chain racing the first one.
+            if generation:
+                if _retry_count == 0 or _retry_count % 3 == 0:
+                    _preempt_busy_behavior_for_item_question(
+                        session_id, robot_service=robot_service
+                    )
+                if (
+                    _retry_count < _INTERACTIVE_QUESTION_BUSY_RETRIES
+                    and _item_question_still_current(
+                        session_id, question_data
+                    )
+                ):
+                    _schedule_pending_item_question_retry(
+                        session_id,
+                        generation,
+                        _retry_count + 1,
+                    )
+                return False
+
+            # Non-item/manual question compatibility path.
             if audio_type == 'question' and (
                 _retry_count == 0 or _retry_count % 3 == 0
             ):
@@ -1264,18 +1389,6 @@ def _play_interactive_course_audio(
                     session_id, question_data
                 ):
                     return False
-                if audio_type == 'question' and isinstance(question_data, dict):
-                    generation = question_data.get('_askGeneration')
-                    if generation:
-                        with _deferred_question_lock:
-                            pending = _pending_interactive_questions.get(
-                                str(session_id)
-                            )
-                            if (
-                                pending
-                                and pending.get('generation') == generation
-                            ):
-                                pending['payload']['_retry_count'] = _retry_count + 1
                 retry_delay = (
                     _INTERACTIVE_QUESTION_BUSY_RETRY_SEC
                     if audio_type == 'question'
@@ -1618,6 +1731,27 @@ def _play_atomic_ordering_question(
             reservation.get('activeBehaviorId'),
             _retry_count,
         )
+        generation = (
+            event_data.get('_askGeneration')
+            if isinstance(event_data, dict)
+            else None
+        )
+        if generation:
+            if _retry_count == 0 or _retry_count % 3 == 0:
+                _preempt_busy_behavior_for_item_question(
+                    session_id, robot_service=robot_service
+                )
+            if (
+                _retry_count < _INTERACTIVE_QUESTION_BUSY_RETRIES
+                and _item_question_still_current(session_id, event_data)
+            ):
+                _schedule_pending_item_question_retry(
+                    session_id,
+                    generation,
+                    _retry_count + 1,
+                )
+            return False
+
         if _retry_count == 0 or _retry_count % 3 == 0:
             if _preempt_busy_behavior_for_item_question(
                 session_id, robot_service=robot_service
@@ -1638,18 +1772,6 @@ def _play_atomic_ordering_question(
             _retry_count < _INTERACTIVE_QUESTION_BUSY_RETRIES
             and _item_question_still_current(session_id, event_data)
         ):
-            if isinstance(event_data, dict):
-                generation = event_data.get('_askGeneration')
-                if generation:
-                    with _deferred_question_lock:
-                        pending = _pending_interactive_questions.get(
-                            str(session_id)
-                        )
-                        if (
-                            pending
-                            and pending.get('generation') == generation
-                        ):
-                            pending['payload']['_retry_count'] = _retry_count + 1
             retry_timer = threading.Timer(
                 _INTERACTIVE_QUESTION_BUSY_RETRY_SEC,
                 _play_atomic_ordering_question,

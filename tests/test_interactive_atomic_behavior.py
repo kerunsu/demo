@@ -1,4 +1,7 @@
+import threading
 from types import SimpleNamespace
+
+from flask import Flask
 
 from app.sockets import events
 
@@ -38,6 +41,51 @@ class _Audio:
     def play_interactive_course_audio(self, **kwargs):
         self.calls.append(kwargs)
         return True
+
+
+class _BusyRobot(_Robot):
+    def reserve_behavior(self, **kwargs):
+        self.calls.append(("reserve", kwargs))
+        return {
+            "accepted": False,
+            "activeBehaviorId": "behavior-already-playing",
+        }
+
+
+class _BusyOnceRobot(_Robot):
+    def __init__(self):
+        super().__init__()
+        self.reserve_count = 0
+
+    def reserve_behavior(self, **kwargs):
+        self.reserve_count += 1
+        self.calls.append(("reserve", kwargs))
+        if self.reserve_count == 1:
+            return {
+                "accepted": False,
+                "activeBehaviorId": "behavior-already-playing",
+            }
+        return {"accepted": True, "behaviorId": kwargs["behavior_id"]}
+
+
+class _OwnedTimer:
+    instances = []
+
+    def __init__(self, interval, callback, *args, **kwargs):
+        self.interval = interval
+        self.callback = callback
+        self.daemon = False
+        self.active = False
+        self.__class__.instances.append(self)
+
+    def start(self):
+        self.active = True
+
+    def cancel(self):
+        self.active = False
+
+    def is_alive(self):
+        return self.active
 
 
 def test_interactive_audio_uses_global_behavior_mutex():
@@ -148,3 +196,87 @@ def test_manual_ordering_question_dispatches_rule_phrase(monkeypatch):
     assert dispatched[0]["rule"] == "more"
     assert dispatched[0]["behavior_id"] == "behavior-manual-ordering"
     assert dispatched[0]["request_id"] == "request-manual-ordering"
+
+
+def test_item_question_busy_retry_has_one_session_owned_timer(monkeypatch):
+    _OwnedTimer.instances.clear()
+    monkeypatch.setattr(events.threading, "Timer", _OwnedTimer)
+    robot = _BusyRobot()
+    audio = _Audio()
+    generation = events._remember_pending_item_question(
+        "runtime-single-owner",
+        kind="pairing",
+        payload={},
+    )
+    question = {
+        "questionId": "pairing-q1",
+        "_askGeneration": generation,
+    }
+    with events._deferred_question_lock:
+        pending = events._pending_interactive_questions["runtime-single-owner"]
+        pending["payload"] = {
+            "course_type": "pairing",
+            "question_data": question,
+        }
+
+    assert not events._play_interactive_course_audio(
+        "runtime-single-owner",
+        "pairing",
+        "question",
+        question_data=question,
+        robot_service=robot,
+        audio_service=audio,
+    )
+    assert len(_OwnedTimer.instances) == 1
+    assert events._flush_pending_item_question("runtime-single-owner")
+    assert len(_OwnedTimer.instances) == 1
+
+    events._clear_pending_item_question(
+        "runtime-single-owner",
+        generation=generation,
+    )
+    assert not _OwnedTimer.instances[0].is_alive()
+
+
+def test_item_question_retry_reenters_the_captured_flask_context(monkeypatch):
+    import app.audio
+    import app.robot
+
+    flask_app = Flask(__name__)
+    robot = _BusyOnceRobot()
+    audio = _Audio()
+    monkeypatch.setattr(app.robot, "get_robot_service", lambda: robot)
+    monkeypatch.setattr(app.audio, "get_audio_service", lambda: audio)
+    with flask_app.app_context():
+        generation = events._remember_pending_item_question(
+            "runtime-context-retry",
+            kind="pairing",
+            payload={},
+        )
+        question = {
+            "questionId": "pairing-q-context",
+            "_askGeneration": generation,
+        }
+        with events._deferred_question_lock:
+            pending = events._pending_interactive_questions["runtime-context-retry"]
+            pending["payload"] = {
+                "course_type": "pairing",
+                "question_data": question,
+            }
+        assert not events._play_interactive_course_audio(
+            "runtime-context-retry",
+            "pairing",
+            "question",
+            question_data=question,
+            robot_service=robot,
+            audio_service=audio,
+        )
+
+    deadline = threading.Event()
+    for _ in range(20):
+        if audio.calls:
+            break
+        deadline.wait(0.025)
+    assert len(audio.calls) == 1
+    assert robot.reserve_count == 2
+    assert events._pending_item_question_generation("runtime-context-retry") is None

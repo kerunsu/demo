@@ -2,7 +2,7 @@
  * 儿童端自由对话：连续自动聆听（能量 VAD）→ FunASR → LLM → browser TTS
  * - 默认走本机麦克风 PCM→WAV → child_dialogue_audio（FunASR / voice-service）
  * - 浏览器 SpeechRecognition 仅作无 FunASR 时的兜底，不再依赖按住说话
- * - 机器人朗读时暂停 ASR，避免回授
+ * - 机器人朗读时保持麦克风采集，回答在朗读结束后提交，避免抢断与丢句首
  */
 (function (global) {
   const TARGET_SAMPLE_RATE = 16000;
@@ -61,6 +61,9 @@
   let turnStartedAt = null;
   let turnCaptureStartedAtClientMs = null;
   let pcmChunks = [];
+  /** 朗读中已经说完的回答：等 TTS 结束再送识别，不打断麦麦。 */
+  let pendingTtsTurn = null;
+  let pendingTtsTranscript = "";
   /** 最近 PREROLL_MS 的 PCM，在 VAD 确认开说前也持续写入 */
   let prerollChunks = [];
   let prerollSamples = 0;
@@ -259,7 +262,7 @@
 
   function listenIdleStatus() {
     if (!autoListenEnabled) return "准备就绪";
-    if (asrPausedForTts) return "朗读中，暂停聆听…";
+    if (asrPausedForTts) return "朗读中，仍在聆听…";
     if (dialogueBusy) return dialogueAwake ? "思考中…" : (wakeWordEnabled ? "请说唤醒词" : "等待教师唤醒");
     if (dialogueAwake) return "已唤醒，可以说了";
     return wakeWordEnabled ? "请说：麦麦，麦麦" : "等待教师端点击唤醒智能体";
@@ -439,7 +442,9 @@
     const btn = document.getElementById("dialogueHoldBtn");
     if (!btn) return;
     if (autoListenEnabled) {
-      btn.textContent = asrPausedForTts || dialogueBusy ? "聆听暂停中…" : "停止自动聆听";
+      btn.textContent = asrPausedForTts
+        ? "朗读中仍在聆听"
+        : (dialogueBusy ? "识别中…" : "停止自动聆听");
       btn.classList.add("is-listening");
     } else {
       btn.textContent = "开始自动聆听";
@@ -611,8 +616,7 @@
     return (
       autoListenEnabled &&
       !dialogueBusy &&
-      !asrPausedForTts &&
-      Date.now() >= cooldownUntil &&
+      (asrPausedForTts || Date.now() >= cooldownUntil) &&
       !!mediaStream &&
       !!analyser
     );
@@ -691,7 +695,7 @@
     const merged = concatenateFloat32(chunks);
     const down = downsampleBuffer(merged, captureSampleRate, TARGET_SAMPLE_RATE);
     const wav = encodePcm16Wav(down, TARGET_SAMPLE_RATE);
-    void emitDialogueAudioWav(wav, {
+    const timing = {
       captureStartedAtClientMs,
       speechEndedAtClientMs,
       captureEndedAtClientMs,
@@ -705,7 +709,14 @@
       vadConfirmationMs: MIN_VOICE_MS,
       configuredSilenceEndMs: SILENCE_END_MS,
       prerollMs: PREROLL_MS,
-    });
+      capturedDuringTts: asrPausedForTts,
+    };
+    if (asrPausedForTts) {
+      if (!pendingTtsTurn) pendingTtsTurn = { wav, timing };
+      setStatus("已听到，朗读结束后识别…");
+      return;
+    }
+    void emitDialogueAudioWav(wav, timing);
   }
 
   function onPcmFrame(input) {
@@ -737,7 +748,7 @@
 
     if (!canCapture()) {
       if (capturingTurn) {
-        // 朗读/忙时丢弃半截，避免回授进 FunASR
+        // 服务端识别忙时才丢弃半截；TTS 本身不再让 canCapture=false。
         capturingTurn = false;
         pcmChunks = [];
         voiceStartedAt = null;
@@ -745,10 +756,6 @@
         silenceStartedAtClientMs = null;
         turnStartedAt = null;
         turnCaptureStartedAtClientMs = null;
-      }
-      // 机器人正在说话时清空回声；说完后的短冷却期间继续保留孩子的句首。
-      if (asrPausedForTts) {
-        clearPreroll();
       }
       meterFrame = window.requestAnimationFrame(meterTick);
       return;
@@ -768,7 +775,7 @@
           silenceStartedAtClientMs = null;
           // 用开说前环形缓冲作种子，避免丢掉确认窗内的句首音节
           seedPcmFromPreroll();
-          setStatus("正在听…");
+          setStatus(asrPausedForTts ? "朗读中，仍在听你的回答…" : "正在听…");
         }
       } else {
         voiceStartedAt = null;
@@ -823,6 +830,8 @@
     }
     capturingTurn = false;
     pcmChunks = [];
+    pendingTtsTurn = null;
+    pendingTtsTranscript = "";
     clearPreroll();
     voiceStartedAt = null;
     silenceStartedAt = null;
@@ -884,8 +893,8 @@
     silenceGain.gain.value = 0;
     captureNode.onaudioprocess = (ev) => {
       const input = ev.inputBuffer.getChannelData(0);
-      // 聆听开启且未因 TTS 暂停时持续写入 pre-roll（与是否已开 turn 无关）
-      if (autoListenEnabled && !asrPausedForTts) {
+      // TTS 期间也持续写入 pre-roll，保住孩子抢答的第一个音节。
+      if (autoListenEnabled) {
         pushPreroll(input);
       }
       if (!capturingTurn) return;
@@ -939,19 +948,26 @@
       speechRec.continuous = true;
       let finalText = "";
       speechRec.onresult = (event) => {
-        if (!autoListenEnabled || dialogueBusy || asrPausedForTts) return;
+        if (!autoListenEnabled || dialogueBusy) return;
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; i += 1) {
           const piece = event.results[i][0].transcript || "";
           if (event.results[i].isFinal) finalText += piece;
           else interim += piece;
         }
-        setStatus(`正在听：${finalText || interim || "…"}`);
+        setStatus(asrPausedForTts
+          ? `朗读中，仍在听：${finalText || interim || "…"}`
+          : `正在听：${finalText || interim || "…"}`);
         if (finalText.trim().length >= 2) {
           const text = finalText.trim();
           finalText = "";
-          cooldownUntil = Date.now() + COOLDOWN_MS;
-          emitDialogueText(text);
+          if (asrPausedForTts) {
+            if (!pendingTtsTranscript) pendingTtsTranscript = text;
+            setStatus("已听到，朗读结束后识别…");
+          } else {
+            cooldownUntil = Date.now() + COOLDOWN_MS;
+            emitDialogueText(text);
+          }
         }
       };
       speechRec.onerror = (ev) => {
@@ -1074,28 +1090,41 @@
     stopBrowserSpeechFallback();
     releaseAudioGraph(false);
     usingBrowserSpeechFallback = false;
+    pendingTtsTurn = null;
+    pendingTtsTranscript = "";
     setListenButtonState();
     setStatus("已停止聆听");
   }
 
   function pauseAsrForTts() {
     asrPausedForTts = true;
-    if (capturingTurn) {
-      capturingTurn = false;
-      pcmChunks = [];
-    }
-    clearPreroll();
-    if (usingBrowserSpeechFallback) {
-      stopBrowserSpeechFallback();
-    }
     setListenButtonState();
-    if (autoListenEnabled) setStatus("朗读中，暂停聆听…");
+    if (autoListenEnabled) setStatus("朗读中，仍在聆听…");
   }
 
   function resumeAsrAfterTts() {
     asrPausedForTts = false;
-    cooldownUntil = Date.now() + COOLDOWN_MS;
+    const pendingTurn = pendingTtsTurn;
+    const pendingTranscript = pendingTtsTranscript;
+    pendingTtsTurn = null;
+    pendingTtsTranscript = "";
+    if (pendingTurn) {
+      cooldownUntil = 0;
+      setListenButtonState();
+      setStatus("正在识别刚才的回答…");
+      void emitDialogueAudioWav(pendingTurn.wav, pendingTurn.timing);
+      return;
+    }
+    if (pendingTranscript) {
+      cooldownUntil = 0;
+      setListenButtonState();
+      setStatus("正在识别刚才的回答…");
+      emitDialogueText(pendingTranscript);
+      return;
+    }
+    cooldownUntil = capturingTurn ? 0 : Date.now() + COOLDOWN_MS;
     setListenButtonState();
+    if (capturingTurn) setStatus("正在听…");
     maybeResumeListening();
   }
 

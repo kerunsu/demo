@@ -59,4 +59,37 @@ def test_adaptive_vad_and_child_cache_version_are_deployed_together():
     assert "recentNoiseLevels" in dialogue
     assert "currentVadLevels" in dialogue
     assert "now - voiceStartedAt >= MIN_VOICE_MS" in dialogue
-    assert "20260823-adaptive-vad-v2" in child_html
+    assert "20260824-live-listen-v1" in child_html
+
+
+def test_tts_keeps_capture_open_and_defers_the_answer_until_reading_ends():
+    dialogue = (ROOT / "static" / "js" / "child_dialogue.js").read_text(encoding="utf-8")
+    can_capture = dialogue[dialogue.index("function canCapture()") : dialogue.index("function clearPreroll()")]
+    pause = dialogue[dialogue.index("function pauseAsrForTts()") : dialogue.index("function maybeResumeListening()")]
+
+    assert "!asrPausedForTts" not in can_capture
+    assert "pendingTtsTurn" in dialogue
+    assert "capturedDuringTts" in dialogue
+    assert "clearPreroll();" not in pause
+    assert "朗读中，仍在聆听" in dialogue
+
+
+def test_matching_cards_keep_stable_size_and_scroll_horizontally():
+    matching = (ROOT / "static" / "resources" / "interactive" / "matching.html").read_text(encoding="utf-8")
+
+    assert '<p class="speech-bubble">' not in matching
+    assert 'width: min(44.4vh, 366px)' in matching
+    assert 'flex: 0 0 min(36vh, 306px)' in matching
+    assert "overflow-x: auto" in matching
+    assert '.options-grid[data-count="4"] .option-card' not in matching
+
+
+def test_engagement_actions_are_compact_sidebar_controls_with_modal_settings():
+    teacher = (ROOT / "teacher_frontend" / "components" / "ControlPage.tsx").read_text(encoding="utf-8")
+
+    quick_controls = teacher.index('aria-label="全局注意力支持"')
+    dialogue_controls = teacher.index("儿童端智能体")
+    assert quick_controls < dialogue_controls
+    assert "setEngagementSettingsOpen(true)" in teacher
+    assert 'aria-labelledby="engagement-settings-title"' in teacher
+    assert "sticky top-0 z-20" not in teacher
