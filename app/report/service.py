@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+import math
 from typing import Any, Dict, List, Optional
 
 from app.behavior import get_behavior_service
 from app.behavior.store import get_behavior_store
-from app.report.scoring import compute_dimensions, load_scoring_config
+from app.course_scope import enabled_course_types
+from app.report.scoring import COURSE_LABELS, compute_dimensions, load_scoring_config
 from app.report.narrative import generate_narrative
 from app.report.limitations_copy import translate_limitations
 from app.report.archive_sync import sync_student_archive_from_report
@@ -24,6 +26,61 @@ def _emit(event: str, payload: Dict[str, Any]) -> None:
             socketio.emit(event, payload)
     except Exception as e:
         logger.debug("emit %s 失败: %s", event, e)
+
+
+def _sync_course_evaluations(report: Dict[str, Any]) -> None:
+    """Keep the teacher chart aligned with Server-reviewed course scores."""
+    scores = report.get("courseScores") if isinstance(report.get("courseScores"), dict) else {}
+    existing = {
+        str(item.get("courseType")): item
+        for item in (report.get("courseEvaluations") or [])
+        if isinstance(item, dict) and item.get("courseType")
+    }
+    try:
+        default_target = float(report.get("courseGoalScore") or 70)
+    except (TypeError, ValueError):
+        default_target = 70.0
+    default_target = max(0.0, min(100.0, default_target))
+
+    evaluations: List[Dict[str, Any]] = []
+    normalized_scores: Dict[str, Optional[float]] = {}
+    for course_type in enabled_course_types():
+        label = COURSE_LABELS.get(course_type, course_type)
+        previous = existing.get(course_type) or {}
+        raw_score = scores.get(course_type)
+        score: Optional[float] = None
+        try:
+            candidate = float(raw_score) if raw_score is not None else None
+            if candidate is not None and math.isfinite(candidate):
+                score = round(max(0.0, min(100.0, candidate)), 1)
+        except (TypeError, ValueError):
+            score = None
+        try:
+            target = float(previous.get("targetScore", default_target))
+        except (TypeError, ValueError):
+            target = default_target
+        target = round(max(0.0, min(100.0, target)), 1)
+        observed = int(previous.get("itemCount") or 0)
+        status = (
+            "evaluated"
+            if score is not None
+            else "insufficient_data"
+            if previous.get("status") == "insufficient_data" or observed > 0
+            else "not_evaluated"
+        )
+        normalized_scores[course_type] = score
+        evaluations.append({
+            "courseType": course_type,
+            "label": str(previous.get("label") or label),
+            "status": status,
+            "score": score,
+            "targetScore": target,
+            "gapToTarget": round(score - target, 1) if score is not None else None,
+            "itemCount": observed,
+            "teacherRatingCount": int(previous.get("teacherRatingCount") or 0),
+        })
+    report["courseScores"] = normalized_scores
+    report["courseEvaluations"] = evaluations
 
 
 class ReportService:
@@ -57,6 +114,10 @@ class ReportService:
 
         return {
             "schemaVersion": "professional-report-v2",
+            "courseScope": {
+                "deployment": "demo-machine",
+                "enabledCourseTypes": list(enabled_course_types()),
+            },
             "formulaVersion": scored.get("formulaVersion"),
             "scoreBoundary": scored.get("scoreBoundary"),
             "trainingSessionId": training_session_id,
@@ -72,6 +133,8 @@ class ReportService:
             "grade": scored.get("grade"),
             "dimensions": scored.get("dimensions"),
             "courseScores": scored.get("courseScores") or {},
+            "courseEvaluations": scored.get("courseEvaluations") or [],
+            "courseGoalScore": scored.get("courseGoalScore"),
             "teacherRatingCounts": scored.get("teacherRatingCounts") or {},
             "attentionCurve": attention_curve,
             "attentionSummary": summary_dict.get("attention") or {},
@@ -128,23 +191,30 @@ class ReportService:
             except Exception:
                 raise ValueError("training_session_not_finalized")
 
+        previous = store.get_report(training_session_id) or {}
+        published = store.get_published_report(training_session_id)
         summary_dict = summary.to_dict() if hasattr(summary, "to_dict") else summary
         report = self._build_report(training_session_id, summary_dict, soft=soft)
-        # 保留已发布状态标记在算法稿上仍为 pending，直到再次 publish
-        if store.get_published_report(training_session_id):
-            report["publicationStatus"] = "pending_review"
+        # “生成”是幂等读取准备动作。教师端状态轮询或重复进入结束页不得
+        # 把已经发布的快照重新变成待审核，也不得反复广播同一条待审提醒。
+        if published:
+            report["publicationStatus"] = "published"
         store.save_report(training_session_id, report)
         logger.info(
             "报告已生成: training=%s status=%s overall=%s",
             training_session_id, report.get("status"), report.get("overall")
         )
-        _emit("report_ready_for_review", {
-            "trainingSessionId": training_session_id,
-            "studentId": report.get("studentId"),
-            "overall": report.get("overall"),
-            "status": report.get("status"),
-            "publicationStatus": "pending_review",
-        })
+        if (
+            report.get("publicationStatus") == "pending_review"
+            and previous.get("publicationStatus") != "pending_review"
+        ):
+            _emit("report_ready_for_review", {
+                "trainingSessionId": training_session_id,
+                "studentId": report.get("studentId"),
+                "overall": report.get("overall"),
+                "status": report.get("status"),
+                "publicationStatus": "pending_review",
+            })
         return report
 
     def refresh(self, training_session_id: str) -> Dict[str, Any]:
@@ -246,6 +316,8 @@ class ReportService:
         ):
             if key in patch:
                 merged[key] = patch[key]
+        if "courseScores" in patch:
+            _sync_course_evaluations(merged)
         merged["manualOverride"] = True
         merged["publicationStatus"] = "pending_review"
         merged["updatedAt"] = datetime.utcnow().isoformat() + "Z"
@@ -312,14 +384,8 @@ class ReportService:
     def list_pending_reviews(self, limit: int = 20) -> List[Dict[str, Any]]:
         """扫描 behavior 目录中待审核报告（轻量）。"""
         store = get_behavior_store()
-        root = store.root
         pending: List[Dict[str, Any]] = []
-        if not root.exists():
-            return pending
-        for d in sorted(root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-            if not d.is_dir():
-                continue
-            tid = d.name
+        for tid in store.list_persisted_training_ids():
             status = store.get_publication_status(tid)
             if status != "pending_review":
                 continue

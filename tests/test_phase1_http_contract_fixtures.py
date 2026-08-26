@@ -311,7 +311,7 @@ def test_phase1_http_course_types_field_snapshot(monkeypatch):
             return self
 
         def all(self):
-            return [SimpleNamespace(id=1, name="命名"), SimpleNamespace(id=2, name="pairing")]
+            return [SimpleNamespace(id=1, name="pairing"), SimpleNamespace(id=2, name="ordering")]
 
     class CourseType:
         id = object()
@@ -323,8 +323,8 @@ def test_phase1_http_course_types_field_snapshot(monkeypatch):
     assert response.get_json() == {
         "success": True,
         "types": [
-            {"id": 1, "name": "命名", "type": "naming"},
-            {"id": 2, "name": "pairing", "type": "pairing"},
+                {"id": 1, "name": "pairing", "type": "pairing"},
+                {"id": 2, "name": "ordering", "type": "ordering"},
         ],
     }
 

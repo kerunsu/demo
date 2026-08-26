@@ -80,7 +80,7 @@ def test_prepare_behavior_animation_does_not_start_playback():
         'clearHeldPraiseOverlay("content_committed")'
     )
     template = _read("templates/child.html")
-    assert 'child.js?v=20260824-speech-warm-v1' in template
+    assert 'child.js?v=20260824-screen-click-v1' in template
     handle_play = child[
         child.index("function handlePlayResource") :
         child.index('socket.on("play_resource"')
@@ -153,16 +153,15 @@ def test_interactive_questions_are_idempotent_and_answers_do_not_cut_speech():
     assert "createExplosion" not in sequencing_feedback
 
 
-def test_teacher_keyword_auto_praise_always_arms_scoring_fallback():
+def test_teacher_keyword_auto_praise_opens_scoring_without_waiting_for_animation():
     control = _read("teacher_frontend/components/ControlPage.tsx")
     block = control[
         control.index("socket.on('keyword_auto_praise'") :
         control.index("socket.on('behavior_animation_ended'")
     ]
     assert "serverPlayed" in block
-    assert "armPraiseRatingFallback(praiseContext" in block
-    assert "data.hasAnimation ? 12000 : 3200" in block
-    assert "if (!data.hasAnimation)" not in block
+    assert "queuePraiseRating(praiseContext)" in block
+    assert "data.hasAnimation ? 12000 : 3200" not in block
 
 
 def test_teacher_praise_scoring_is_armed_before_emit_and_survives_degradation():
@@ -198,7 +197,8 @@ def test_teacher_praise_scoring_is_armed_before_emit_and_survives_degradation():
         control.index("socket.on('resource_ready'")
     ]
     assert "data?.animationExpected === true" in ack
-    assert "armPraiseRatingFallback(" in ack
+    assert "Math.max(0, 800 - elapsedMs)" in ack
+    assert "queuePraiseRating(" in ack
 
 
 def test_behavior_media_are_correlated_and_expression_self_heals():
@@ -415,7 +415,7 @@ def test_interactive_controls_use_authorized_parent_socket_bridge():
     assert "relayInteractiveControl(eventName" in child
     assert 'frame.dataset.pageContextActive !== "true"' in child
     assert "}, window.location.origin);" in child
-    assert 'child.js?v=20260824-speech-warm-v1' in template
+    assert 'child.js?v=20260824-screen-click-v1' in template
 
     for page, prefix, apply_name in (
         (matching, "matching_", "applyMatchingControl"),
@@ -509,7 +509,7 @@ def test_matching_teacher_difficulty_overrides_simplified_mode_on_next_question(
     )
 
 
-def test_teacher_rating_waits_for_praise_animation_without_interrupting_it():
+def test_teacher_rating_opens_within_one_second_without_interrupting_praise():
     control = _read("teacher_frontend/components/ControlPage.tsx")
 
     ack_handler = control[
@@ -518,8 +518,16 @@ def test_teacher_rating_waits_for_praise_animation_without_interrupting_it():
     ]
     assert "requestedAtMs: Date.now()" in control
     assert "praiseContext.animationExpected = data?.animationExpected === true" in ack_handler
-    assert "armPraiseRatingFallback(" in ack_handler
-    assert "Math.max(12000, remainingMs + 500)" in ack_handler
+    assert "const elapsedMs = Date.now() - pending.requestedAtMs" in ack_handler
+    assert "Math.max(0, 800 - elapsedMs)" in ack_handler
+    assert "queuePraiseRating(" in ack_handler
+
+    queue_rating = control[
+        control.index("const queuePraiseRating") :
+        control.index("const armPraiseRatingFallback")
+    ]
+    assert "handleNextRef.current('praise_end')" in queue_rating
+    assert "praiseRatingTimerRef.current = scheduleTimeout" in queue_rating
 
     request_advance = control[
         control.index("const requestAdvance") :

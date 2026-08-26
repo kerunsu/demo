@@ -191,6 +191,10 @@ class BehaviorTimeline:
     def _build_summary(self, training_session_id: str) -> SessionBehaviorSummary:
         from app.behavior.camera_config import load_camera_analysis_config, should_prefer_browser_for_report
         from app.behavior.emotion_scoring import select_attention_observations
+        from app.behavior.screen_interaction import (
+            load_screen_interaction_summary,
+            summary_for_question,
+        )
         cam_cfg = load_camera_analysis_config()
         prefer_browser = should_prefer_browser_for_report(cam_cfg)
         incomplete_factor = float(cam_cfg.get("attention_incomplete_factor", 0.7))
@@ -201,6 +205,19 @@ class BehaviorTimeline:
         all_attention = self.store.list_attention(training_session_id)
         all_language = self.store.list_language(training_session_id)
         all_emotion = self.store.list_emotion(training_session_id)
+        screen_interaction = load_screen_interaction_summary(training_session_id)
+        for window in windows:
+            analysis = dict(window.analysis_summary or {})
+            window_clicks = {
+                "schema_version": "screen-interaction-window-v1",
+                "tracking_status": screen_interaction.get("tracking_status"),
+                "available": bool(screen_interaction.get("available")),
+                **summary_for_question(screen_interaction, window.question_id),
+            }
+            if analysis.get("screen_interaction") != window_clicks:
+                analysis["screen_interaction"] = window_clicks
+                window.analysis_summary = analysis
+                self.store.save_window(window)
 
         use_attn = select_attention_observations(all_attention, prefer_browser)
         scores = [o.score for o in use_attn if o.data_quality != "MISSING"]
@@ -411,6 +428,7 @@ class BehaviorTimeline:
                 },
                 "response_covered_course_types": sorted(response_by_course.keys()),
             },
+            screen_interaction=screen_interaction,
             windows=[w.to_dict() for w in windows],
             limitations=limitations,
         )

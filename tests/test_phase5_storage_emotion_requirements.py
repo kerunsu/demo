@@ -4,6 +4,7 @@ import io
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 def _box(kind: bytes, payload: bytes) -> bytes:
@@ -408,23 +409,42 @@ def test_phase5_voice_health_exposes_unready_stt_without_false_green(monkeypatch
     assert "funasr" in body["error"]
 
 
-def test_phase5_child_dialogue_checks_voice_health_before_listening():
+def test_phase5_child_dialogue_uses_browser_speech_only():
     root = Path(__file__).resolve().parents[1]
     script = (root / "static/js/child_dialogue.js").read_text(encoding="utf-8")
-    assert "/api/v2/voice/health" in script
-    assert "语音识别不可用" in script
-    assert "prerollHasVoice" in script
+    assert "SpeechRecognition" in script
+    assert "startBrowserSpeechRecognition" in script
+    assert 'emitDialogueText(text, "browser-speech-recognition")' in script
+    assert "child_dialogue_audio" not in script
+    assert "/api/v2/voice/health" not in script
+    assert "FunASR" not in script
     assert "COOLDOWN_MS = 180" in script
 
 
-def test_child_dialogue_preserves_fast_answer_after_wake_tts():
+def test_child_dialogue_preserves_browser_transcript_during_tts():
     root = Path(__file__).resolve().parents[1]
     script = (root / "static/js/child_dialogue.js").read_text(encoding="utf-8")
     assert "const COOLDOWN_MS = 180;" in script
-    assert "const PREROLL_MS = 700;" in script
-    assert "function prerollHasVoice()" in script
+    assert "pendingTtsTranscript" in script
+    assert "isLikelyTtsEcho" in script
     assert "isBrowserSpeechBusy?.()" in script
     resume_body = script.split("function resumeAsrAfterTts()", 1)[1].split(
         "function maybeResumeListening()", 1
     )[0]
-    assert "clearPreroll()" not in resume_body
+    assert 'emitDialogueText(pendingTranscript, "browser-speech-recognition")' in resume_body
+
+
+def test_production_start_does_not_launch_local_voice_service():
+    root = Path(__file__).resolve().parents[1]
+    app_source = (root / "app.py").read_text(encoding="utf-8")
+    socket_source = (root / "app/dialogue/sockets.py").read_text(encoding="utf-8")
+    pipeline_source = (root / "app/core/pipelines/audio_pipeline.py").read_text(encoding="utf-8")
+    analyzer_config = yaml.safe_load(
+        (root / "config/analyzers.yaml").read_text(encoding="utf-8")
+    )
+    assert "start_voice_service(logger)" not in app_source
+    assert "from app.dialogue.stt import transcribe_audio_base64" not in socket_source
+    assert '"browser_speech_required"' in socket_source
+    assert "self._speech_enabled = False" in pipeline_source
+    assert analyzer_config["analyzers"]["speech"]["enabled"] is False
+    assert analyzer_config["matchers"]["speech"]["enabled"] is False

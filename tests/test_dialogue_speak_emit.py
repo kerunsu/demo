@@ -50,6 +50,7 @@ def test_emit_speak_skips_empty_text():
 
 def test_emit_speak_reserves_audio_only_and_sends_exactly_once(monkeypatch):
     robot = _install_robot(monkeypatch)
+    monkeypatch.setattr("app.dialogue.sockets.Config.BROWSER_SPEECH_RATE", 1.15)
     with patch("app.dialogue.sockets.emit") as emit:
         assert _emit_speak(
             room="session_abc_child",
@@ -66,6 +67,7 @@ def test_emit_speak_reserves_audio_only_and_sends_exactly_once(monkeypatch):
         assert payload["sessionId"] == "abc"
         assert payload["behaviorId"].startswith("dialogue-")
         assert payload["requestId"].startswith("dialogue-request-")
+        assert payload["speechRate"] == 1.15
         assert emit.call_args.kwargs.get("room") == "session_abc_child"
         assert robot.reservations[0]["session_id"] == "abc"
         assert robot.expected[0][0][0] == payload["behaviorId"]
@@ -171,7 +173,7 @@ def test_handle_utterance_awake_emits_dialogue_speak(monkeypatch):
         _handle_dialogue_utterance(
             session_id="sid1",
             child_text="这是什么",
-            page_context={"courseType": "pairing", "prompt": "选和上面一样的。"},
+            page_context={"courseType": "pairing", "prompt": "找出和这个一样的。"},
             room="session_sid1_child",
         )
         speak_calls = [
@@ -187,6 +189,91 @@ def test_handle_utterance_awake_emits_dialogue_speak(monkeypatch):
         ]
         assert result_calls
         assert result_calls[0].args[1]["ok"] is True
+
+
+def test_awake_course_miss_falls_through_to_dialogue(monkeypatch):
+    """已唤醒时，命名/拟声错答不能吞掉孩子随后发起的普通对话。"""
+    _install_robot(monkeypatch)
+
+    class FakeSvc:
+        def is_session_awake(self, *_args, **_kwargs):
+            return True
+
+        def _sync_history_for_context(self, *_args, **_kwargs):
+            return None
+
+        def generate_reply(self, text, **_kwargs):
+            assert text == "我想出去玩"
+            return {"reply": "可以先和老师说一声。", "strategy": "llm", "provider": "test"}
+
+    class FakeKw:
+        def try_auto_praise_from_transcript(self, *_args):
+            return False
+
+        def should_consume_dialogue_turn(self, *_args):
+            raise AssertionError("awake course miss must not consume the dialogue turn")
+
+    monkeypatch.setattr("app.dialogue.sockets.get_dialogue_service", lambda: FakeSvc())
+    monkeypatch.setattr(
+        "app.services.keyword_listen.get_keyword_listen_service",
+        lambda: FakeKw(),
+    )
+    with patch("app.dialogue.sockets.emit") as emit:
+        _handle_dialogue_utterance(
+            session_id="awake-naming",
+            child_text="我想出去玩",
+            page_context={"courseType": "naming", "target": "狗"},
+            room="session_awake-naming_child",
+        )
+
+    spoken = [
+        call.args[1]
+        for call in emit.call_args_list
+        if call.args and call.args[0] == "robot_speak_text"
+    ]
+    assert spoken[-1]["text"] == "可以先和老师说一声。"
+
+
+def test_sleeping_course_miss_is_still_consumed_before_wake_gate(monkeypatch):
+    """未唤醒的课程作答窗口仍消费错答，不把每个错答都送给 LLM。"""
+
+    class FakeSvc:
+        def is_session_awake(self, *_args, **_kwargs):
+            return False
+
+        def _sync_history_for_context(self, *_args, **_kwargs):
+            return None
+
+        def generate_reply(self, *_args, **_kwargs):
+            raise AssertionError("sleeping course miss must not reach LLM")
+
+    class FakeKw:
+        def try_auto_praise_from_transcript(self, *_args):
+            return False
+
+        def should_consume_dialogue_turn(self, *_args):
+            return True
+
+    monkeypatch.setattr("app.dialogue.sockets.get_dialogue_service", lambda: FakeSvc())
+    monkeypatch.setattr(
+        "app.services.keyword_listen.get_keyword_listen_service",
+        lambda: FakeKw(),
+    )
+    with patch("app.dialogue.sockets.emit") as emit:
+        _handle_dialogue_utterance(
+            session_id="sleeping-naming",
+            child_text="我不知道",
+            page_context={"courseType": "naming", "target": "狗"},
+            room="session_sleeping-naming_child",
+        )
+
+    results = [
+        call.args[1]
+        for call in emit.call_args_list
+        if call.args and call.args[0] == "child_dialogue_result"
+    ]
+    assert results[-1]["courseAnswer"] is True
+    assert results[-1]["keywordHit"] is False
 
 
 def test_handle_utterance_wake_ack_emits_speak(monkeypatch):

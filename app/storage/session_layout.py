@@ -77,7 +77,10 @@ class SessionLayout:
         return path
 
     def bind(self, session: SessionRef, human_dir_name: str) -> Path:
-        path = self.reserve(human_dir_name)
+        # Binding establishes identity only.  The first metadata/media write is
+        # responsible for creating the directory, so cancelled preflight probes
+        # do not leave empty session folders behind.
+        path = self.session_dir(human_dir_name)
         with self._lock:
             for key in (session.session_id, session.training_session_id, session.media_session_id):
                 if key:

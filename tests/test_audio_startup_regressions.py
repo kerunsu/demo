@@ -1,10 +1,34 @@
+import io
+import wave
+
 import numpy as np
 
+from app.dialogue import stt as dialogue_stt
 from app.core.audio.real_speech_analyzer import RealSpeechAnalyzer
 from app.core.matchers.real_speech_matcher import RealSpeechMatcher
+from app.core.pipelines.audio_pipeline import AudioPipeline
 from app.core.models import AnalysisMode, AnalysisResult, MatchResult
 from app.core.trigger import TriggerFactory, TriggerEvaluator, TriggerType
 from app.utils.server_runtime import resolve_server_run_options
+
+
+def _pcm16_wav(samples: np.ndarray, sample_rate: int = 16000) -> bytes:
+    pcm = (np.asarray(samples, dtype=np.float32).clip(-1, 1) * 32767).astype("<i2")
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm.tobytes())
+    return output.getvalue()
+
+
+def test_disabled_server_speech_pipeline_does_not_create_local_asr():
+    pipeline = AudioPipeline({"speech": {"enabled": False}})
+    assert pipeline.speech_analyzer is None
+    assert pipeline.speech_matcher is None
+    assert pipeline.initialize() is True
+    assert pipeline.process_realtime(np.ones(4096, dtype=np.float32), None) == ([], [])
 
 
 def test_audio_sample_rate_uses_audio_specific_config():
@@ -266,3 +290,88 @@ def test_ingest_preroll_is_consumed_by_next_asr_window(monkeypatch):
         assert analyzer.analyze_chunk(np.ones(4096, dtype=np.float32), None) is None
     assert analyzer.analyze_chunk(np.ones(4096, dtype=np.float32), None) == "done"
     assert calls and calls[0] >= 32000
+
+
+def test_dialogue_upload_noise_is_rejected_before_both_funasr_providers(monkeypatch):
+    """The child_dialogue_audio path must not bypass the raw-PCM noise gate."""
+    calls = []
+    monkeypatch.setattr(
+        dialogue_stt,
+        "_transcribe_local",
+        lambda *_a, **_k: calls.append("local") or "不存在的信息",
+    )
+    monkeypatch.setattr(
+        dialogue_stt,
+        "_transcribe_voice_service",
+        lambda *_a, **_k: calls.append("remote") or {
+            "ok": True,
+            "transcript": "不存在的信息",
+        },
+    )
+    rng = np.random.default_rng(1)
+    quiet = (rng.standard_normal(32000).astype(np.float32) * 0.01).clip(-0.03, 0.03)
+
+    result = dialogue_stt.transcribe_wav_bytes(_pcm16_wav(quiet))
+
+    assert calls == []
+    assert result["ok"] is False
+    assert result["error"] == "no_speech"
+    assert result["timing"]["vad"]["isSpeech"] is False
+
+
+def test_dialogue_upload_requires_sustained_voice_not_a_handling_click(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        dialogue_stt,
+        "_transcribe_local",
+        lambda *_a, **_k: calls.append("local") or "这是什么",
+    )
+    audio = np.zeros(32000, dtype=np.float32)
+    audio[8000:8800] = 0.2
+
+    result = dialogue_stt.transcribe_wav_bytes(_pcm16_wav(audio))
+
+    assert calls == []
+    assert result["error"] == "no_speech"
+    assert result["timing"]["vad"]["voicedRatio"] < 0.10
+
+
+def test_dialogue_upload_keeps_quiet_child_speech(monkeypatch):
+    monkeypatch.setattr(dialogue_stt, "_transcribe_local", lambda *_a, **_k: "老虎")
+    speech = np.sin(np.linspace(0, 80 * np.pi, 16000)).astype(np.float32) * 0.025
+
+    result = dialogue_stt.transcribe_wav_bytes(_pcm16_wav(speech))
+
+    assert result["ok"] is True
+    assert result["transcript"] == "老虎"
+    assert result["timing"]["vad"]["isSpeech"] is True
+
+
+def test_dialogue_upload_rejects_model_gibberish_and_tts_echo(monkeypatch):
+    speech = np.sin(np.linspace(0, 80 * np.pi, 16000)).astype(np.float32) * 0.2
+    wav_bytes = _pcm16_wav(speech)
+
+    monkeypatch.setattr(dialogue_stt, "_transcribe_local", lambda *_a, **_k: "Gyggny.")
+    gibberish = dialogue_stt.transcribe_wav_bytes(wav_bytes)
+    assert gibberish["ok"] is False
+    assert gibberish["error"] == "implausible_transcript"
+
+    monkeypatch.setattr(
+        dialogue_stt,
+        "_transcribe_local",
+        lambda *_a, **_k: "请告诉我这是什么",
+    )
+    echo = dialogue_stt.transcribe_wav_bytes(
+        wav_bytes,
+        echo_reference_text="请告诉我，这是什么？",
+    )
+    assert echo["ok"] is False
+    assert echo["error"] == "tts_echo"
+
+    monkeypatch.setattr(dialogue_stt, "_transcribe_local", lambda *_a, **_k: "老虎")
+    answer = dialogue_stt.transcribe_wav_bytes(
+        wav_bytes,
+        echo_reference_text="请告诉我，这是什么？",
+    )
+    assert answer["ok"] is True
+    assert answer["transcript"] == "老虎"

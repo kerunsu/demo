@@ -691,6 +691,11 @@
               </select>
               <div class="cc-tiny">立即生效并持久化；关闭时不会因环境语音误唤醒或突然播放确认音。</div>
             </div>
+            <div class="cc-field">
+              <label class="cc-field-label" for="ov-speech-rate">机器人语速：<strong id="ov-speech-rate-value">0.88×</strong></label>
+              <input class="cc-inp" id="ov-speech-rate" type="range" min="0.5" max="2" step="0.05" value="0.88" />
+              <div class="cc-tiny">从下一句话开始立即生效；课程提问、命名、拟声、智能体回复、吸引和夸奖统一使用。</div>
+            </div>
           </div>
           <div class="cc-toolbar" style="margin-top:12px;">
             <button type="button" class="cc-btn primary" id="btn-ov-apply-runtime" disabled>应用</button>
@@ -786,7 +791,7 @@
           <div>
             <div class="cc-breadcrumb">配置中心 / 语音与音频</div>
             <h1 class="cc-page-title">语音与音频</h1>
-            <p class="cc-page-subtitle">analyzers.speech / matchers.speech 常用项 · 媒资库见交互内容</p>
+            <p class="cc-page-subtitle">儿童端固定使用浏览器语音识别 · 本地分析参数只读保留</p>
           </div>
         </div>
         <div class="cc-card">
@@ -796,9 +801,9 @@
             <div class="cc-form-grid" id="speech-advanced-form" style="margin-top:10px;"></div>
           </details>
           <div class="cc-toolbar" style="margin-top:12px;">
-            <button type="button" class="cc-btn soft" id="btn-speech-mem">更新到内存</button>
-            <button type="button" class="cc-btn soft" id="btn-speech-save">保存到 YAML</button>
-            <button type="button" class="cc-btn primary" id="btn-speech-apply">发布应用</button>
+            <button type="button" class="cc-btn soft" id="btn-speech-mem" disabled>本地识别已关闭</button>
+            <button type="button" class="cc-btn soft" id="btn-speech-save" disabled>无需保存</button>
+            <button type="button" class="cc-btn primary" id="btn-speech-apply" disabled>浏览器识别已启用</button>
             <span class="cc-tiny" id="speech-dirty"></span>
           </div>
         </div>
@@ -879,13 +884,13 @@
 
         <section class="cc-card" style="margin-top:14px;">
           <div class="latency-focus-head">
-            <div><h2 class="cc-card-title">自然对话耗时</h2><p class="cc-tiny">停声截句 → 音频编码 → FunASR → 课程关键词/回复生成 → 浏览器开口。</p></div>
+            <div><h2 class="cc-card-title">自然对话耗时</h2><p class="cc-tiny">浏览器识别文本 → 课程关键词/回复生成 → 浏览器开口；旧会话仍显示本地识别阶段。</p></div>
             <div class="cc-badge gray" id="dialogue-round-count">0 轮</div>
           </div>
           <div class="dialogue-stage-grid" id="dialogue-stage-grid"></div>
           <div class="latency-table-wrap" style="margin-top:12px;">
             <table class="latency-table dialogue-table">
-              <thead><tr><th>时间/结果</th><th>停声截句</th><th>音频编码</th><th>FunASR</th><th>回复生成</th><th>收到到决策</th><th>TTS 启动</th></tr></thead>
+              <thead><tr><th>时间/结果</th><th>旧版停声截句</th><th>旧版音频编码</th><th>旧版本地识别</th><th>回复生成</th><th>收到到决策</th><th>TTS 启动</th></tr></thead>
               <tbody id="dialogue-latency-body"><tr><td colspan="7">等待新的自然对话日志…</td></tr></tbody>
             </table>
           </div>

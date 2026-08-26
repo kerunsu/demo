@@ -15,6 +15,13 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import text
 
 from app.config import BASE_DIR, Config
+from app.course_scope import (
+    canonical_course_type,
+    enabled_course_type_set,
+    enabled_course_types,
+    filter_course_payloads,
+    is_course_type_enabled,
+)
 from app.robot.config import COURSE_MAP_FILE
 from app.storage.repositories.course_preset_store import JsonCoursePresetStore
 from app.utils.logger import setup_logger
@@ -239,45 +246,60 @@ def _item_admin_dict(item: CourseItem) -> Dict[str, Any]:
     return d
 
 
-def _course_preset_catalog() -> tuple[List[Dict[str, Any]], Dict[int, Dict[str, Any]]]:
+def _course_preset_catalog() -> tuple[
+    List[Dict[str, Any]],
+    Dict[int, Dict[str, Any]],
+    Dict[int, Dict[str, Any]],
+]:
     catalog: List[Dict[str, Any]] = []
     by_id: Dict[int, Dict[str, Any]] = {}
+    all_by_id: Dict[int, Dict[str, Any]] = {}
     for course in Course.query.order_by(Course.id).all():
+        course_type = TYPE_CN_TO_EN.get(
+            course.course_type.name if course.course_type else '',
+            course.course_type.name if course.course_type else '',
+        )
         item = {
             'id': course.id,
             'title': course.title,
-            'type': TYPE_CN_TO_EN.get(
-                course.course_type.name if course.course_type else '',
-                course.course_type.name if course.course_type else '',
-            ),
+            'type': course_type,
             'typeName': course.course_type.name if course.course_type else None,
             'itemCount': len(course.items or []),
         }
+        all_by_id[course.id] = item
+        if not is_course_type_enabled(course_type):
+            continue
         catalog.append(item)
         by_id[course.id] = item
-    return catalog, by_id
+    return catalog, by_id, all_by_id
 
 
 def _course_preset_response() -> Dict[str, Any]:
     document = _COURSE_PRESET_STORE.get_document()
-    catalog, by_id = _course_preset_catalog()
+    catalog, by_id, all_by_id = _course_preset_catalog()
     presets = []
     for raw in document['presets']:
         preset = dict(raw)
-        missing = [course_id for course_id in preset['courseIds'] if course_id not in by_id]
+        missing = [course_id for course_id in preset['courseIds'] if course_id not in all_by_id]
+        disabled = [
+            course_id for course_id in preset['courseIds']
+            if course_id in all_by_id and course_id not in by_id
+        ]
         empty = [
             course_id for course_id in preset['courseIds']
             if course_id in by_id and by_id[course_id]['itemCount'] == 0
         ]
         preset['courses'] = [by_id[course_id] for course_id in preset['courseIds'] if course_id in by_id]
         preset['missingCourseIds'] = missing
+        preset['disabledCourseIds'] = disabled
         preset['emptyCourseIds'] = empty
-        preset['available'] = not missing and not empty
+        preset['available'] = not missing and not disabled and not empty
         preset['isDefault'] = raw['id'] == document['defaultPresetId']
         presets.append(preset)
     return {
         'success': True,
         'schemaVersion': document['schemaVersion'],
+        'enabledCourseTypes': list(enabled_course_types()),
         'defaultPresetId': document['defaultPresetId'],
         'presets': presets,
         'courseCatalog': catalog,
@@ -297,6 +319,14 @@ def _validated_course_preset_payload(data: Mapping[str, Any]) -> tuple[str, str,
     empty = [course.id for course in courses if not course.items]
     if empty:
         raise ValueError(f'课程没有课点: {", ".join(str(value) for value in empty)}')
+    disabled = [
+        course.id for course in courses
+        if not is_course_type_enabled(course.to_dict().get('type'))
+    ]
+    if disabled:
+        raise ValueError(
+            f'Demo 机仅允许模仿、配对和排序课程: {", ".join(str(value) for value in disabled)}'
+        )
     return (
         str(data.get('name') or ''),
         str(data.get('description') or ''),
@@ -386,6 +416,7 @@ def list_course_types():
                 'type': TYPE_CN_TO_EN.get(t.name, t.name),
             }
             for t in types
+            if is_course_type_enabled(TYPE_CN_TO_EN.get(t.name, t.name))
         ],
     })
 
@@ -405,9 +436,12 @@ def list_courses():
             return jsonify({'success': True, 'courses': []})
     mapped = _course_ids_with_mapping(_load_course_map())
     courses = q.order_by(Course.id).all()
+    course_payloads = filter_course_payloads(
+        [_course_admin_dict(course, mapped) for course in courses]
+    )
     return jsonify({
         'success': True,
-        'courses': [_course_admin_dict(c, mapped) for c in courses],
+        'courses': course_payloads,
     })
 
 
@@ -430,6 +464,12 @@ def create_course():
     ct = CourseType.query.get(type_id)
     if not ct:
         return jsonify({'success': False, 'error': '课型不存在'}), 404
+    resolved_type = canonical_course_type(TYPE_CN_TO_EN.get(ct.name, ct.name))
+    if not is_course_type_enabled(resolved_type):
+        return jsonify({
+            'success': False,
+            'error': 'Demo 机仅允许创建模仿、配对和排序课程',
+        }), 400
 
     course = Course(
         course_type_id=int(type_id),
@@ -767,7 +807,10 @@ def get_dialogue_phrases():
         'slots': global_slots,
         'globalInteraction': True,
     })
+    enabled_types = enabled_course_type_set()
     for type_key, label in TYPE_EN_TO_CN.items():
+        if canonical_course_type(type_key) not in enabled_types:
+            continue
         db_type = CourseType.query.filter_by(name=label).first()
         linked_courses = []
         if db_type:
@@ -907,10 +950,20 @@ def content_summary():
     from app.robot import get_robot_service
     from app.audio.manifest_io import list_types_missing_question
 
-    courses = Course.query.all()
-    items = CourseItem.query.all()
+    courses = [
+        course for course in Course.query.all()
+        if is_course_type_enabled(course.to_dict().get('type'))
+    ]
+    active_course_ids = {course.id for course in courses}
+    items = [
+        item for item in CourseItem.query.all()
+        if item.course_id in active_course_ids
+    ]
     mapped = _course_ids_with_mapping(_load_course_map())
-    missing_types = list_types_missing_question()
+    missing_types = [
+        course_type for course_type in list_types_missing_question()
+        if is_course_type_enabled(course_type)
+    ]
     # 兼容旧字段：列出属于缺提问课型的课程 id
     missing_question_ids = []
     for c in courses:
@@ -931,6 +984,7 @@ def content_summary():
     return jsonify({
         'success': True,
         'summary': {
+            'enabledCourseTypes': list(enabled_course_types()),
             'courseCount': len(courses),
             'itemCount': len(items),
             'emotionCount': len(list_emotion_files()),

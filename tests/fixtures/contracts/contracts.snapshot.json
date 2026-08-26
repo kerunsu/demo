@@ -9,7 +9,7 @@
   "runtimeImplicitRoutes": [
     "GET /static/<path:filename>"
   ],
-  "socketDecoratorCount": 69,
+  "socketDecoratorCount": 72,
   "blueprintPrefixes": {
     "robot_bp": "/api/robot",
     "media_bp": "/api/media",
@@ -229,6 +229,7 @@
     "child_agent_heartbeat",
     "child_dialogue_audio",
     "child_dialogue_control_state_request",
+    "child_dialogue_runtime_state",
     "child_dialogue_sleep",
     "child_dialogue_text",
     "child_media_agent_heartbeat",
@@ -286,6 +287,8 @@
     "stop_recording",
     "teacher_enter_control",
     "teacher_latency_probe",
+    "teacher_dialogue_sleep",
+    "teacher_dialogue_state_request",
     "teacher_dialogue_visibility",
     "teacher_dialogue_wake",
     "teacher_leave_control",
@@ -300,6 +303,7 @@
     "behavior_cancel",
     "behavior_completed",
     "behavior_trigger_rejected",
+    "browser_speech_rate_updated",
     "cancel_prepare_training_ack",
     "child_dialogue_result",
     "child_dialogue_control_state",
@@ -354,6 +358,8 @@
     "stop_recording_ack",
     "teacher_auth_error",
     "teacher_dialogue_control_ack",
+    "teacher_dialogue_control_state",
+    "teacher_dialogue_runtime_state",
     "teacher_control_rejected",
     "teacher_control_state",
     "teacher_enter_control",

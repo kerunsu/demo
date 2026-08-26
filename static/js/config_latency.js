@@ -111,7 +111,7 @@
     const stages = [
       ['vadSilenceTailMs', '停声截句'],
       ['audioEncodingMs', '音频编码'],
-      ['sttMs', 'FunASR'],
+      ['sttMs', '旧版本地识别'],
       ['replyGenerationMs', '回复生成'],
       ['clientTtsStartupMs', '浏览器开口'],
     ];

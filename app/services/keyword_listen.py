@@ -34,6 +34,7 @@ _TRAILING_PARTICLES = ('呀', '啊', '呢', '哦', '喔', '哟', '啦', '吧', '
 
 _ALIASES_PATH = Path(__file__).resolve().parents[2] / 'config' / 'onomatopoeia_aliases.yaml'
 _alias_cache: Optional[Dict[str, List[str]]] = None
+_phonetic_char_map_cache: Dict[str, str] = {}
 _alias_mtime: Optional[float] = None
 _alias_lock = threading.RLock()
 
@@ -56,7 +57,7 @@ def normalize_speech_text(text: Optional[str]) -> str:
 
 
 def _load_onomatopoeia_aliases(force: bool = False) -> Dict[str, List[str]]:
-    global _alias_cache, _alias_mtime
+    global _alias_cache, _alias_mtime, _phonetic_char_map_cache
     with _alias_lock:
         mtime: Optional[float] = None
         if _ALIASES_PATH.exists():
@@ -72,6 +73,7 @@ def _load_onomatopoeia_aliases(force: bool = False) -> Dict[str, List[str]]:
         ):
             return _alias_cache
         mapping: Dict[str, List[str]] = {}
+        phonetic_char_map: Dict[str, str] = {}
         if _ALIASES_PATH.exists():
             try:
                 with open(_ALIASES_PATH, 'r', encoding='utf-8') as fh:
@@ -92,11 +94,32 @@ def _load_onomatopoeia_aliases(force: bool = False) -> Dict[str, List[str]]:
                                     items.append(nv)
                         if items:
                             mapping[nk] = items
+                raw_groups = data.get('phonetic_groups') if isinstance(data, dict) else []
+                if isinstance(raw_groups, (list, tuple)):
+                    for raw_group in raw_groups:
+                        group = normalize_speech_text(str(raw_group))
+                        if len(group) < 2:
+                            continue
+                        representative = group[0]
+                        for char in group:
+                            phonetic_char_map[char] = representative
             except Exception as exc:  # noqa: BLE001
                 logger.warning('加载拟声别名失败: %s', exc)
         _alias_cache = mapping
+        _phonetic_char_map_cache = phonetic_char_map
         _alias_mtime = mtime
         return mapping
+
+
+def _phonetic_signature(text: Optional[str]) -> str:
+    """用可审阅的同音/近音字组生成匹配签名；未配置字符保持原样。"""
+    normalized = normalize_speech_text(text)
+    if not normalized:
+        return ''
+    _load_onomatopoeia_aliases()
+    with _alias_lock:
+        mapping = dict(_phonetic_char_map_cache)
+    return ''.join(mapping.get(char, char) for char in normalized)
 
 
 def _split_multi_target(text: Optional[str]) -> List[str]:
@@ -177,7 +200,7 @@ def resolve_answer_keywords(
 
 
 def find_keyword_hit(recognized: Optional[str], keywords: Sequence[str]) -> Optional[str]:
-    """规范化后包含匹配；更长短语优先，降低短词误伤。"""
+    """先做文字包含，再做同音/近音签名包含；更长短语优先。"""
     text = normalize_speech_text(recognized)
     if not text:
         return None
@@ -187,6 +210,17 @@ def find_keyword_hit(recognized: Optional[str], keywords: Sequence[str]) -> Opti
     )
     for kw in ordered:
         if kw and kw in text:
+            return kw
+    phonetic_text = _phonetic_signature(text)
+    for kw in ordered:
+        phonetic_keyword = _phonetic_signature(kw)
+        if phonetic_keyword and phonetic_keyword in phonetic_text:
+            logger.info(
+                'keyword_listen phonetic_hit text=%s keyword=%s signature=%s',
+                text,
+                kw,
+                phonetic_keyword,
+            )
             return kw
     return None
 

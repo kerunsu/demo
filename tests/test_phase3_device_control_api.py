@@ -82,9 +82,17 @@ def test_local_camera_discovery_requires_explicit_add(monkeypatch, phase3_app):
     from app.routes import capture_devices
 
     app, _ = phase3_app
-    monkeypatch.setattr(capture_devices, "discover_local_cameras", lambda: [
-        {"candidateId": "server-camera-3", "index": 3, "kind": "video", "name": "摄像头 3"}
-    ])
+    discovery_calls = []
+
+    def discover(*, skip_indexes=()):
+        discovery_calls.append(tuple(skip_indexes))
+        return [
+            {"candidateId": "server-camera-3", "index": 3, "kind": "video", "name": "摄像头 3"}
+        ]
+
+    monkeypatch.setattr(capture_devices, "discover_local_cameras", discover)
+    monkeypatch.setattr(capture_devices, "_candidate_cache_at", 0.0)
+    capture_devices._candidate_cache.clear()
     client = app.test_client()
 
     discovered = client.get("/api/v2/capture/devices/candidates")
@@ -98,5 +106,54 @@ def test_local_camera_discovery_requires_explicit_add(monkeypatch, phase3_app):
     assert device["deviceId"] == "server.camera.3"
     assert device["owner"] == "server"
     assert device["selector"] == {"index": 3}
+    # POST consumes the recent candidate instead of immediately reopening the
+    # same DirectShow camera for a second scan.
+    assert discovery_calls == [()]
 
     client.delete("/api/v2/capture/devices/server.camera.3")
+
+
+def test_discovery_does_not_reopen_an_already_configured_camera(monkeypatch, phase3_app):
+    from app.routes import capture_devices
+
+    app, _ = phase3_app
+    client = app.test_client()
+    created = client.post("/api/v2/capture/devices", json={
+        "deviceId": "server.camera.4",
+        "kind": "video",
+        "role": "primary_environment",
+        "owner": "server",
+        "selector": {"index": 4},
+        "required": False,
+        "enabled": True,
+        "capabilities": {"displayName": "环境摄像头"},
+    })
+    assert created.status_code == 201
+    observed = []
+
+    def discover(*, skip_indexes=()):
+        observed.append(set(skip_indexes))
+        return []
+
+    monkeypatch.setattr(capture_devices, "discover_local_cameras", discover)
+    discovered = client.get("/api/v2/capture/devices/candidates")
+    assert discovered.status_code == 200
+    assert observed == [{4}]
+    candidate = discovered.get_json()["candidates"][0]
+    assert candidate["configuredDeviceId"] == "server.camera.4"
+    assert candidate["probeSkipped"] == "configured_camera_not_reopened"
+
+    client.delete("/api/v2/capture/devices/server.camera.4")
+
+
+def test_add_candidate_requires_a_recent_discovery(monkeypatch, phase3_app):
+    from app.routes import capture_devices
+
+    app, _ = phase3_app
+    monkeypatch.setattr(capture_devices, "_candidate_cache_at", 0.0)
+    capture_devices._candidate_cache.clear()
+    response = app.test_client().post(
+        "/api/v2/capture/devices/candidates", json={"index": 5}
+    )
+    assert response.status_code == 409
+    assert response.get_json()["error"] == "camera_discovery_required"

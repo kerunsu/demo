@@ -260,6 +260,11 @@ class VisionPipeline(BasePipeline):
             self._pose_matcher._target_features = None
             self._pose_matcher._target_pose_name = "default"
         logger.debug("姿态比对目标已重置")
+
+    def reset_pose_stability(self, session_id: Optional[str] = None) -> None:
+        """Reset multi-frame pose hold state without removing the target."""
+        if self._pose_matcher and hasattr(self._pose_matcher, 'reset_stability'):
+            self._pose_matcher.reset_stability(session_id)
     
     def process_realtime(
         self,

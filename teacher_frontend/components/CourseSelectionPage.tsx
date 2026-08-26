@@ -247,7 +247,10 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
   const toggleCourse = (courseId: number) => {
     const course = courses.find(c => c.id === courseId);
     if (!course || course.items.length === 0) return;
-    setSelectedPresetId('');
+    const keepQuickAssessmentLayout = Boolean(
+      mode === 'assessment' && selectedPreset?.courseIds.includes(courseId),
+    );
+    if (!keepQuickAssessmentLayout) setSelectedPresetId('');
 
     const newSelected = new Map(selectedItems);
     const courseKey = courseId.toString();
@@ -465,15 +468,23 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
               const courseItemSet = selectedItems.get(course.id.toString());
               const selectedCount = courseItemSet ? courseItemSet.size : 0;
               const totalCount = course.items.length;
+              const compactQuickAssessmentCourse = Boolean(
+                mode === 'assessment'
+                && (viewedPreset || selectedPreset)?.courseIds.includes(course.id),
+              );
 
               return (
                 <div key={course.id} className="bg-white rounded-xl shadow-sm border-2 border-gray-200 overflow-hidden">
                   {/* 课程标题栏 */}
                   <div className="p-4 bg-gray-50 border-b border-gray-200">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => toggleCourse(course.id)}
+                      <button
+                        type="button"
+                        onClick={() => toggleCourse(course.id)}
+                        aria-pressed={Boolean(courseSelected)}
+                        className="flex items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                      >
+                        <span
                           className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
                             courseSelected
                               ? 'bg-indigo-600 border-indigo-600'
@@ -485,17 +496,24 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
                               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                             </svg>
                           )}
-                        </button>
-                        <h3 className="text-lg font-semibold text-gray-900">{course.title}</h3>
-                      </div>
+                        </span>
+                        <span>
+                          <span className="block text-lg font-semibold text-gray-900">{course.title}</span>
+                          {compactQuickAssessmentCourse && (
+                            <span className="mt-0.5 block text-xs text-gray-500">直接勾选整课，无需逐项打开</span>
+                          )}
+                        </span>
+                      </button>
                       <span className="text-sm text-gray-500">
-                        {selectedCount > 0 ? `已选 ${selectedCount}/${totalCount}` : `${totalCount} 项`}
+                        {compactQuickAssessmentCourse
+                          ? (courseSelected ? '已勾选' : '未勾选')
+                          : (selectedCount > 0 ? `已选 ${selectedCount}/${totalCount}` : `${totalCount} 项`)}
                       </span>
                     </div>
                   </div>
 
                   {/* 课程项列表 */}
-                  {course.items.length > 0 && (
+                  {course.items.length > 0 && !compactQuickAssessmentCourse && (
                     <div className="p-4">
                       <div className="grid grid-cols-3 gap-4">
                         {course.items.map(item => {
@@ -538,6 +556,11 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
                           );
                         })}
                       </div>
+                    </div>
+                  )}
+                  {compactQuickAssessmentCourse && (
+                    <div className="border-t border-gray-100 bg-white px-4 py-3 text-sm text-gray-600">
+                      勾选后自动使用本课程全部 {totalCount} 个评估项目。
                     </div>
                   )}
                 </div>

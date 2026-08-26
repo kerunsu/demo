@@ -75,8 +75,8 @@ def test_phrase_config_api_lists_ordering_and_saves(monkeypatch, tmp_path):
             return self
 
         def all(self):
-            if self.course_type_id == "命名":
-                return [type("CourseRow", (), {"id": 7, "title": "动物命名"})()]
+            if self.course_type_id == "配对":
+                return [type("CourseRow", (), {"id": 9, "title": "配对课程"})()]
             return []
 
     monkeypatch.setattr(
@@ -101,13 +101,16 @@ def test_phrase_config_api_lists_ordering_and_saves(monkeypatch, tmp_path):
     assert payload["success"] is True
     ordering = next(x for x in payload["courseTypes"] if x["type"] == "ordering")
     assert len(ordering["slots"]) == 11
-    naming = next(x for x in payload["courseTypes"] if x["type"] == "naming")
-    assert naming["courseCount"] == 1
-    assert naming["courses"] == [{"id": 7, "title": "动物命名"}]
-    selected = naming["slots"][0]["library"][:1]
+    pairing = next(x for x in payload["courseTypes"] if x["type"] == "pairing")
+    assert pairing["courseCount"] == 1
+    assert pairing["courses"] == [{"id": 9, "title": "配对课程"}]
+    assert {item["type"] for item in payload["courseTypes"]} == {
+        "global", "mimic", "pairing", "ordering"
+    }
+    selected = pairing["slots"][0]["library"][:1]
 
     saved = client.put(
-        "/api/config/phrases/question/naming", json={"selected": selected}
+        "/api/config/phrases/question/pairing", json={"selected": selected}
     )
     assert saved.status_code == 200
     assert saved.get_json()["slot"]["selected"] == selected

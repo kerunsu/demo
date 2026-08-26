@@ -101,7 +101,13 @@ class AnalyzerConfigManager:
                 'pose': {
                     'mode': 'real',
                     'enabled': True,
-                    'threshold': 0.95
+                    'threshold': 0.72,
+                    'min_keypoint_visibility': 0.35,
+                    'action_sigma': 0.55,
+                    'allow_mirror': True,
+                    'stable_frames': 4,
+                    'stable_hold_seconds': 0.6,
+                    'max_frame_gap_seconds': 0.55,
                 },
                 'speech': {
                     'mode': None,

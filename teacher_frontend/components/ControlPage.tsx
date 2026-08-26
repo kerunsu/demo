@@ -527,6 +527,8 @@ export function ControlPage({
   const trainingSessionIdRef = useRef<string | null>(initialTrainingSessionId);
   const currentSessionIdRef = useRef<string | null>(null);
   const currentQuestionIdRef = useRef<string | null>(null);
+  const dialogueControlRequestRef = useRef<string | null>(null);
+  const dialogueControlTimerRef = useRef<number | null>(null);
   const interactiveQuestionIdRef = useRef<string | null>(null);
   const interactiveNextPendingRef = useRef<{
     courseType: 'pairing' | 'ordering';
@@ -755,6 +757,7 @@ export function ControlPage({
   const queuePraiseRating = useCallback((
     context: NonNullable<typeof praiseRequestContextRef.current>,
     notice?: string,
+    delayMs = 0,
   ) => {
     if (
       currentCourseIndexRef.current !== context.courseIndex ||
@@ -778,11 +781,23 @@ export function ControlPage({
       };
     }
     if (notice) setPlaybackNotice(notice);
-    scheduleTimeout(flushDeferredAutoQuestion, 0);
+    clearScheduledTimeout(praiseRatingTimerRef.current);
+    praiseRatingTimerRef.current = scheduleTimeout(() => {
+      praiseRatingTimerRef.current = null;
+      const scheduled = pendingPraiseAdvanceRef.current;
+      if (!scheduled || scheduled.requestId !== context.requestId) return;
+      pendingPraiseAdvanceRef.current = null;
+      if (
+        currentCourseIndexRef.current === scheduled.courseIndex &&
+        currentItemIndexRef.current === scheduled.itemIndex &&
+        (!scheduled.sessionId || currentSessionIdRef.current === scheduled.sessionId)
+      ) {
+        handleNextRef.current('praise_end');
+      }
+    }, Math.max(0, delayMs));
   }, [
     clearPraiseRequestContext,
     clearScheduledTimeout,
-    flushDeferredAutoQuestion,
     scheduleTimeout,
   ]);
 
@@ -1452,17 +1467,61 @@ export function ControlPage({
         });
       });
       socket.on('teacher_dialogue_control_ack', (data: any) => {
+        const activeRequestId = dialogueControlRequestRef.current;
+        if (data?.requestId && activeRequestId && data.requestId !== activeRequestId) return;
+        if (dialogueControlTimerRef.current) {
+          window.clearTimeout(dialogueControlTimerRef.current);
+          dialogueControlTimerRef.current = null;
+        }
+        dialogueControlRequestRef.current = null;
         setDialogueControlBusy(false);
         if (!data?.success) {
-          setDialogueControlNotice(`对话控制失败：${data?.error || 'unknown'}`);
+          const friendlyError: Record<string, string> = {
+            child_not_connected: '儿童端尚未连接，请先打开当前儿童端页面',
+            session_id_missing: '当前没有有效课程，请先进入课程',
+            session_not_found: '当前课程已结束，请重新进入课程',
+            active_course_missing: '当前没有有效课程，请先进入课程',
+            session_mismatch: '课程状态刚刚发生变化，请再点击一次',
+          };
+          setDialogueControlNotice(
+            friendlyError[String(data?.error || '')] || '操作未完成，请确认儿童端在线后重试',
+          );
           return;
         }
         if (data.action === 'wake') {
           setDialogueAwake(data.awake === true);
-          setDialogueControlNotice('智能体已唤醒（未播放提示音）');
+          setDialogueControlNotice('智能体已唤醒，正在确认儿童端聆听状态…');
+        } else if (data.action === 'sleep') {
+          setDialogueAwake(false);
+          setDialogueControlNotice('智能体已关闭；课程语音识别仍可正常使用');
         } else if (data.action === 'visibility') {
           setDialoguePanelVisible(data.visible !== false);
           setDialogueControlNotice(data.visible === false ? '儿童端对话窗口已隐藏' : '儿童端对话窗口已显示');
+        }
+      });
+      socket.on('teacher_dialogue_control_state', (data: any) => {
+        const sessionId = normalizeId(data?.sessionId);
+        if (!data?.success || (sessionId && sessionId !== currentSessionIdRef.current)) return;
+        setDialogueAwake(data.awake === true);
+        setDialoguePanelVisible(data.visible !== false);
+      });
+      socket.on('teacher_dialogue_runtime_state', (data: any) => {
+        const sessionId = normalizeId(data?.sessionId);
+        if (!data?.success || (sessionId && sessionId !== currentSessionIdRef.current)) return;
+        const awake = data.awake === true;
+        setDialogueAwake(awake);
+        if (!awake) {
+          setDialogueControlNotice(
+            data.reason === 'context_switch'
+              ? '题目已切换，智能体已自动关闭；需要时可再次唤醒'
+              : '智能体已关闭',
+          );
+        } else if (data.listening === true) {
+          setDialogueControlNotice('智能体已唤醒，儿童端正在聆听');
+        } else if (data.microphoneBlocked === true) {
+          setDialogueControlNotice('智能体已唤醒；请在儿童端允许麦克风，或点击“开始自动聆听”');
+        } else {
+          setDialogueControlNotice('智能体已唤醒，儿童端正在恢复聆听…');
         }
       });
 
@@ -1489,6 +1548,13 @@ export function ControlPage({
         setSocketConnected(false);
         setTeacherLatencyMs(null);
         setControlRole('unknown');
+        if (dialogueControlTimerRef.current) {
+          window.clearTimeout(dialogueControlTimerRef.current);
+          dialogueControlTimerRef.current = null;
+        }
+        dialogueControlRequestRef.current = null;
+        setDialogueControlBusy(false);
+        setDialogueControlNotice('连接暂时中断，恢复后可重新操作');
         if (claimControlTimerRef.current) {
           clearTimeout(claimControlTimerRef.current);
           claimControlTimerRef.current = null;
@@ -1748,17 +1814,23 @@ export function ControlPage({
           contentRequestRef.current.status = 'accepted';
         }
         if (pending.intent === 'praise') {
-          const praiseContext = praiseRequestContextRef.current;
-          if (praiseContext?.requestId === requestId) {
-            praiseContext.sessionId = ackSessionId || praiseContext.sessionId;
-            praiseContext.behaviorId = behaviorId;
-            praiseContext.animationExpected = data?.animationExpected === true;
-            armPraiseRatingFallback(
-              praiseContext,
-              praiseContext.animationExpected
-                ? Math.max(12000, remainingMs + 500)
-                : Math.max(3200, remainingMs + 500),
-            );
+          if (data?.teacherRatingRequired === false) {
+            // 配对/排序的教师手动表扬播放完整行为包后回到当前题目，
+            // 不进入普通课程的评分/推进流程。
+            clearPraiseRequestContext(requestId);
+          } else {
+            const praiseContext = praiseRequestContextRef.current;
+            if (praiseContext?.requestId === requestId) {
+              praiseContext.sessionId = ackSessionId || praiseContext.sessionId;
+              praiseContext.behaviorId = behaviorId;
+              praiseContext.animationExpected = data?.animationExpected === true;
+              const elapsedMs = Date.now() - pending.requestedAtMs;
+              queuePraiseRating(
+                praiseContext,
+                undefined,
+                Math.max(0, 800 - elapsedMs),
+              );
+            }
           }
         }
 
@@ -2342,7 +2414,7 @@ export function ControlPage({
             fallbackTimerId: null,
           };
           praiseRequestContextRef.current = praiseContext;
-          armPraiseRatingFallback(praiseContext, data.hasAnimation ? 12000 : 3200);
+          queuePraiseRating(praiseContext);
           return;
         }
 
@@ -2386,8 +2458,8 @@ export function ControlPage({
         const courseIdx = currentCourseIndexRef.current;
         const current = selected?.[courseIdx];
 
-        // 配对/排序课程：表扬应当仅触发音频，不应进入“表扬视频结束 -> 自动下一题”链路。
-        // 这里做兜底，避免互动课的自动反馈动画结束事件导致跳题。
+        // 配对/排序课程仍播放完整语音、表情、动作和动画，但结束后回到
+        // 当前题目，不进入“表扬视频结束 -> 评分/下一题”链路。
         const currentType = current?.course?.type;
         if (currentType === 'pairing' || currentType === 'ordering') {
           console.log('🛡️ 忽略交互课的 behavior_animation_ended:', currentType);
@@ -2429,6 +2501,11 @@ export function ControlPage({
       interactiveNextPendingRef.current = null;
       pendingPraiseAdvanceRef.current = null;
       praiseRatingTimerRef.current = null;
+      if (dialogueControlTimerRef.current) {
+        window.clearTimeout(dialogueControlTimerRef.current);
+        dialogueControlTimerRef.current = null;
+      }
+      dialogueControlRequestRef.current = null;
       deferredManualPlayRef.current = null;
       const leavingTrainingId = trainingSessionIdRef.current;
       const leavingStudentId = selectedStudentRef.current
@@ -3050,42 +3127,103 @@ export function ControlPage({
     }
   }, [currentSessionId]);
 
-  const wakeDialogueAgent = useCallback(() => {
+  const toggleDialogueAgent = useCallback(() => {
     const activeSocket = socketRef.current;
     const sessionId = currentSessionIdRef.current;
-    const trainingId = trainingSessionIdRef.current;
-    if (!activeSocket?.connected || !sessionId || !trainingId) {
-      setDialogueControlNotice('对话控制不可用：课程会话尚未连接');
+    if (!activeSocket?.connected || !sessionId) {
+      setDialogueControlNotice('当前没有有效课程，或儿童端尚未连接');
       return;
     }
+    const selected = selectedCourseItemsRef.current[currentCourseIndexRef.current];
+    if (!selected && !dialogueAwake) {
+      setDialogueControlNotice('当前没有有效课程，请先进入课程');
+      return;
+    }
+    const item = selected?.items?.[currentItemIndexRef.current] || null;
+    const action = dialogueAwake ? 'sleep' : 'wake';
+    const requestId = createClientRequestId(`dialogue-${action}`);
+    if (dialogueControlTimerRef.current) {
+      window.clearTimeout(dialogueControlTimerRef.current);
+    }
+    dialogueControlRequestRef.current = requestId;
     setDialogueControlBusy(true);
-    setDialogueControlNotice('正在唤醒智能体…');
-    activeSocket.emit('teacher_dialogue_wake', {
+    setDialogueControlNotice(dialogueAwake ? '正在关闭智能体…' : '正在唤醒智能体…');
+    activeSocket.emit(dialogueAwake ? 'teacher_dialogue_sleep' : 'teacher_dialogue_wake', {
       sessionId,
-      trainingSessionId: trainingId,
+      trainingSessionId: trainingSessionIdRef.current || undefined,
       questionId: currentQuestionIdRef.current,
+      requestId,
       clientTimestamp: Date.now(),
+      ...(!dialogueAwake && selected ? {
+        pageContext: {
+          courseId: selected.courseId,
+          courseType: selected.course?.type,
+          itemId: item?.id ?? null,
+          questionId: currentQuestionIdRef.current,
+          target: item?.speechTarget || item?.name || selected.course?.title || '',
+          speechTarget: item?.speechTarget || '',
+          objectName: item?.name || selected.course?.title || '',
+        },
+      } : {}),
     });
-  }, []);
+    dialogueControlTimerRef.current = window.setTimeout(() => {
+      if (dialogueControlRequestRef.current !== requestId) return;
+      dialogueControlRequestRef.current = null;
+      dialogueControlTimerRef.current = null;
+      setDialogueControlBusy(false);
+      setDialogueControlNotice('暂未收到儿童端回执，按钮已恢复，可确认连接后重试');
+    }, 4000);
+  }, [dialogueAwake]);
 
   const toggleDialoguePanel = useCallback(() => {
     const activeSocket = socketRef.current;
     const sessionId = currentSessionIdRef.current;
     const trainingId = trainingSessionIdRef.current;
-    if (!activeSocket?.connected || !sessionId || !trainingId) {
+    if (!activeSocket?.connected || !sessionId) {
       setDialogueControlNotice('对话窗口控制不可用：课程会话尚未连接');
       return;
     }
+    const requestId = createClientRequestId('dialogue-visibility');
+    if (dialogueControlTimerRef.current) {
+      window.clearTimeout(dialogueControlTimerRef.current);
+    }
+    dialogueControlRequestRef.current = requestId;
     setDialogueControlBusy(true);
     setDialogueControlNotice('正在同步儿童端界面…');
     activeSocket.emit('teacher_dialogue_visibility', {
       sessionId,
-      trainingSessionId: trainingId,
+      trainingSessionId: trainingId || undefined,
       questionId: currentQuestionIdRef.current,
       visible: !dialoguePanelVisible,
+      requestId,
       clientTimestamp: Date.now(),
     });
+    dialogueControlTimerRef.current = window.setTimeout(() => {
+      if (dialogueControlRequestRef.current !== requestId) return;
+      dialogueControlRequestRef.current = null;
+      dialogueControlTimerRef.current = null;
+      setDialogueControlBusy(false);
+      setDialogueControlNotice('暂未收到儿童端窗口回执，按钮已恢复，可重试');
+    }, 4000);
   }, [dialoguePanelVisible]);
+
+  useEffect(() => {
+    const activeSocket = socketRef.current;
+    const sessionId = currentSessionIdRef.current;
+    if (!socketConnected || !activeSocket?.connected || !sessionId) return;
+    const selected = selectedCourseItemsRef.current[currentCourseIndexRef.current];
+    const item = selected?.items?.[currentItemIndexRef.current] || null;
+    activeSocket.emit('teacher_dialogue_state_request', {
+      sessionId,
+      trainingSessionId: trainingSessionIdRef.current || undefined,
+      pageContext: {
+        courseId: selected?.courseId,
+        courseType: selected?.course?.type,
+        itemId: item?.id ?? null,
+        questionId: currentQuestionIdRef.current,
+      },
+    });
+  }, [socketConnected, currentSessionId, currentQuestionId]);
 
   // 只读观察模式下点击"接管控制"：重新发起控制权申请。
   // 服务端 TeacherControlRegistry 对同一教师的旧连接会替换其租约，
@@ -3541,16 +3679,26 @@ export function ControlPage({
     }
   };
 
-  const probeReportStatus = async (ts: string) => {
+  const probeReportStatus = async (ts: string, ensureGenerated = false) => {
     try {
-      // 触发生成（供 /server 审核），不作为教师可见依据
-      await fetch(`${API_BASE}/api/report/${ts}/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ autoFinalize: false, soft: true }),
-      });
-      const statusRes = await fetch(`${API_BASE}/api/report/${ts}/review-status`);
-      const statusJson = await statusRes.json();
+      const readStatus = async () => {
+        const response = await fetch(`${API_BASE}/api/report/${ts}/review-status`);
+        return response.json();
+      };
+      let statusJson = await readStatus();
+      // 课程结束时只在报告尚不存在时生成一次；之后的 2s 定时器只读取
+      // 审核状态，避免把同一份 PARTIAL 报告反复广播为新提醒。
+      if (
+        ensureGenerated &&
+        (!statusJson?.success || statusJson?.data?.publicationStatus === 'none')
+      ) {
+        await fetch(`${API_BASE}/api/report/${ts}/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ autoFinalize: false, soft: true }),
+        });
+        statusJson = await readStatus();
+      }
       if (statusJson?.success && statusJson.data) {
         const pub = statusJson.data.publicationStatus === 'published';
         setReportPublished(pub);
@@ -3618,7 +3766,7 @@ export function ControlPage({
         const ts = await finalizeTraining();
         if (cancelled) return;
         const id = ts || trainingSessionIdRef.current;
-        if (id) await probeReportStatus(id);
+        if (id) await probeReportStatus(id, true);
       } catch (e) {
         console.warn('课程完成自动结束失败:', e);
       }
@@ -3865,16 +4013,18 @@ export function ControlPage({
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={wakeDialogueAgent}
-              disabled={dialogueControlBusy || !socketConnected || controlRole === 'observer' || !currentSessionId}
-              className="rounded-lg bg-sky-600 px-3 py-2 text-sm text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={toggleDialogueAgent}
+              disabled={dialogueControlBusy || !socketConnected || !currentSessionId}
+              className={`rounded-lg px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50 ${
+                dialogueAwake ? 'bg-rose-600 hover:bg-rose-700' : 'bg-sky-600 hover:bg-sky-700'
+              }`}
             >
-              唤醒智能体
+              {dialogueAwake ? '关闭智能体' : '唤醒智能体'}
             </button>
             <button
               type="button"
               onClick={toggleDialoguePanel}
-              disabled={dialogueControlBusy || !socketConnected || controlRole === 'observer' || !currentSessionId}
+              disabled={dialogueControlBusy || !socketConnected || !currentSessionId}
               className="rounded-lg bg-white px-3 py-2 text-sm text-sky-800 ring-1 ring-inset ring-sky-300 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {dialoguePanelVisible ? '隐藏对话窗口' : '显示对话窗口'}

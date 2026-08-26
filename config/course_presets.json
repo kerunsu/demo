@@ -3,15 +3,13 @@
   "presets": [
     {
       "courseIds": [
-        2,
-        3,
+        1,
         9,
-        10,
-        11
+        10
       ],
-      "description": "命名、拟声、配对、排序、社交",
+      "description": "Demo 机使用模仿、配对和排序课程",
       "id": "quick-core",
-      "name": "快速课程方案"
+      "name": "模仿、配对与排序课程方案"
     }
   ],
   "schemaVersion": 1

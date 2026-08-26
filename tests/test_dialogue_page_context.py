@@ -25,7 +25,7 @@ def test_build_page_context_text_includes_option_visuals():
     text = svc.build_page_context_text(
         {
             "courseType": "pairing",
-            "prompt": "选和上面一样的。",
+            "prompt": "找出和这个一样的。",
             "target": "草莓",
             "targetDescription": "一颗红色草莓，上面有绿色叶子",
             "options": [
@@ -76,7 +76,7 @@ def test_build_page_context_text_includes_options_and_rule():
     text = svc.build_page_context_text(
         {
             "courseType": "pairing",
-            "prompt": "选和上面一样的。",
+            "prompt": "找出和这个一样的。",
             "target": "绿色棱柱",
             "options": [
                 {"id": "a", "label": "椅子"},
@@ -93,7 +93,7 @@ def test_build_page_context_text_includes_options_and_rule():
     assert "课型：pairing" in text
     assert "玩法：找一样的图片" in text
     assert "现在是第 3/15 题" in text
-    assert "孩子听到的问题：选和上面一样的。" in text
+    assert "孩子听到的问题：找出和这个一样的。" in text
     assert "上面的图片：绿色棱柱" in text
     assert "下面从左到右的图片：" in text
     assert "下面第1张：椅子" in text
@@ -197,7 +197,7 @@ def test_page_context_store_overwrite_on_naming_after_pairing():
             "questionIndex": 1,
             "target": "绿色棱柱",
             "options": [{"label": "椅子"}, {"label": "绿色棱柱"}],
-            "prompt": "选和上面一样的。",
+            "prompt": "找出和这个一样的。",
         },
     )
     # 模拟 play_resource 命名：先清再写
@@ -347,7 +347,7 @@ def test_build_page_context_strips_filename_and_wupin_labels():
     text = svc.build_page_context_text(
         {
             "courseType": "pairing",
-            "prompt": "选和上面一样的。",
+            "prompt": "找出和这个一样的。",
             "target": "物品064",
             "options": [
                 {"id": "a", "label": "物品064"},
@@ -447,7 +447,9 @@ def test_encourage_pools_match_demorobot_style():
     pairing = bank["encourage"]["pairing"]
     ordering = bank["encourage"]["ordering"]
     assert "没关系，再试一次" in pairing
-    assert "先找和上面最像的那一张。" in pairing
+    assert "先找和这个最像的那一张。" in pairing
+    assert all("上面" not in line for line in pairing)
+    assert all("上面" not in line for line in bank["hint"]["pairing"])
     assert "我们慢慢来，先比较，再选择。" in ordering
     assert bank["encourage"]["matching"] == pairing
     assert bank["encourage"]["sequencing"] == ordering
@@ -656,6 +658,11 @@ def test_parse_wake_utterance_variants():
     from app.dialogue.service import is_wake_phrase, parse_wake_utterance
 
     for text in (
+        "麦麦",
+        "卖卖",
+        "买卖",
+        "妹妹",
+        "慢慢",
         "麦麦，麦麦",
         "麦麦麦麦",
         "麦麦 麦麦",
@@ -703,20 +710,23 @@ def test_parse_wake_utterance_variants():
     assert matched is True
     assert "下面第一张" in rem
 
-    # 过短 / 无关：不应唤醒
+    matched, rem = parse_wake_utterance("买卖，小狗怎么叫")
+    assert matched is True
+    assert rem == "小狗怎么叫"
+
+    matched, rem = parse_wake_utterance("买卖东西")
+    assert matched is True
+    assert rem == "东西"
+
+    # 单字、句中出现或 ma 音常见称呼：不应唤醒
     for text in (
         "你好",
         "小猫叫",
-        "妹妹",
-        "卖卖",
-        "麦麦",
-        "慢慢",
         "妈妈",
         "你好麦麦",
         "今天天气怎么样",
-        "妹妹你好吗",
         "我家有一只妹妹",
-        "买卖东西",
+        "我想出去玩买卖",
         "你慢慢说",
         "这是什么吗",
     ):
@@ -765,3 +775,61 @@ def test_awake_cleared_on_question_fingerprint_change():
     svc.generate_reply("下面第一张是什么", session_id="wake_sid", page_context=q2)
     assert svc.is_session_awake("wake_sid", q2) is False
     assert "wake_sid" not in svc._awake_fp
+
+
+def test_awake_survives_late_target_and_option_enrichment_for_same_question():
+    """同一题的图片语义晚到不能把教师刚设置的唤醒清掉。"""
+    svc = DialogueService.__new__(DialogueService)
+    svc._history = {}
+    svc._context_fp = {}
+    svc._awake_fp = {}
+
+    initial = {
+        "courseType": "pairing",
+        "questionId": "q-stable",
+        "itemId": 9,
+        "questionIndex": 1,
+    }
+    enriched = {
+        **initial,
+        "target": "草莓",
+        "options": [{"label": "草莓"}, {"label": "菠萝"}],
+        "prompt": "找出和这个一样的。",
+    }
+    svc.set_awake("stable-session", initial)
+    assert svc.is_session_awake("stable-session", enriched) is True
+
+
+def test_onomatopoeia_context_requires_vocal_imitation_not_clicking():
+    svc = DialogueService.__new__(DialogueService)
+    text = svc.build_page_context_text({
+        "courseType": "onomatopoeia",
+        "questionId": "sound-1",
+        "itemId": 3,
+        "objectName": "小狗",
+        "target": "汪汪",
+    })
+
+    assert "让儿童开口模仿声音" in text
+    assert "练习对象：小狗" in text
+    assert "练习声音：汪汪" in text
+    assert "禁止说“点一张图”" in text
+    assert "拟声课的目标是让儿童开口模仿声音" in SYSTEM_PROMPT
+
+
+def test_onomatopoeia_reply_guard_replaces_visual_selection_with_speaking():
+    from app.dialogue.service import _align_onomatopoeia_reply
+
+    context = {
+        "courseType": "onomatopoeia",
+        "objectName": "小狗",
+        "speechTarget": "汪汪",
+    }
+    reply = _align_onomatopoeia_reply("请点一张图片。", context)
+    assert reply == "汪汪，跟麦麦说一次。"
+    assert "点" not in reply
+    assert "图片" not in reply
+
+    generic = _align_onomatopoeia_reply("很好。", context)
+    assert "汪汪" in generic
+    assert "说一次" in generic

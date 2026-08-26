@@ -35,7 +35,7 @@ class MotionPlayer:
         self._osc_ip = osc_ip
         self._osc_port = osc_port
         self._is_playing = False
-        self._stop_flag = False
+        self._stop_event = threading.Event()
         self._playback_thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         
@@ -53,7 +53,8 @@ class MotionPlayer:
     @property
     def is_playing(self) -> bool:
         """是否正在播放"""
-        return self._is_playing
+        with self._lock:
+            return self._is_playing
     
     def send_frame(
         self,
@@ -100,11 +101,6 @@ class MotionPlayer:
         Returns:
             是否成功开始播放
         """
-        with self._lock:
-            if self._is_playing:
-                logger.warning("⚠️ 已有动作正在播放")
-                return False
-        
         # 读取动作数据（兼容旧格式）
         frames = get_scaled_motion_frames(motion_name)
         if not frames or len(frames) == 0:
@@ -114,15 +110,21 @@ class MotionPlayer:
         logger.info(f"▶️ 播放动作 '{motion_name}' ({len(frames)} 帧)")
         
         # 启动播放线程
-        self._is_playing = True
-        self._stop_flag = False
-        self._playback_thread = threading.Thread(
+        stop_event = threading.Event()
+        with self._lock:
+            # 与 Robot Runtime 一致：新动作直接接管，不等待待机缓冲线程。
+            self._stop_event.set()
+            self._stop_event = stop_event
+            self._is_playing = True
+        thread = threading.Thread(
             target=self._playback_loop,
-            args=(motion_name, frames, on_complete),
+            args=(motion_name, frames, on_complete, stop_event),
             daemon=True,
             name=f"MotionPlayer-{motion_name}"
         )
-        self._playback_thread.start()
+        with self._lock:
+            self._playback_thread = thread
+        thread.start()
         
         return True
     
@@ -130,7 +132,8 @@ class MotionPlayer:
         self, 
         motion_name: str, 
         frames: List[Dict[str, Any]], 
-        on_complete: Optional[Callable]
+        on_complete: Optional[Callable],
+        stop_event: threading.Event,
     ) -> None:
         """
         播放循环（在独立线程中运行）
@@ -144,7 +147,7 @@ class MotionPlayer:
         frame_index = 0
         
         try:
-            while frame_index < len(frames) and not self._stop_flag:
+            while frame_index < len(frames) and not stop_event.is_set():
                 frame = frames[frame_index]
                 current_time = time.time() * 1000 - start_time
                 frame_time = frame['time']
@@ -152,9 +155,10 @@ class MotionPlayer:
                 # 等待到达帧时间
                 if frame_time > current_time:
                     sleep_time = (frame_time - current_time) / 1000.0
-                    time.sleep(sleep_time)
+                    if stop_event.wait(sleep_time):
+                        break
                 
-                if self._stop_flag:
+                if stop_event.is_set():
                     break
                 
                 # 发送帧数据
@@ -164,13 +168,16 @@ class MotionPlayer:
                 )
                 frame_index += 1
             
-            if not self._stop_flag:
+            if not stop_event.is_set():
                 logger.info(f"✓ 动作 '{motion_name}' 播放完成")
         except Exception as e:
             logger.error(f"播放过程出错: {e}")
         finally:
-            self._is_playing = False
-            if on_complete and not self._stop_flag:
+            with self._lock:
+                if self._stop_event is stop_event:
+                    self._is_playing = False
+                    self._playback_thread = None
+            if on_complete and not stop_event.is_set():
                 try:
                     on_complete()
                 except Exception as e:
@@ -180,14 +187,10 @@ class MotionPlayer:
         """停止播放"""
         with self._lock:
             if self._is_playing:
-                self._stop_flag = True
+                self._stop_event.set()
+                self._is_playing = False
                 logger.info("⏹️ 播放已停止")
-        
-        # 等待播放线程结束
-        if self._playback_thread and self._playback_thread.is_alive():
-            self._playback_thread.join(timeout=1.0)
-        
-        self._is_playing = False
+        # 不 join：教师的新动作可立即下发，旧线程由自己的 stop_event 退出。
     
     def send_realtime(self, pose_data: Dict[str, float]) -> None:
         """

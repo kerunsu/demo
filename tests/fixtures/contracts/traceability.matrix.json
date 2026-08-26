@@ -1632,6 +1632,13 @@
         "behaviorFixture": "partial; see contract tests"
       },
       {
+        "event": "child_dialogue_runtime_state",
+        "owner": "facade adapter + legacy handler",
+        "sourceSnapshot": true,
+        "runtimeRegistered": true,
+        "behaviorFixture": "tests/test_dialogue_teacher_control.py"
+      },
+      {
         "event": "child_dialogue_sleep",
         "owner": "facade adapter + legacy handler",
         "sourceSnapshot": true,
@@ -2029,6 +2036,20 @@
         "sourceSnapshot": true,
         "runtimeRegistered": true,
         "behaviorFixture": "partial; see contract tests"
+      },
+      {
+        "event": "teacher_dialogue_sleep",
+        "owner": "facade adapter + legacy handler",
+        "sourceSnapshot": true,
+        "runtimeRegistered": true,
+        "behaviorFixture": "tests/test_dialogue_teacher_control.py"
+      },
+      {
+        "event": "teacher_dialogue_state_request",
+        "owner": "facade adapter + legacy handler",
+        "sourceSnapshot": true,
+        "runtimeRegistered": true,
+        "behaviorFixture": "tests/test_dialogue_teacher_control.py"
       },
       {
         "event": "teacher_dialogue_visibility",

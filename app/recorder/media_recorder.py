@@ -71,6 +71,12 @@ class MediaRecorder:
             RecordingStartError: 如果启动失败
         """
         try:
+            # Path resolution is intentionally side-effect free.  A recording
+            # directory appears only when formal capture is actually starting.
+            if record_video:
+                self.video_path.parent.mkdir(parents=True, exist_ok=True)
+            if record_audio:
+                self.audio_path.parent.mkdir(parents=True, exist_ok=True)
             if record_video:
                 self.video_recorder = VideoRecorder(
                     self.video_path,

@@ -4,6 +4,7 @@
 """
 import os
 import time
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 import numpy as np
 
@@ -85,7 +86,12 @@ class RealPoseAnalyzer(BaseVisionAnalyzer):
         super().__init__(AnalyzerType.POSE, mode, config)
         
         self._config = config or {}
-        self._model_path = self._config.get('model_path', self.DEFAULT_MODEL_PATH)
+        configured_model_path = Path(
+            str(self._config.get('model_path', self.DEFAULT_MODEL_PATH))
+        ).expanduser()
+        if not configured_model_path.is_absolute():
+            configured_model_path = Path(__file__).resolve().parents[3] / configured_model_path
+        self._model_path = str(configured_model_path.resolve())
         self._min_detection_confidence = self._config.get('min_detection_confidence', 0.5)
         self._num_poses = self._config.get('num_poses', 1)
         
@@ -119,8 +125,12 @@ class RealPoseAnalyzer(BaseVisionAnalyzer):
                 if not self._download_model():
                     return False
             
-            # 创建 PoseLandmarker
-            base_options = python.BaseOptions(model_asset_path=self._model_path)
+            # MediaPipe's native Windows loader can interpret a drive-letter
+            # absolute path as relative to site-packages. Loading the reviewed
+            # local model as bytes avoids that platform-specific path rewrite.
+            with open(self._model_path, 'rb') as model_file:
+                model_asset_buffer = model_file.read()
+            base_options = python.BaseOptions(model_asset_buffer=model_asset_buffer)
             options = vision.PoseLandmarkerOptions(
                 base_options=base_options,
                 output_segmentation_masks=False,
@@ -394,6 +404,39 @@ class RealPoseNormalizer:
     
     移植自前端 pose_similarity.js 的归一化算法
     """
+
+    # 模仿课程当前以及预期扩展都以可观察的关节动作为主。旧实现把脸部
+    # 轮廓等 33 个点等权平均，手臂动作只占很小比例，导致“举双手”和
+    # “双手托脸”也会得到很高的相似度。这里保留旧 normalize API 供历史
+    # 调用，同时为动作比对提供独立的、可见性加权的特征。
+    ACTION_KEYPOINT_WEIGHTS = {
+        11: 0.5,  # left shoulder
+        12: 0.5,  # right shoulder
+        13: 2.0,  # left elbow
+        14: 2.0,  # right elbow
+        15: 3.0,  # left wrist
+        16: 3.0,  # right wrist
+        23: 0.75,  # left hip (full-body targets)
+        24: 0.75,  # right hip
+        25: 2.0,  # left knee
+        26: 2.0,  # right knee
+        27: 3.0,  # left ankle
+        28: 3.0,  # right ankle
+    }
+    MIRROR_PAIRS = {
+        11: 12,
+        12: 11,
+        13: 14,
+        14: 13,
+        15: 16,
+        16: 15,
+        23: 24,
+        24: 23,
+        25: 26,
+        26: 25,
+        27: 28,
+        28: 27,
+    }
     
     @staticmethod
     def normalize(keypoints: List[Dict]) -> List[List[float]]:
@@ -480,4 +523,151 @@ class RealPoseNormalizer:
         similarity = np.exp(-(avg_dist ** 2) / (2 * sigma ** 2))
         
         return float(similarity)
+
+    @staticmethod
+    def normalize_action(
+        keypoints: List[Dict[str, Any]],
+    ) -> Dict[int, Dict[str, float]]:
+        """Build translation/scale invariant action-joint features.
+
+        Shoulder width is a more stable scale for the current upper-body mimic
+        cards than hip-to-shoulder length (hips are often outside the child
+        camera). Visibility is retained so hallucinated/off-screen joints do
+        not silently contribute to a successful match.
+        """
+        if not keypoints or len(keypoints) <= 16:
+            return {}
+        try:
+            left_shoulder = keypoints[11]
+            right_shoulder = keypoints[12]
+            origin_x = (float(left_shoulder['x']) + float(right_shoulder['x'])) / 2.0
+            origin_y = (float(left_shoulder['y']) + float(right_shoulder['y'])) / 2.0
+            shoulder_width = float(np.hypot(
+                float(left_shoulder['x']) - float(right_shoulder['x']),
+                float(left_shoulder['y']) - float(right_shoulder['y']),
+            ))
+            if shoulder_width < 1e-4:
+                return {}
+
+            normalized: Dict[int, Dict[str, float]] = {}
+            for index in RealPoseNormalizer.ACTION_KEYPOINT_WEIGHTS:
+                if index >= len(keypoints):
+                    continue
+                point = keypoints[index]
+                normalized[index] = {
+                    'x': (float(point.get('x', 0.0)) - origin_x) / shoulder_width,
+                    'y': (float(point.get('y', 0.0)) - origin_y) / shoulder_width,
+                    'visibility': float(point.get('visibility', 0.0) or 0.0),
+                }
+            return normalized
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.debug("动作特征归一化失败: %s", exc)
+            return {}
+
+    @staticmethod
+    def compute_action_similarity_details(
+        live: Dict[int, Dict[str, float]],
+        target: Dict[int, Dict[str, float]],
+        *,
+        min_visibility: float = 0.35,
+        sigma: float = 0.55,
+        allow_mirror: bool = True,
+    ) -> Dict[str, Any]:
+        """Compare action joints and return auditable match diagnostics."""
+        if not live or not target:
+            return {
+                'score': 0.0,
+                'distance': None,
+                'coverage': 0.0,
+                'mirrored': False,
+                'keypoints_used': [],
+            }
+
+        weights = RealPoseNormalizer.ACTION_KEYPOINT_WEIGHTS
+        target_indices = [
+            index
+            for index, point in target.items()
+            if index in weights
+            and float(point.get('visibility', 0.0)) >= min_visibility
+        ]
+        target_weight = sum(weights[index] for index in target_indices)
+        if target_weight <= 0:
+            return {
+                'score': 0.0,
+                'distance': None,
+                'coverage': 0.0,
+                'mirrored': False,
+                'keypoints_used': [],
+            }
+
+        def compare(mirrored: bool) -> Dict[str, Any]:
+            weighted_distance = 0.0
+            used_weight = 0.0
+            used_indices: List[int] = []
+            for target_index in target_indices:
+                live_index = (
+                    RealPoseNormalizer.MIRROR_PAIRS.get(target_index, target_index)
+                    if mirrored
+                    else target_index
+                )
+                live_point = live.get(live_index)
+                target_point = target.get(target_index)
+                if not live_point or not target_point:
+                    continue
+                if float(live_point.get('visibility', 0.0)) < min_visibility:
+                    continue
+                live_x = float(live_point.get('x', 0.0))
+                if mirrored:
+                    live_x = -live_x
+                distance = float(np.hypot(
+                    live_x - float(target_point.get('x', 0.0)),
+                    float(live_point.get('y', 0.0))
+                    - float(target_point.get('y', 0.0)),
+                ))
+                weight = weights[target_index]
+                weighted_distance += weight * distance
+                used_weight += weight
+                used_indices.append(target_index)
+
+            coverage = used_weight / target_weight if target_weight else 0.0
+            if used_weight <= 0 or coverage < 0.65:
+                score = 0.0
+                avg_distance = None
+            else:
+                avg_distance = weighted_distance / used_weight
+                base_score = float(np.exp(
+                    -(avg_distance ** 2) / (2.0 * max(sigma, 1e-3) ** 2)
+                ))
+                # Incomplete visibility may never look better than a fully
+                # observed pose. Full score is reached from 85% weighted
+                # coverage upward to tolerate one briefly obscured elbow.
+                score = base_score * min(1.0, coverage / 0.85)
+            return {
+                'score': max(0.0, min(1.0, float(score))),
+                'distance': avg_distance,
+                'coverage': float(coverage),
+                'mirrored': mirrored,
+                'keypoints_used': used_indices,
+            }
+
+        candidates = [compare(False)]
+        if allow_mirror:
+            candidates.append(compare(True))
+        return max(candidates, key=lambda item: float(item.get('score') or 0.0))
+
+    @staticmethod
+    def compute_action_similarity(
+        live: Dict[int, Dict[str, float]],
+        target: Dict[int, Dict[str, float]],
+        **kwargs: Any,
+    ) -> float:
+        """Compatibility wrapper returning only the 0..1 action score."""
+        return float(
+            RealPoseNormalizer.compute_action_similarity_details(
+                live,
+                target,
+                **kwargs,
+            ).get('score')
+            or 0.0
+        )
 

@@ -4,7 +4,7 @@
   <title>儿童端</title>
   <meta name="theme-color" content="#FF6B6B"/>
   <link rel="stylesheet" href="/static/css/common.css">
-  <link rel="stylesheet" href="/static/css/child.css?v=20260823-resource-latency-v1">
+  <link rel="stylesheet" href="/static/css/child.css?v=20260824-dialogue-controls-v2">
   <script src="/static/js/vendor/socket.io.min.js"></script>
   <!-- 姿态分析相关脚本已注释，待迁移到后端 -->
   <!-- <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script> -->
@@ -48,7 +48,7 @@
       <button id="dialogueSleepBtn" type="button" class="dialogue-panel__btn dialogue-panel__sleep" disabled>未唤醒</button>
       <p class="dialogue-panel__hint">默认由教师端唤醒智能体；唤醒词可由 Server 控制台开启。首次对话请允许麦克风。</p>
       <div class="dialogue-panel__row">
-        <input id="dialogueTextInput" type="text" class="dialogue-panel__input" placeholder="或直接打字：麦麦，麦麦" autocomplete="off" />
+        <input id="dialogueTextInput" type="text" class="dialogue-panel__input" placeholder="或直接打字：麦麦" autocomplete="off" />
         <button id="dialogueSendBtn" type="button" class="dialogue-panel__send">发送</button>
       </div>
       <div id="dialogueLog" class="dialogue-panel__log" aria-live="polite" aria-label="对话记录"></div>
@@ -93,8 +93,8 @@
   </script>
   <script src="/static/js/browser_tts.js?v=20260824-speech-warm-v1"></script>
   <script src="/static/js/audio_player.js?v=20260730-behavior-lock"></script>
-  <script src="/static/js/child_dialogue.js?v=20260824-live-listen-v1"></script>
-  <script type="module" src="/static/js/child.js?v=20260824-speech-warm-v1"></script>
+  <script src="/static/js/child_dialogue.js?v=20260824-dialogue-controls-v2"></script>
+  <script type="module" src="/static/js/child.js?v=20260824-screen-click-v1"></script>
 
 </body>
 </html>

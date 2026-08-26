@@ -46,10 +46,25 @@ class RealPoseMatcher(BasePoseMatcher):
         super().__init__(threshold, config)
         
         self._config = config or {}
+        self._min_keypoint_visibility = float(
+            self._config.get('min_keypoint_visibility', 0.35)
+        )
+        self._action_sigma = float(self._config.get('action_sigma', 0.55))
+        self._allow_mirror = bool(self._config.get('allow_mirror', True))
+        self._stable_frames = max(1, int(self._config.get('stable_frames', 4)))
+        self._stable_hold_seconds = max(
+            0.0,
+            float(self._config.get('stable_hold_seconds', 0.6)),
+        )
+        self._max_frame_gap_seconds = max(
+            0.05,
+            float(self._config.get('max_frame_gap_seconds', 0.55)),
+        )
         
         # 目标姿态（归一化后）
         self._target_keypoints: Optional[List[Dict]] = None  # 原始关键点
         self._target_normalized: Optional[List[List[float]]] = None  # 归一化后
+        self._target_action_features: Optional[Dict[int, Dict[str, float]]] = None
         self._target_pose_name: str = "default"
         self._target_image_path: Optional[str] = None
         
@@ -60,6 +75,8 @@ class RealPoseMatcher(BasePoseMatcher):
         self._match_count = 0
         self._total_count = 0
         self._score_history: List[float] = []
+        self._stability_by_session: Dict[str, Dict[str, Any]] = {}
+        self._last_similarity_details: Dict[str, Any] = {}
         
         logger.info(f"真实姿态比对器已创建: threshold={threshold}")
     
@@ -95,12 +112,18 @@ class RealPoseMatcher(BasePoseMatcher):
             if not normalized:
                 logger.warning("姿态归一化失败")
                 return False
+            action_features = RealPoseNormalizer.normalize_action(keypoints)
+            if not action_features:
+                logger.warning("动作关节归一化失败")
+                return False
             
             self._target_keypoints = keypoints
             self._target_normalized = normalized
+            self._target_action_features = action_features
             self._target = target_image
-            self._target_features = normalized
+            self._target_features = action_features
             self._target_pose_name = "target_from_image"
+            self.reset_stability()
             
             # 标记为已初始化
             self._is_initialized = True
@@ -166,12 +189,18 @@ class RealPoseMatcher(BasePoseMatcher):
             if not normalized:
                 logger.warning("姿态归一化失败")
                 return False
+            action_features = RealPoseNormalizer.normalize_action(keypoints)
+            if not action_features:
+                logger.warning("动作关节归一化失败")
+                return False
             
             self._target_keypoints = keypoints
             self._target_normalized = normalized
+            self._target_action_features = action_features
             self._target = keypoints
-            self._target_features = normalized
+            self._target_features = action_features
             self._target_pose_name = name
+            self.reset_stability()
             
             # 标记为已初始化
             self._is_initialized = True
@@ -183,7 +212,10 @@ class RealPoseMatcher(BasePoseMatcher):
             logger.error(f"设置目标关键点失败: {e}")
             return False
     
-    def extract_features(self, data: Any) -> Optional[List[List[float]]]:
+    def extract_features(
+        self,
+        data: Any,
+    ) -> Optional[Dict[int, Dict[str, float]]]:
         """
         提取特征（归一化坐标）
         
@@ -216,9 +248,8 @@ class RealPoseMatcher(BasePoseMatcher):
             if not keypoints:
                 return None
             
-            # 归一化
-            normalized = RealPoseNormalizer.normalize(keypoints)
-            return normalized if normalized else None
+            action_features = RealPoseNormalizer.normalize_action(keypoints)
+            return action_features if action_features else None
             
         except Exception as e:
             logger.error(f"提取特征失败: {e}")
@@ -226,8 +257,8 @@ class RealPoseMatcher(BasePoseMatcher):
     
     def compute_similarity(
         self, 
-        features1: List[List[float]], 
-        features2: List[List[float]]
+        features1: Dict[int, Dict[str, float]],
+        features2: Dict[int, Dict[str, float]],
     ) -> float:
         """
         计算两个归一化姿态的相似度
@@ -244,11 +275,20 @@ class RealPoseMatcher(BasePoseMatcher):
         if not features1 or not features2:
             return 0.0
         
-        return RealPoseNormalizer.compute_similarity(features1, features2)
+        self._last_similarity_details = (
+            RealPoseNormalizer.compute_action_similarity_details(
+                features1,
+                features2,
+                min_visibility=self._min_keypoint_visibility,
+                sigma=self._action_sigma,
+                allow_mirror=self._allow_mirror,
+            )
+        )
+        return float(self._last_similarity_details.get('score') or 0.0)
     
     def _get_match_details(
         self, 
-        features: List[List[float]], 
+        features: Dict[int, Dict[str, float]],
         score: float
     ) -> Dict[str, Any]:
         """
@@ -261,36 +301,48 @@ class RealPoseMatcher(BasePoseMatcher):
         Returns:
             详细信息字典
         """
-        # 计算各关键点的距离
-        keypoint_details = {}
-        matched_count = 0
-        
-        if features and self._target_normalized:
-            n = min(len(features), len(self._target_normalized))
-            
-            for i in range(n):
-                kp_name = MEDIAPIPE_KEYPOINTS[i] if i < len(MEDIAPIPE_KEYPOINTS) else f"point_{i}"
-                
-                dx = features[i][0] - self._target_normalized[i][0]
-                dy = features[i][1] - self._target_normalized[i][1]
-                distance = np.sqrt(dx*dx + dy*dy)
-                
-                # 转换为分数（距离越小分数越高）
-                kp_score = np.exp(-(distance ** 2) / (2 * 0.4 ** 2))
-                keypoint_details[kp_name] = {
-                    'score': round(float(kp_score), 3),
-                    'distance': round(float(distance), 3)
-                }
-                
-                if kp_score > 0.7:
-                    matched_count += 1
+        keypoint_details: Dict[str, Dict[str, float]] = {}
+        target = self._target_action_features or {}
+        mirrored = bool(self._last_similarity_details.get('mirrored'))
+        used = set(self._last_similarity_details.get('keypoints_used') or [])
+        for target_index in sorted(used):
+            live_index = (
+                RealPoseNormalizer.MIRROR_PAIRS.get(target_index, target_index)
+                if mirrored
+                else target_index
+            )
+            live_point = features.get(live_index)
+            target_point = target.get(target_index)
+            if not live_point or not target_point:
+                continue
+            live_x = float(live_point.get('x', 0.0))
+            if mirrored:
+                live_x = -live_x
+            distance = float(np.hypot(
+                live_x - float(target_point.get('x', 0.0)),
+                float(live_point.get('y', 0.0))
+                - float(target_point.get('y', 0.0)),
+            ))
+            kp_name = (
+                MEDIAPIPE_KEYPOINTS[target_index]
+                if target_index < len(MEDIAPIPE_KEYPOINTS)
+                else f"point_{target_index}"
+            )
+            keypoint_details[kp_name] = {
+                'distance': round(distance, 3),
+                'visibility': round(float(live_point.get('visibility', 0.0)), 3),
+            }
         
         return {
             'score': score,
             'threshold': self._threshold,
             'target_pose_name': self._target_pose_name,
             'target_image_path': self._target_image_path,
-            'matched_keypoints': matched_count,
+            'algorithm_version': 'mediapipe-action-joints-v2',
+            'coverage': round(float(self._last_similarity_details.get('coverage') or 0.0), 3),
+            'mirrored': mirrored,
+            'average_distance': self._last_similarity_details.get('distance'),
+            'matched_keypoints': len(keypoint_details),
             'total_keypoints': len(keypoint_details),
             'keypoint_details': keypoint_details,
             'statistics': {
@@ -316,7 +368,7 @@ class RealPoseMatcher(BasePoseMatcher):
             匹配结果，如果无法匹配返回 None
         """
         # 检查是否设置了目标
-        if not self._target_normalized:
+        if not self._target_action_features:
             logger.debug("未设置目标姿态，跳过匹配")
             return None
         
@@ -332,15 +384,80 @@ class RealPoseMatcher(BasePoseMatcher):
         # 使用基类的match方法
         result = super().match(analysis_result, context)
         
-        if result and result.passed:
-            self._match_count += 1
-        
         if result:
+            raw_passed = bool(result.passed)
+            stable = self._apply_stability(
+                context.session_id,
+                raw_passed=raw_passed,
+                timestamp=float(result.timestamp),
+            )
+            result.passed = bool(stable['passed'])
+            result.details.update({
+                'raw_passed': raw_passed,
+                'stable_passed': result.passed,
+                'stable_frames': stable['frames'],
+                'required_stable_frames': self._stable_frames,
+                'hold_ms': round(stable['hold_seconds'] * 1000.0),
+                'required_hold_ms': round(self._stable_hold_seconds * 1000.0),
+            })
+            if result.passed:
+                self._match_count += 1
             self._score_history.append(result.score)
             if len(self._score_history) > 100:
                 self._score_history.pop(0)
         
         return result
+
+    def _apply_stability(
+        self,
+        session_id: str,
+        *,
+        raw_passed: bool,
+        timestamp: float,
+    ) -> Dict[str, Any]:
+        """Require a continuous pose hold before exposing a successful match."""
+        key = str(session_id or 'default')
+        state = self._stability_by_session.get(key)
+        if (
+            not raw_passed
+            or state is None
+            or timestamp < float(state.get('last_timestamp', 0.0))
+            or timestamp - float(state.get('last_timestamp', 0.0))
+            > self._max_frame_gap_seconds
+        ):
+            if not raw_passed:
+                self._stability_by_session.pop(key, None)
+                return {'passed': False, 'frames': 0, 'hold_seconds': 0.0}
+            state = {
+                'first_timestamp': timestamp,
+                'last_timestamp': timestamp,
+                'frames': 1,
+            }
+            self._stability_by_session[key] = state
+        else:
+            state['last_timestamp'] = timestamp
+            state['frames'] = int(state.get('frames', 0)) + 1
+
+        hold_seconds = max(
+            0.0,
+            float(state['last_timestamp']) - float(state['first_timestamp']),
+        )
+        passed = (
+            int(state['frames']) >= self._stable_frames
+            and hold_seconds >= self._stable_hold_seconds
+        )
+        return {
+            'passed': passed,
+            'frames': int(state['frames']),
+            'hold_seconds': hold_seconds,
+        }
+
+    def reset_stability(self, session_id: Optional[str] = None) -> None:
+        """Clear temporal pose state after target/audio/course transitions."""
+        if session_id is None:
+            self._stability_by_session.clear()
+            return
+        self._stability_by_session.pop(str(session_id), None)
     
     def get_statistics(self) -> Dict[str, Any]:
         """获取比对统计"""
@@ -352,7 +469,7 @@ class RealPoseMatcher(BasePoseMatcher):
                 sum(self._score_history) / max(len(self._score_history), 1), 3
             ),
             'score_history': self._score_history[-10:],
-            'has_target': self._target_normalized is not None,
+            'has_target': self._target_action_features is not None,
             'target_name': self._target_pose_name
         }
     
@@ -366,10 +483,12 @@ class RealPoseMatcher(BasePoseMatcher):
         """重置目标姿态"""
         self._target_keypoints = None
         self._target_normalized = None
+        self._target_action_features = None
         self._target = None
         self._target_features = None
         self._target_pose_name = "default"
         self._target_image_path = None
+        self.reset_stability()
         logger.info("目标姿态已重置")
     
     def cleanup(self) -> None:

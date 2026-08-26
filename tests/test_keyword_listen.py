@@ -62,6 +62,15 @@ def test_find_keyword_hit_prefer_longer():
     assert find_keyword_hit('狮子', ['老虎']) is None
 
 
+def test_find_keyword_hit_accepts_configured_homophones_and_near_sounds():
+    """浏览器 ASR 的常见同音字应命中原课程答案，且不放宽到无关词。"""
+    assert find_keyword_hit('这是小沟', ['狗']) == '狗'
+    assert find_keyword_hit('小毛', ['猫']) == '猫'
+    assert find_keyword_hit('旺旺旺旺', ['汪', '汪汪']) == '汪汪'
+    assert find_keyword_hit('苗苗', ['喵', '喵喵']) == '喵喵'
+    assert find_keyword_hit('这是小鸟', ['狗']) is None
+
+
 def test_arm_hit_praise_gate():
     svc = KeywordListenService()
     sid = 'sess-kw-1'

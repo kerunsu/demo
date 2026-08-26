@@ -47,6 +47,7 @@ def _authenticated_socket(runtime, teacher_id, username=None):
 
 
 def _prepare_test_dependencies(monkeypatch, tmp_path, student_id):
+    import app.behavior as behavior_package
     from app.behavior.service import BehaviorService
     from app.behavior.store import BehaviorStore
     from app.behavior.timeline import BehaviorTimeline
@@ -62,6 +63,7 @@ def _prepare_test_dependencies(monkeypatch, tmp_path, student_id):
     behavior.store = BehaviorStore(tmp_path / "behavior")
     behavior.timeline = BehaviorTimeline(behavior.store)
     monkeypatch.setattr(handlers_mod, "get_behavior_service", lambda: behavior)
+    monkeypatch.setattr(behavior_package, "get_behavior_service", lambda: behavior)
     monkeypatch.setattr(
         handlers_mod,
         "load_student_label",
@@ -177,7 +179,7 @@ def test_phase1_golden_flow_freezes_current_warmup_and_continuous_recording(
     monkeypatch.setattr(
         config_content_mod,
         "_course_admin_dict",
-        lambda _course, _mapped: {"id": 1, "title": "Naming", "type": "naming"},
+        lambda _course, _mapped: {"id": 9, "title": "Pairing", "type": "pairing"},
     )
     http = runtime["app"].test_client()
     login = http.post(
@@ -190,7 +192,7 @@ def test_phase1_golden_flow_freezes_current_warmup_and_continuous_recording(
     assert students.get_json()["students"][0]["id"] == student_id
     courses = http.get("/api/config/courses")
     assert courses.status_code == 200
-    assert courses.get_json()["courses"][0]["type"] == "naming"
+    assert courses.get_json()["courses"][0]["type"] == "pairing"
 
     # The class-start barrier owns only formal recording and server video
     # evidence. Resource, audio and analyzer checks are not part of this path.
@@ -425,6 +427,171 @@ def test_phase1_room_isolation_targets_child_and_never_broadcasts_unresolved(
     teacher.emit("play_resource", {"action": "play", "requestId": "phase1-room-unresolved", "studentId": 2, "courseId": 1, "trainingSessionId": "phase1-training"})
     assert "play_resource" in _event_names(runtime, teacher)
     assert "play_resource" not in _event_names(runtime, unrelated)
+
+
+@pytest.mark.parametrize(
+    ("course_type", "rating_required", "return_to_question"),
+    [
+        ("pairing", False, True),
+        ("ordering", False, True),
+        ("naming", True, False),
+    ],
+)
+def test_teacher_praise_policy_returns_interactive_courses_to_current_question(
+    monkeypatch,
+    phase1_socket_runtime,
+    course_type,
+    rating_required,
+    return_to_question,
+):
+    runtime = phase1_socket_runtime
+    from app.sockets import events as events_mod
+
+    teacher = _authenticated_socket(runtime, 35)
+    child = runtime["socketio"].test_client(
+        runtime["app"],
+        flask_test_client=runtime["app"].test_client(),
+    )
+    teacher.get_received()
+    child_sid = next(
+        item["args"][0]["sid"]
+        for item in child.get_received()
+        if item["name"] == "connected"
+    )
+
+    modality_commits = {"audio": [], "animation": []}
+    started_payloads = []
+
+    class Robot:
+        def reserve_behavior(self, behavior_id=None, request_id=None, **_kwargs):
+            return {
+                "accepted": True,
+                "behaviorId": behavior_id or f"{course_type}-manual-praise-behavior",
+            }
+
+        def abort_behavior(self, _behavior_id):
+            return None
+
+        def set_behavior_audio_expected(self, behavior_id, count, **_kwargs):
+            modality_commits["audio"].append((behavior_id, count))
+            return True
+
+        def set_behavior_animation_expected(self, behavior_id, expected, **_kwargs):
+            modality_commits["animation"].append((behavior_id, expected))
+            return True
+
+        def get_behavior_busy_state(self):
+            return {"busy": False, "eventId": None, "remainingMs": 0}
+
+    class Audio:
+        def process_play_resource(self, *_args, **_kwargs):
+            return {"triggered": True, "dispatchCount": 1, "deferred": False}
+
+    monkeypatch.setattr("app.robot.get_robot_service", lambda: Robot())
+    monkeypatch.setattr("app.audio.get_audio_service", lambda: Audio())
+    monkeypatch.setattr(
+        events_mod,
+        "_assign_child_for_identity",
+        lambda *_args, **_kwargs: (child_sid, None),
+    )
+    monkeypatch.setattr(
+        events_mod,
+        "_resource_ready_support_for_identity",
+        lambda *_args, **_kwargs: True,
+    )
+    def handle_resource(payload):
+        # The server-resolved course type wins over a stale client label.
+        payload["courseType"] = course_type
+        return {
+            "session_id": f"{course_type}-manual-praise-session",
+            "training_session_id": f"{course_type}-manual-praise-training",
+            "question_id": f"{course_type}-question-7",
+            "is_aux_operation": True,
+            "audio_pending": True,
+            "behavior_animation": "resources/Emotions/praise.mp4",
+        }
+
+    monkeypatch.setattr(
+        events_mod,
+        "PlayResourceHandler",
+        SimpleNamespace(handle=handle_resource),
+    )
+
+    def start_behavior(_robot, payload):
+        started_payloads.append(dict(payload))
+        return {"success": True, "skipped": False}
+
+    monkeypatch.setattr(events_mod, "_start_or_defer_course_behavior", start_behavior)
+
+    training_id = f"{course_type}-manual-praise-training"
+    teacher.emit("teacher_enter_control", {"trainingSessionId": training_id})
+    teacher.get_received()
+    teacher.emit(
+        "play_resource",
+        {
+            "action": "play",
+            "requestId": f"{course_type}-manual-praise-request",
+            "studentId": 1,
+            "courseId": 1,
+            "courseType": "stale-client-type",
+            "sessionId": f"{course_type}-manual-praise-session",
+            "trainingSessionId": training_id,
+            "questionId": f"{course_type}-question-7",
+            "aux": {"praise": True},
+        },
+    )
+
+    teacher_events = _events(runtime, teacher)
+    child_events = _events(runtime, child)
+    ack = next(
+        item["args"][0]
+        for item in teacher_events
+        if item["name"] == "play_resource_ack"
+    )
+    assert ack["accepted"] is True, (ack, child_events)
+    child_play = next(
+        item["args"][0]
+        for item in child_events
+        if item["name"] == "play_resource"
+    )
+
+    assert ack["teacherRatingRequired"] is rating_required
+    assert ack["returnToCurrentQuestion"] is return_to_question
+    assert ack["holdLastFrame"] is (not return_to_question)
+    assert child_play["questionId"] == f"{course_type}-question-7"
+    assert child_play["courseType"] == course_type
+    assert child_play["teacherRatingRequired"] is rating_required
+    assert child_play["returnToCurrentQuestion"] is return_to_question
+    assert child_play["holdLastFrame"] is (not return_to_question)
+    assert child_play["behaviorAnimation"] == "resources/Emotions/praise.mp4"
+    assert started_payloads[-1]["aux"]["praise"] is True
+    assert modality_commits["audio"][-1][1] == 1
+    assert modality_commits["animation"][-1][1] is True
+    assert events_mod._should_forward_animation_terminal_to_teacher(
+        ack["requestId"], ack["behaviorId"]
+    ) is rating_required
+
+
+def test_teacher_consumes_no_rating_policy_for_interactive_manual_praise():
+    control = Path("teacher_frontend/components/ControlPage.tsx").read_text(
+        encoding="utf-8"
+    )
+    play = control[
+        control.index("const playCurrentItem = useCallback") :
+        control.index("const retryFailedPlayback")
+    ]
+    ack = control[
+        control.index("socket.on('play_resource_ack'") :
+        control.index("socket.on('audio_status_update'")
+    ]
+
+    assert "selectedItem.course.type !== 'pairing'" in play
+    assert "selectedItem.course.type !== 'ordering'" in play
+    assert "data?.teacherRatingRequired === false" in ack
+    no_rating = ack[ack.index("data?.teacherRatingRequired === false") :]
+    assert no_rating.index("clearPraiseRequestContext(requestId)") < no_rating.index(
+        "queuePraiseRating("
+    )
 
 
 def test_phase1_teacher_rating_ack_is_requester_only_and_not_globally_broadcast(

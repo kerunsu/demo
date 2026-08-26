@@ -4,6 +4,7 @@
 """
 import time
 from typing import Dict, Any, Optional
+from app.config import Config
 from app.utils.logger import setup_logger
 from .events import get_audio_emitter
 
@@ -90,6 +91,7 @@ class AudioService:
                 "protocolVersion": "1",
                 "modality": "speech",
                 "startAtServerMs": int(time.time() * 1000) + max(0, int(delay_ms or 0)),
+                "speechRate": float(Config.BROWSER_SPEECH_RATE),
             }
             if behavior_id:
                 payload["behaviorId"] = str(behavior_id)

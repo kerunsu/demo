@@ -36,7 +36,7 @@ HTTP/Socket 契约与会话文件命名；V2 控制接口为增量扩展，可�
 
 | 目录 | 内容 |
 |---|---|
-| `tools/voice-service/` | 独立语音服务进程（`voice_service.py`、`prepare_models.py`）：ASR 识别、TTS 合成、模型下载与路径缓存 |
+| `tools/voice-service/` | 旧版本地语音服务诊断工具；生产儿童端已改用浏览器语音识别，不会自动启动该服务 |
 | `app/audio/` | 后端语音子系统：`controller.py`（播放控制）、`events.py`（socket 事件）、`service.py`（播放服务）、清单加载（`audio.registry`） |
 
 ### 3. 分析模块修改（识别与匹配）

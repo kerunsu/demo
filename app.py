@@ -78,6 +78,7 @@ mimetypes.add_type('application/wasm', '.wasm')
 
 # 导入新架构模块
 from app.config import Config
+from app.course_scope import filter_course_payloads
 from app.session import get_session_manager
 from app.utils.logger import setup_logger
 from app.sockets import register_socket_events
@@ -257,6 +258,23 @@ def on_analysis_result(session_id, result):
 def on_match_result(session_id, result):
     """匹配结果回调"""
     feedback_service.send_match_result(session_id, result)
+    if (
+        getattr(result, 'matcher_type', None) == 'pose_matcher'
+        and bool(getattr(result, 'passed', False))
+    ):
+        try:
+            from app.services.pose_auto_praise import get_pose_auto_praise_service
+
+            get_pose_auto_praise_service().try_auto_praise(session_id, result)
+        except Exception as exc:
+            # Recognition/recording must remain alive even when a feedback
+            # peripheral is temporarily unavailable.
+            logger.warning(
+                "模仿动作自动表扬失败 session=%s: %s",
+                session_id,
+                exc,
+                exc_info=True,
+            )
 
 def on_trigger_action(session_id, action_type, data):
     """
@@ -962,6 +980,7 @@ def get_runtime_modes():
             "childMediaMode": Config.get_child_media_mode(),
             "robotControlMode": robot_service.get_robot_service().get_control_mode(),
             "dialogueWakeWordEnabled": bool(Config.DIALOGUE_WAKE_WORD_ENABLED),
+            "browserSpeechRate": float(Config.BROWSER_SPEECH_RATE),
             "persisted": modes,
         }), 200
     except Exception as e:
@@ -983,20 +1002,30 @@ def put_runtime_modes():
             if "dialogueWakeWordEnabled" in payload
             else payload.get("dialogue_wake_word_enabled")
         )
-        if child is None and robot is None and wake_word is None:
-            return jsonify({"success": False, "error": "请提供 childMediaMode 和/或 robotControlMode"}), 400
+        speech_rate = (
+            payload.get("browserSpeechRate")
+            if "browserSpeechRate" in payload
+            else payload.get("browser_speech_rate")
+        )
+        if child is None and robot is None and wake_word is None and speech_rate is None:
+            return jsonify({"success": False, "error": "请提供至少一项运行时设置"}), 400
 
         saved = save_runtime_modes(
             child_media_mode=child,
             robot_control_mode=robot,
             dialogue_wake_word_enabled=wake_word,
+            browser_speech_rate=speech_rate,
         )
         apply_to_process(saved)
+        socketio.emit("browser_speech_rate_updated", {
+            "speechRate": saved["browser_speech_rate"],
+        })
         return jsonify({
             "success": True,
             "childMediaMode": saved["child_media_mode"],
             "robotControlMode": saved["robot_control_mode"],
             "dialogueWakeWordEnabled": saved["dialogue_wake_word_enabled"],
+            "browserSpeechRate": saved["browser_speech_rate"],
             "persisted": True,
             "message": "运行时模式已应用并写入 config/runtime_modes.yaml",
         }), 200
@@ -1120,12 +1149,14 @@ def get_courses():
             if os.path.exists(courses_file):
                 with open(courses_file, encoding="utf-8") as f:
                     courses_data = json.load(f)
-                return jsonify(courses_data)
+                return jsonify(filter_course_payloads(courses_data))
             return jsonify({"error": "课程数据不存在"}), 404
         
         # 转换为 JSON 格式（保持与原有格式兼容）
         # course.items 已经通过 joinedload 预加载，不会触发额外查询
-        courses_data = [course.to_dict() for course in courses]
+        courses_data = filter_course_payloads(
+            [course.to_dict() for course in courses]
+        )
         return jsonify(courses_data)
     except Exception as e:
         return jsonify({"error": f"获取课程配置失败: {str(e)}"}), 500
@@ -1839,10 +1870,6 @@ if __name__ == '__main__':
     from app.utils.dev_launcher import start_teacher_frontend
     start_teacher_frontend(logger)
 
-    # 对话 STT：DIALOGUE 开启时默认拉起 FunASR voice-service（8765；START_VOICE_SERVICE=0 关闭）
-    from app.utils.voice_service_launcher import start_voice_service
-    start_voice_service(logger)
-
     from app.utils.server_runtime import (
         resolve_server_run_options,
         resolve_ssl_context,
@@ -1865,7 +1892,7 @@ if __name__ == '__main__':
         scheme=ssl_meta["scheme"],
     )
     # 必须绑 0.0.0.0：127.0.0.1 仅本机可访问，局域网设备连不上。
-    # 热重载默认关闭，防止 FunASR/torchaudio 延迟导入触发后台服务重启。
+    # 热重载默认关闭，避免后台设备与分析进程被重复拉起。
     # HTTPS：ENABLE_HTTPS=true 或 SSL_CERTFILE+SSL_KEYFILE（自签名见 scripts/generate_lan_cert.ps1）。
     run_kwargs = dict(
         host="0.0.0.0",

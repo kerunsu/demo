@@ -8,6 +8,7 @@ import {
   startCameraAnalysis,
   stopCameraAnalysis,
 } from "./camera_analysis/cameraAnalysis.js";
+import { startChildScreenClickTracking } from "./child_screen_clicks.js?v=20260824-screen-click-v1";
 
 // common.js 创建的全局 socket（挂到 window）；模块内显式引用
 const socket = window.socket || (typeof io !== "undefined" ? io() : null);
@@ -103,6 +104,7 @@ function clearChildSessionBinding() {
   announcedSessionId = null;
   currentTrainingSessionId = null;
   currentQuestionId = null;
+  window.currentQuestionId = null;
   try {
     if (childStudentId != null && childStudentId !== "") {
       window.localStorage.setItem(CHILD_SESSION_BINDING_KEY, JSON.stringify({
@@ -152,6 +154,7 @@ let mediaAgentOnline = false;
 // 供对话模块读取当前课点上下文
 window.currentCourseType = window.currentCourseType || "";
 window.currentItemId = window.currentItemId || null;
+window.currentQuestionId = window.currentQuestionId || null;
 window.currentQuestionPrompt = window.currentQuestionPrompt || "";
 window.currentSpeechTarget = window.currentSpeechTarget || "";
 window.currentItemName = window.currentItemName || "";
@@ -617,6 +620,9 @@ async function loadChildRuntimeConfig() {
       childMediaMode = data.mediaMode === "agent" ? "agent" : "browser";
       if (data.dialogueTtsMode) {
         dialogueTtsMode = String(data.dialogueTtsMode).toLowerCase();
+      }
+      if (data.browserSpeechRate != null) {
+        window.BrowserTts?.setBrowserSpeechRate?.(data.browserSpeechRate);
       }
       if (typeof data.skipRuntimeRecordingCheck === "boolean") {
         skipRuntimeRecordingCheck = data.skipRuntimeRecordingCheck;
@@ -1349,6 +1355,24 @@ let pendingResourceTransition = null;
 let currentVisibleCourseMedia = null;
 const completedResourceTransitions = new Map();
 
+const childScreenClickTracker = startChildScreenClickTracking({
+  getContext: () => ({
+    trainingSessionId: currentTrainingSessionId,
+    sessionId: announcedSessionId || currentSessionId,
+    questionId: currentQuestionId,
+    courseType: window.currentCourseType || null,
+    courseId: currentCourseId,
+    courseItemId: window.currentItemId,
+  }),
+  getInteractiveFrame: () => interactiveEl,
+  getActiveContentElement: () => (
+    currentVisibleCourseMedia && currentVisibleCourseMedia.el
+      ? currentVisibleCourseMedia.el
+      : null
+  ),
+});
+window.childScreenClickTracker = childScreenClickTracker;
+
 function findCourseById(courseId) {
   const target = Number(courseId);
   return allCourses.find(c => Number(c.id) === target) || null;
@@ -1870,6 +1894,7 @@ function commitCourseLogicalContext(payload, course, item, stagedPageContext = n
   window.currentItemId = payload && payload.itemId;
   if (payload && payload.questionId) {
     currentQuestionId = payload.questionId;
+    window.currentQuestionId = currentQuestionId;
   }
   if (courseType) {
     window.currentCourseType = courseType;
@@ -2348,6 +2373,7 @@ socket.on("training_prepare", async (payload) => {
   persistChildSessionBinding();
   if (payload.questionId) {
     currentQuestionId = payload.questionId;
+    window.currentQuestionId = currentQuestionId;
   }
   const recordingMode = payload.recordingMode || "continuous";
   currentRecordingMode = recordingMode;
@@ -2601,6 +2627,13 @@ socket.on("behavior_cancel", (data) => {
   }
 });
 
+socket.on("browser_speech_rate_updated", (data) => {
+  const applied = window.BrowserTts?.setBrowserSpeechRate?.(data && data.speechRate);
+  if (applied != null) {
+    console.log("🗣️ [child.js] 浏览器语速已更新:", applied);
+  }
+});
+
   // 浏览器 TTS：挂在 aux.question / praise / hint / 社交打招呼再见 与自由对话回复上
   // 服务端可能对 dialogue 连发 room+直达两份，短窗去重避免 cancel 自己
   let lastSpeakDedupeKey = "";
@@ -2682,7 +2715,7 @@ socket.on("behavior_cancel", (data) => {
     }
     return;
   }
-  // 朗读时暂停连续 ASR，避免喇叭回授进麦克风
+  // 标记朗读窗口；浏览器识别到的抢答先暂存，并在真正开声时记录回声参考文本。
   window.ChildDialogue?.pauseAsrForTts?.();
   // Do not enqueue a silent "unlock" utterance in front of formal speech.
   // SpeechSynthesis itself marks the output ready from its real onstart.
@@ -2699,6 +2732,7 @@ socket.on("behavior_cancel", (data) => {
   );
   const browserSpeechAccepted = window.BrowserTts.speakBrowserText(data.text, {
     delayMs: Number(data.delayMs) || 0,
+    rate: data.speechRate,
     speechId: incomingIdentity.speechId,
     behaviorId: incomingIdentity.behaviorId,
     sequenceId: incomingIdentity.sequenceId,
@@ -2706,6 +2740,7 @@ socket.on("behavior_cancel", (data) => {
     sessionId: data.sessionId || currentSessionId,
     onStart: (timing = {}) => {
       const actualAtClientMs = Date.now();
+      window.ChildDialogue?.pauseAsrForTts?.(data.text);
       const statusEl = document.getElementById("dialogueStatus");
       if (statusEl) statusEl.textContent = `朗读中：${data.text}`;
       window.ChildDialogue?.emitDialogueLatency?.(

@@ -151,6 +151,7 @@ class SessionBehaviorSummary:
     language: Dict[str, Any] = field(default_factory=dict)
     emotion: Dict[str, Any] = field(default_factory=dict)
     task: Dict[str, Any] = field(default_factory=dict)
+    screen_interaction: Dict[str, Any] = field(default_factory=dict)
     windows: List[Dict[str, Any]] = field(default_factory=list)
     limitations: List[str] = field(default_factory=list)
 

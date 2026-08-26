@@ -13,6 +13,7 @@ from typing import Any, Iterable
 from flask import Blueprint, after_this_request, jsonify, send_file
 
 from app.config import BASE_DIR
+from app.course_scope import is_course_type_enabled
 from database.models import CourseType
 
 
@@ -50,6 +51,8 @@ def _course_catalog() -> dict[str, Any]:
     courses: list[dict[str, Any]] = []
     for course_type in CourseType.query.order_by(CourseType.id).all():
         for course in sorted(course_type.courses, key=lambda item: item.id):
+            if not is_course_type_enabled(course.to_dict().get("type")):
+                continue
             courses.append({
                 "id": course.id,
                 "typeId": course_type.id,

@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import base64
+import difflib
 import os
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
+import wave
+from array import array
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -21,6 +27,24 @@ logger = setup_logger("dialogue.stt")
 _model = None
 _model_error: Optional[str] = None
 _lock = threading.Lock()
+
+# The browser VAD is a latency optimization, not a trust boundary.  Classroom
+# fan/projector noise and speaker feedback can still open a turn, so re-check
+# raw PCM before FunASR and reject common silence/noise hallucinations after it.
+_DIALOGUE_RMS_THRESHOLD = 0.006
+_DIALOGUE_FRAME_RMS_THRESHOLD = 0.014
+_DIALOGUE_PEAK_THRESHOLD = 0.02
+_DIALOGUE_MIN_VOICED_RATIO = 0.10
+_DIALOGUE_FRAME_MS = 20
+_PUNCT_RE = re.compile(
+    r'[\s\u3000，。！？、；：,.!?;:\'\"“”‘’（）()\[\]【】<>《》…—～~·]+'
+)
+_CJK_RE = re.compile(r'[\u4e00-\u9fff]')
+_LATIN_RE = re.compile(r'[A-Za-z]')
+_FILLER_ONLY = frozenset({
+    '嗯', '啊', '呃', '哦', '唔', '呵', '额', '欸', '唉',
+    '的', '了', '呢', '吧', '嘛', '呀', '嗯嗯', '啊啊', '呃呃',
+})
 
 
 def _local_model_path() -> Optional[str]:
@@ -46,7 +70,21 @@ def _load_local_funasr():
 
             model_ref = _local_model_path() or "paraformer-zh"
             logger.info("加载对话 FunASR: %s", model_ref)
-            _model = AutoModel(model=model_ref, disable_update=True)
+            _model = AutoModel(
+                model=model_ref,
+                vad_model=(
+                    os.environ.get("DIALOGUE_FUNASR_VAD_MODEL")
+                    or os.environ.get("VOICE_SERVICE_FUNASR_VAD_MODEL")
+                    or "fsmn-vad"
+                ),
+                vad_kwargs={"max_single_segment_time": 30000},
+                punc_model=(
+                    os.environ.get("DIALOGUE_FUNASR_PUNC_MODEL")
+                    or os.environ.get("VOICE_SERVICE_FUNASR_PUNC_MODEL")
+                    or "ct-punc"
+                ),
+                disable_update=True,
+            )
         except Exception as exc:  # noqa: BLE001
             _model_error = str(exc)
             logger.warning("本进程 FunASR 不可用: %s", exc)
@@ -70,6 +108,110 @@ def _suffix_for_mime(mime_type: str) -> str:
 
 def _looks_like_wav(audio_bytes: bytes) -> bool:
     return len(audio_bytes) >= 12 and audio_bytes[0:4] == b"RIFF" and audio_bytes[8:12] == b"WAVE"
+
+
+def _normalized_asr_text(text: str) -> str:
+    return _PUNCT_RE.sub('', str(text or '').strip())
+
+
+def _is_plausible_asr_text(text: str) -> bool:
+    cleaned = _normalized_asr_text(text)
+    if not cleaned or cleaned in _FILLER_ONLY:
+        return False
+    # Chinese classroom speech should not become a short Latin noise token such
+    # as "Gyggny".  Keep mixed/CJK text and single-character CJK answers.
+    if _LATIN_RE.search(cleaned) and not _CJK_RE.search(cleaned):
+        return False
+    if len(cleaned) < 2 and not _CJK_RE.search(cleaned):
+        return False
+    return True
+
+
+def _is_likely_tts_echo(transcript: str, reference_text: Optional[str]) -> bool:
+    heard = _normalized_asr_text(transcript)
+    spoken = _normalized_asr_text(reference_text or '')
+    if len(heard) < 2 or len(spoken) < 2:
+        return False
+    if heard in spoken:
+        return True
+    similarity = difflib.SequenceMatcher(None, heard, spoken).ratio()
+    return similarity >= 0.72
+
+
+def _pcm_samples_from_wav(wav_bytes: bytes) -> Optional[tuple[list[float], int]]:
+    """Decode uncompressed PCM WAV to mono floats for the server-side VAD."""
+    try:
+        with wave.open(BytesIO(wav_bytes), "rb") as wav_file:
+            if wav_file.getcomptype() != "NONE":
+                return None
+            channels = max(1, wav_file.getnchannels())
+            sample_width = wav_file.getsampwidth()
+            sample_rate = wav_file.getframerate()
+            frames = wav_file.readframes(wav_file.getnframes())
+    except (EOFError, wave.Error):
+        return None
+
+    if sample_rate <= 0 or sample_width not in {1, 2, 4} or not frames:
+        return None
+    if sample_width == 1:
+        interleaved = [(value - 128) / 128.0 for value in frames]
+    else:
+        typecode = 'h' if sample_width == 2 else 'i'
+        raw = array(typecode)
+        raw.frombytes(frames)
+        if sys.byteorder != 'little':
+            raw.byteswap()
+        scale = float(1 << (sample_width * 8 - 1))
+        interleaved = [value / scale for value in raw]
+
+    usable = (len(interleaved) // channels) * channels
+    if usable <= 0:
+        return None
+    if channels == 1:
+        mono = interleaved[:usable]
+    else:
+        mono = [
+            sum(interleaved[index:index + channels]) / channels
+            for index in range(0, usable, channels)
+        ]
+    return mono, sample_rate
+
+
+def _wav_voice_activity(wav_bytes: bytes) -> Optional[Dict[str, Any]]:
+    decoded = _pcm_samples_from_wav(wav_bytes)
+    if decoded is None:
+        return None
+    samples, sample_rate = decoded
+    if not samples:
+        return None
+    rms = (sum(sample * sample for sample in samples) / len(samples)) ** 0.5
+    peak = max(abs(sample) for sample in samples)
+    frame_samples = max(1, int(sample_rate * _DIALOGUE_FRAME_MS / 1000))
+    frame_count = len(samples) // frame_samples
+    voiced_frames = 0
+    for frame_index in range(frame_count):
+        start = frame_index * frame_samples
+        frame = samples[start:start + frame_samples]
+        frame_rms = (sum(value * value for value in frame) / len(frame)) ** 0.5
+        frame_peak = max(abs(value) for value in frame)
+        if (
+            frame_rms >= _DIALOGUE_FRAME_RMS_THRESHOLD
+            and frame_peak >= _DIALOGUE_PEAK_THRESHOLD
+        ):
+            voiced_frames += 1
+    voiced_ratio = voiced_frames / frame_count if frame_count else 0.0
+    is_speech = (
+        rms >= _DIALOGUE_RMS_THRESHOLD
+        and peak >= _DIALOGUE_PEAK_THRESHOLD
+        and voiced_ratio >= _DIALOGUE_MIN_VOICED_RATIO
+    )
+    return {
+        "isSpeech": is_speech,
+        "rms": round(rms, 6),
+        "peak": round(peak, 6),
+        "voicedRatio": round(voiced_ratio, 6),
+        "sampleRate": sample_rate,
+    }
 
 
 def _ffmpeg_bin() -> Optional[str]:
@@ -198,37 +340,95 @@ def _transcribe_voice_service(
         return {"ok": False, "transcript": "", "error": f"voice_service_unreachable:{exc}"}
 
 
-def transcribe_wav_bytes(wav_bytes: bytes) -> Dict[str, Any]:
+def _finalize_transcript(
+    text: str,
+    *,
+    provider: str,
+    timing: Dict[str, Any],
+    echo_reference_text: Optional[str],
+) -> Dict[str, Any]:
+    if not _is_plausible_asr_text(text):
+        logger.info("丢弃不可信对话 ASR 文本 provider=%s text=%r", provider, text[:40])
+        return {
+            "ok": False,
+            "transcript": "",
+            "provider": provider,
+            "error": "implausible_transcript",
+            "timing": {**timing, "rejectedAs": "implausible_transcript"},
+        }
+    if _is_likely_tts_echo(text, echo_reference_text):
+        logger.info("丢弃疑似扬声器回声 provider=%s transcriptLength=%s", provider, len(text))
+        return {
+            "ok": False,
+            "transcript": "",
+            "provider": provider,
+            "error": "tts_echo",
+            "timing": {**timing, "rejectedAs": "tts_echo"},
+        }
+    return {
+        "ok": True,
+        "transcript": text,
+        "provider": provider,
+        "error": None,
+        "timing": timing,
+    }
+
+
+def transcribe_wav_bytes(
+    wav_bytes: bytes,
+    *,
+    echo_reference_text: Optional[str] = None,
+) -> Dict[str, Any]:
     """识别已是 WAV 的 PCM 字节。返回 {ok, transcript, provider, error}。"""
     if not wav_bytes or len(wav_bytes) < 64:
         return {"ok": False, "transcript": "", "provider": None, "error": "audio_too_short"}
+
+    vad = _wav_voice_activity(wav_bytes)
+    vad_timing = {"vad": vad} if vad is not None else {}
+    if vad is not None and not vad.get("isSpeech"):
+        logger.info(
+            "对话音频未通过服务端 VAD rms=%s peak=%s voiced=%s",
+            vad.get("rms"),
+            vad.get("peak"),
+            vad.get("voicedRatio"),
+        )
+        return {
+            "ok": False,
+            "transcript": "",
+            "provider": None,
+            "error": "no_speech",
+            "timing": vad_timing,
+        }
 
     local_started = time.perf_counter()
     text = _transcribe_local(wav_bytes)
     local_ms = round((time.perf_counter() - local_started) * 1000, 3)
     if text:
-        return {
-            "ok": True,
-            "transcript": text,
-            "provider": "local-funasr",
-            "error": None,
-            "timing": {"localAttemptMs": local_ms, "remoteFallbackMs": 0},
-        }
+        return _finalize_transcript(
+            text,
+            provider="local-funasr",
+            timing={
+                **vad_timing,
+                "localAttemptMs": local_ms,
+                "remoteFallbackMs": 0,
+            },
+            echo_reference_text=echo_reference_text,
+        )
 
     remote_started = time.perf_counter()
     remote = _transcribe_voice_service(wav_bytes, mime_type="audio/wav")
     remote_ms = round((time.perf_counter() - remote_started) * 1000, 3)
     if remote.get("ok") and remote.get("transcript"):
-        return {
-            "ok": True,
-            "transcript": remote["transcript"],
-            "provider": "voice-service-funasr",
-            "error": None,
-            "timing": {
+        return _finalize_transcript(
+            str(remote["transcript"]),
+            provider="voice-service-funasr",
+            timing={
+                **vad_timing,
                 "localAttemptMs": local_ms,
                 "remoteFallbackMs": remote_ms,
             },
-        }
+            echo_reference_text=echo_reference_text,
+        )
 
     err = remote.get("error") or _model_error or "funasr_unavailable"
     return {
@@ -237,6 +437,7 @@ def transcribe_wav_bytes(wav_bytes: bytes) -> Dict[str, Any]:
         "provider": None,
         "error": err,
         "timing": {
+            **vad_timing,
             "localAttemptMs": local_ms,
             "remoteFallbackMs": remote_ms,
         },
@@ -266,6 +467,7 @@ def transcribe_audio_base64(
     audio_base64: str,
     *,
     mime_type: str = "audio/webm",
+    echo_reference_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     """返回 {ok, transcript, provider, error}。"""
     decode_started = time.perf_counter()
@@ -281,7 +483,10 @@ def transcribe_audio_base64(
     convert_started = time.perf_counter()
     wav_bytes = _ensure_wav_bytes(audio_bytes, mime_type)
     convert_ms = round((time.perf_counter() - convert_started) * 1000, 3)
-    result = transcribe_wav_bytes(wav_bytes)
+    result = transcribe_wav_bytes(
+        wav_bytes,
+        echo_reference_text=echo_reference_text,
+    )
     timing = dict(result.get("timing") or {})
     timing.update({"base64DecodeMs": decode_ms, "audioConvertMs": convert_ms})
     result["timing"] = timing

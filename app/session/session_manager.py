@@ -75,10 +75,15 @@ class SessionManager:
                 metadata=metadata or {}
             )
             
-            # 设置文件路径
-            recording_dir = Config.get_recording_path(session.session_id)
-            result_dir = Config.get_result_path(session.session_id)
-            
+            # Bind the readable directory before resolving media paths. Binding
+            # is side-effect free; cancelled/failed preflight sessions therefore
+            # do not leave an empty UUID directory under recordings.
+            human_dir_name = (session.metadata or {}).get("human_dir_name")
+            if human_dir_name:
+                from app.services.recording_timeline import register_recording_dir
+
+                register_recording_dir(session.session_id, str(human_dir_name))
+
             session.video_file_path = str(Config.get_video_file_path(session.session_id))
             session.audio_file_path = str(Config.get_audio_file_path(session.session_id))
             session.result_file_path = str(Config.get_result_file_path(session.session_id))

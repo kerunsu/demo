@@ -46,15 +46,11 @@ process is `RobotRuntime`, stops it, restarts the named `DollSer` process so the
 current `Settings.xml` is loaded, and waits for `/ready=true`. The current
 release configures DollSer as COM3. Never kill an unrelated owner of 19091.
 
-On the first `app.py` start, the voice launcher checks the exact Python used by
-voice-service. Missing `torch`, `funasr`, and `modelscope` packages are
-installed from `tools/voice-service/requirements.txt`, then the FunASR ASR,
-VAD, and punctuation models are downloaded into
-`.runtime/models/voice/modelscope/`. The resolved paths are recorded in
-`.runtime/models/voice/model_paths.json`; later starts validate and reuse them.
-Failures are logged with the pip or downloader error and voice-service is not
-started in a false-ready state. Set `VOICE_SERVICE_AUTO_INSTALL=0` or
-`VOICE_SERVICE_AUTO_DOWNLOAD=0` only for pre-provisioned/offline deployments.
+`app.py` no longer installs, downloads or starts a local speech model. The
+production child page requires Chrome/Edge browser `SpeechRecognition` and
+sends recognized text to the Server. `tools/voice-service/` and
+`/api/v2/voice/health` remain manual legacy diagnostics only; normal startup
+does not create a process on port 8765.
 
 Rollback is a versioned application/config switch: disable new V2 profiles,
 return to `legacy_only`, restore the prior application/release package and
@@ -75,8 +71,10 @@ new manifest at an older `latest.zip`.
 `GET /api/server/diagnostics` reports `pipelineHealth.status`, separate vision
 and audio flags, and component failures with `required/stage/error`. Required
 failure is `unhealthy` and blocks strict readiness; optional failure is
-`degraded`. Install the pinned MediaPipe range from `requirements.txt` and the
-real ASR stack, including `torchaudio`, from the optional requirements file.
+`degraded`. Install the pinned MediaPipe range from `requirements.txt`. The
+production speech analyzer is disabled because recognized browser text is the
+fact source; the optional ASR stack is needed only when manually testing the
+legacy analyzer.
 
 ## Multi-worker coordination
 
@@ -110,7 +108,10 @@ readable but return `validationStatus: degraded` with specific warnings.
 Server Config → Overview controls `dialogue_wake_word_enabled` in
 `config/runtime_modes.yaml`. It defaults to `false`; teacher-button wake remains
 available while voice wake is disabled. The teacher control page can hide/show
-the child dialogue panel without changing recording state.
+the child dialogue panel without changing recording state. When voice wake is
+enabled, say the sentence-initial two-syllable “麦麦”; reviewed browser-ASR
+variants such as “买卖/卖卖/妹妹/慢慢” also match, while “妈妈” and a wake-like
+pair in the middle of a sentence do not.
 
 For a test session, open `full_interaction_timeline.jsonl` directly beside the
 recorded media in `static/recordings/sessions/<humanCourseDirectory>/`. The

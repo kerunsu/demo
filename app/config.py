@@ -176,6 +176,7 @@ class Config:
             'dialogueTtsMode': cls.DIALOGUE_TTS_MODE,
             'dialogueEnabled': cls.DIALOGUE_ENABLED,
             'dialogueWakeWordEnabled': bool(cls.DIALOGUE_WAKE_WORD_ENABLED),
+            'browserSpeechRate': float(cls.BROWSER_SPEECH_RATE),
             'chatProvider': cls.AI_CHAT_PROVIDER,
             'skipRuntimeRecordingCheck': bool(cls.SKIP_RUNTIME_RECORDING_CHECK),
         }
@@ -183,6 +184,7 @@ class Config:
     # ==================== 儿童对话 / 浏览器 TTS ====================
     # 课程语音统一由儿童端浏览器实时生成；旧 MP3 字段仅保留数据兼容。
     DIALOGUE_TTS_MODE = 'browser'
+    BROWSER_SPEECH_RATE = 0.88
     DIALOGUE_ENABLED = os.environ.get('DIALOGUE_ENABLED', 'true').lower() == 'true'
     # Teacher-triggered wake is the production default.  Voice wake remains an
     # explicit Server-console option for environments that need it.
@@ -217,31 +219,30 @@ class Config:
     @classmethod
     def get_recording_path(cls, session_id: str) -> Path:
         """
-        获取会话的录制文件存储路径。
+        解析会话的录制文件存储路径，不创建目录。
 
         连续录制（方案 B）：若已登记 human_dir，则落在
         ``static/recordings/sessions/{姓名-年龄-日期-N}/``；
         否则回退到 legacy ``static/recordings/{session_id}/``。
+
+        目录只能由第一笔实际元数据或媒体写入创建；路径查询、会话预留和
+        预检不得留下空 UUID 目录。
         """
         try:
             from app.services.recording_timeline import resolve_recording_dir
 
             mapped = resolve_recording_dir(session_id)
             if mapped is not None:
-                mapped.mkdir(parents=True, exist_ok=True)
                 return mapped
         except Exception:
             pass
         session_dir = cls.RECORDINGS_DIR / session_id
-        session_dir.mkdir(parents=True, exist_ok=True)
         return session_dir
 
     @classmethod
     def get_result_path(cls, session_id: str) -> Path:
-        """获取会话的分析结果存储路径"""
-        session_dir = cls.RESULTS_DIR / session_id
-        session_dir.mkdir(parents=True, exist_ok=True)
-        return session_dir
+        """解析会话的分析结果路径，不在只读查询时创建目录。"""
+        return cls.RESULTS_DIR / session_id
 
     @classmethod
     def get_video_file_path(cls, session_id: str) -> Path:

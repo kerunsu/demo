@@ -111,6 +111,6 @@ def test_phase1_socket_registration_and_emit_scan_match_snapshot(phase1_runtime)
 
     assert source_events == set(snapshot["socketDecoratedEvents"])
     assert actual_events == source_events
-    assert len(actual_events) == snapshot["socketDecoratorCount"] == 69
+    assert len(actual_events) == snapshot["socketDecoratorCount"] == 72
     assert source_emits == set(snapshot["observedServerEmits"])
-    assert len(source_emits) == 71
+    assert len(source_emits) == 74

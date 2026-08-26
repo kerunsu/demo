@@ -47,10 +47,10 @@ analyzers:
     min_detection_confidence: 0.5
     min_tracking_confidence: 0.5
   
-  # 语音识别分析器
+  # 本地语音识别分析器（生产儿童端使用浏览器 SpeechRecognition，默认关闭）
   speech:
     mode: null
-    enabled: true
+    enabled: false
     sample_rate: 1.0
     
     # Real 模式参数 (FunASR Paraformer)
@@ -70,12 +70,18 @@ matchers:
   pose:
     mode: null
     enabled: true
-    threshold: 0.85  # 匹配阈值（0-1）
+    threshold: 0.72  # 动作关节加权匹配阈值（0-1）
+    min_keypoint_visibility: 0.35
+    action_sigma: 0.55
+    allow_mirror: true  # 左右镜像动作也可判为正确
+    stable_frames: 4
+    stable_hold_seconds: 0.6  # 连续保持，防止路过姿态误触发
+    max_frame_gap_seconds: 0.55
   
   # 语音比对器
   speech:
     mode: null
-    enabled: true
+    enabled: false
     threshold: 60.0  # 及格分数线 (0-100)
 
 # 性能优化配置

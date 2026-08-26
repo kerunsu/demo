@@ -129,9 +129,9 @@ canvas {
   right: 16px;
   bottom: 16px;
   z-index: 5000;
-  display: block !important;
-  visibility: visible !important;
-  opacity: 1 !important;
+  display: block;
+  visibility: visible;
+  opacity: 1;
   pointer-events: auto;
   box-sizing: border-box;
   min-width: 240px;
@@ -145,6 +145,14 @@ canvas {
   text-align: left;
   border: 2px solid rgba(255, 196, 86, 0.95);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+#dialoguePanel.dialogue-panel.is-hidden,
+#dialoguePanel.dialogue-panel[hidden] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 .dialogue-panel__title {

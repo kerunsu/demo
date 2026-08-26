@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -16,6 +18,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.config import Config
+from app.storage.process_lock import InterProcessMutex
+from app.storage.session_layout import atomic_write_json
 from app.utils.logger import setup_logger
 
 logger = setup_logger("recording_timeline")
@@ -40,6 +44,15 @@ _path_registry: Dict[str, str] = {}
 _registry_lock = threading.RLock()
 # media_session_id → 内存中的 RecordingSession
 _active: Dict[str, "RecordingSession"] = {}
+
+DIALOGUE_TIMELINE_FILENAME = "dialogue_timeline.txt"
+_DIALOGUE_TIMELINE_HEADER = (
+    "# 儿童与麦麦对话时间线（dialogue-timeline-v1）\n"
+    "# 序号 | 服务器时间 | 会话时间 | 角色 | requestId | 内容\n"
+    "# 会话时间优先使用 server.session.monotonic，与本目录的 timeline.csv、audio.wav、video.avi 对齐；服务重启后由 session_meta.json 恢复。\n"
+    "# 内容中的换行、制表符、分隔符分别转义为 \\n、\\t、\\|。\n"
+)
+_dialogue_timeline_lock = threading.RLock()
 
 
 def sanitize_student_name(name: Optional[str], student_id: Optional[int] = None) -> str:
@@ -78,12 +91,13 @@ def sessions_root() -> Path:
 
 
 def register_recording_dir(media_session_id: str, human_dir_name: str) -> Path:
-    """登记 media_session_id → sessions/{human_dir_name}，并创建目录。"""
+    """登记 media_session_id → sessions/{human_dir_name}，不提前创建目录。"""
+    name = str(human_dir_name or "").strip()
+    if not name or name in {".", ".."} or Path(name).name != name:
+        raise ValueError("human_dir_name_invalid")
     with _registry_lock:
-        _path_registry[media_session_id] = human_dir_name
-    path = sessions_root() / human_dir_name
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+        _path_registry[str(media_session_id)] = name
+    return sessions_root() / name
 
 
 def unregister_recording_dir(media_session_id: str) -> None:
@@ -137,26 +151,37 @@ def allocate_human_dir_name(
     student_name: Optional[str],
     student_age: Optional[int],
     date_str: Optional[str] = None,
+    additional_roots: Optional[List[Path]] = None,
 ) -> Tuple[str, int]:
     """
-    生成 {姓名}-{年龄}-{YYYYMMDD}-{N}，N 为同前缀已有目录最大序号 + 1。
+    生成 {姓名}-{年龄}-{YYYYMMDD}-{N}。
+
+    序号同时避开 sessions 和 behavior 中已占用的名字；这样严格预检取消后
+    即使只有行为审计数据，也不会让下一次训练覆盖同名目录。
     """
     name = sanitize_student_name(student_name, student_id)
     age = format_age(student_age)
     date_str = date_str or datetime.now().strftime("%Y%m%d")
     prefix = f"{name}-{age}-{date_str}-"
-    root = sessions_root()
+    roots = [sessions_root(), Config.RECORDINGS_DIR / "behavior"]
+    roots.extend(Path(item) for item in (additional_roots or []))
     max_n = 0
     pattern = re.compile(re.escape(prefix) + r"(\d+)$")
-    try:
-        for child in root.iterdir():
-            if not child.is_dir():
-                continue
-            m = pattern.match(child.name)
-            if m:
-                max_n = max(max_n, int(m.group(1)))
-    except FileNotFoundError:
-        pass
+    seen_roots = set()
+    for root in roots:
+        resolved = str(root.resolve())
+        if resolved in seen_roots:
+            continue
+        seen_roots.add(resolved)
+        try:
+            for child in root.iterdir():
+                if not child.is_dir():
+                    continue
+                m = pattern.fullmatch(child.name)
+                if m:
+                    max_n = max(max_n, int(m.group(1)))
+        except (FileNotFoundError, OSError):
+            continue
     n = max_n + 1
     return f"{prefix}{n}", n
 
@@ -227,6 +252,7 @@ class RecordingSession:
     human_dir_name: str
     student_id: Optional[int]
     recording_started_at: float
+    recording_started_monotonic: float
     recording_started_iso: str
     status: str = "recording"  # recording | finalized | cancelled
     n: int = 1
@@ -238,7 +264,7 @@ class RecordingSession:
         return sessions_root() / self.human_dir_name
 
     def now_offset(self) -> float:
-        return max(0.0, time.time() - self.recording_started_at)
+        return max(0.0, time.monotonic() - self.recording_started_monotonic)
 
     def append_segment(
         self,
@@ -288,18 +314,45 @@ class RecordingSession:
     def _flush_csv_unlocked(self) -> Path:
         path = self.dir_path / "timeline.csv"
         self.dir_path.mkdir(parents=True, exist_ok=True)
-        with path.open("w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=TIMELINE_COLUMNS)
-            writer.writeheader()
-            for seg in self.segments:
-                writer.writerow(seg.to_row())
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=".timeline.csv.", suffix=".tmp", dir=str(self.dir_path)
+        )
+        temporary_path = Path(temporary_name)
+        try:
+            with os.fdopen(fd, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=TIMELINE_COLUMNS)
+                writer.writeheader()
+                for seg in self.segments:
+                    writer.writerow(seg.to_row())
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary_path, path)
+        except BaseException:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            temporary_path.unlink(missing_ok=True)
+            raise
         return path
 
     def _write_meta_unlocked(self, *, duration_sec: Optional[float] = None) -> Path:
-        meta = {
+        path = self.dir_path / "session_meta.json"
+        current: Dict[str, Any] = {}
+        if path.exists():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise ValueError(f"invalid_session_meta:{path}") from exc
+            if not isinstance(loaded, dict):
+                raise ValueError(f"invalid_session_meta_object:{path}")
+            current = loaded
+        current.update({
+            "schemaVersion": 2,
             "mediaSessionId": self.media_session_id,
             "trainingSessionId": self.training_session_id,
             "humanDirName": self.human_dir_name,
+            "behaviorDirName": self.human_dir_name,
             "studentId": self.student_id,
             "n": self.n,
             "status": self.status,
@@ -308,9 +361,32 @@ class RecordingSession:
             "durationSec": duration_sec,
             "recordingMode": "continuous",
             "segCount": len(self.segments),
-        }
-        path = self.dir_path / "session_meta.json"
-        path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+            "clockDomain": "server.session.monotonic",
+        })
+        # Runtime uploads may add environment entries later; finalize preserves
+        # that extended manifest rather than overwriting it. New continuous
+        # sessions always declare the two compatibility primary tracks.
+        current.setdefault("tracks", [
+            {
+                "trackId": "child_video",
+                "kind": "video",
+                "role": "primary_child",
+                "required": True,
+                "filename": "video.avi",
+                "format": "avi",
+                "clockDomain": "server.session.monotonic",
+            },
+            {
+                "trackId": "child_audio",
+                "kind": "audio",
+                "role": "primary_child",
+                "required": True,
+                "filename": "audio.wav",
+                "format": "wav",
+                "clockDomain": "server.session.monotonic",
+            },
+        ])
+        atomic_write_json(path, current)
         return path
 
     def write_session_meta_skeleton(self) -> Path:
@@ -327,6 +403,7 @@ def begin_recording_session(
     n: int,
 ) -> RecordingSession:
     started = time.time()
+    started_monotonic = time.monotonic()
     iso = datetime.now().isoformat(timespec="seconds")
     register_recording_dir(media_session_id, human_dir_name)
     rs = RecordingSession(
@@ -335,6 +412,7 @@ def begin_recording_session(
         human_dir_name=human_dir_name,
         student_id=student_id,
         recording_started_at=started,
+        recording_started_monotonic=started_monotonic,
         recording_started_iso=iso,
         n=n,
     )
@@ -366,6 +444,134 @@ def get_recording_session_by_training(training_session_id: str) -> Optional[Reco
             if rs.training_session_id == training_session_id:
                 return rs
     return None
+
+
+def _escape_dialogue_timeline_field(value: Any) -> str:
+    """Keep one message on one readable, lossless timeline row."""
+    return (
+        str(value or "")
+        .replace("\\", "\\\\")
+        .replace("\r\n", "\\n")
+        .replace("\r", "\\n")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+        .replace("|", "\\|")
+    )
+
+
+def _format_dialogue_offset(offset_sec: float) -> str:
+    total_ms = max(0, int(round(float(offset_sec) * 1000)))
+    hours, remainder_ms = divmod(total_ms, 3_600_000)
+    minutes, remainder_ms = divmod(remainder_ms, 60_000)
+    seconds, milliseconds = divmod(remainder_ms, 1000)
+    return f"T+{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
+
+
+def _last_dialogue_position(existing: str) -> Tuple[int, float]:
+    for line in reversed(existing.splitlines()):
+        parts = line.split(" | ", 5)
+        if len(parts) != 6:
+            continue
+        try:
+            sequence = int(parts[0])
+            match = re.fullmatch(r"T\+(\d+):(\d{2}):(\d{2})\.(\d{3})", parts[2])
+            if not match:
+                continue
+            hours, minutes, seconds, milliseconds = map(int, match.groups())
+            offset = hours * 3600 + minutes * 60 + seconds + milliseconds / 1000
+            return sequence, offset
+        except (TypeError, ValueError):
+            continue
+    return 0, 0.0
+
+
+def _atomic_write_dialogue_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
+    )
+    temporary_path = Path(temporary)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_path, path)
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+
+def append_dialogue_timeline_message(
+    media_session_id: str,
+    *,
+    role: str,
+    text: str,
+    request_id: Optional[str] = None,
+) -> Optional[Path]:
+    """Persist one visible chat bubble beside the session media files.
+
+    Rows are server ordered. Their ``T+`` value uses the same active recording
+    monotonic origin as ``timeline.csv``; metadata supplies a wall-clock fallback
+    only after an application restart.
+    """
+    session_id = str(media_session_id or "").strip()
+    message = str(text or "").strip()
+    role_label = {"child": "儿童", "maimai": "麦麦"}.get(str(role or "").strip())
+    if not session_id or not message:
+        return None
+    if role_label is None:
+        raise ValueError("dialogue_timeline_role_invalid")
+
+    session_dir = resolve_recording_dir(session_id)
+    if session_dir is None:
+        logger.warning("dialogue_timeline: 未找到对应会话目录 media=%s", session_id)
+        return None
+
+    path = Path(session_dir) / DIALOGUE_TIMELINE_FILENAME
+    process_lock = InterProcessMutex(sessions_root() / ".dialogue_timeline.lock")
+    with _dialogue_timeline_lock, process_lock:
+        now_epoch = time.time()
+        recording = get_recording_session(session_id)
+        if recording is not None and Path(recording.dir_path) == Path(session_dir):
+            offset_sec = recording.now_offset()
+        else:
+            offset_sec = 0.0
+            try:
+                metadata = json.loads(
+                    (Path(session_dir) / "session_meta.json").read_text(encoding="utf-8")
+                )
+                offset_sec = max(
+                    0.0, now_epoch - float(metadata.get("recordingStartedAtUnix"))
+                )
+            except (OSError, TypeError, ValueError, AttributeError):
+                pass
+
+        existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+        last_sequence, last_offset = _last_dialogue_position(existing)
+        offset_sec = max(float(offset_sec), last_offset)
+        wall_timestamp = datetime.fromtimestamp(now_epoch).astimezone().isoformat(
+            timespec="milliseconds"
+        )
+        row = " | ".join(
+            (
+                f"{last_sequence + 1:06d}",
+                wall_timestamp,
+                _format_dialogue_offset(offset_sec),
+                role_label,
+                _escape_dialogue_timeline_field(request_id or "-"),
+                _escape_dialogue_timeline_field(message),
+            )
+        )
+        prefix = existing or _DIALOGUE_TIMELINE_HEADER
+        if prefix and not prefix.endswith("\n"):
+            prefix += "\n"
+        _atomic_write_dialogue_text(path, prefix + row + "\n")
+    return path
 
 
 def list_active_recording_sessions() -> List["RecordingSession"]:

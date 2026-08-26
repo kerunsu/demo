@@ -4,7 +4,11 @@
     async request(path, options) {
       const response = await fetch(path, options || {});
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.detail || body.error || `HTTP ${response.status}`);
+      if (!response.ok) {
+        const error = new Error(body.detail || body.error || `HTTP ${response.status}`);
+        error.code = body.error || null;
+        throw error;
+      }
       return body;
     },
     json(path, method, value) {
@@ -247,11 +251,26 @@
 
   async function addCandidate(index) {
     try {
-      await api.json('/api/v2/capture/devices/candidates', 'POST', { index, required: false });
+      const result = await api.json('/api/v2/capture/devices/candidates', 'POST', { index, required: false });
       text('phase5-device-warning', `摄像头 ${index} 已加入配置，正在执行课前首帧检查…`);
-      await checkDevices();
-      await discoverDevices();
-    } catch (error) { text('phase5-device-warning', `摄像头添加失败：${error.message}`); }
+      const button = document.querySelector(`[data-device-candidate-add="${index}"]`);
+      if (button) {
+        const badge = document.createElement('span');
+        badge.className = 'cc-badge primary';
+        badge.textContent = '已添加';
+        button.replaceWith(badge);
+      }
+      const checkResult = await checkDevices();
+      const addedCheck = (checkResult?.checks || []).find((item) => item.deviceId === result.device?.deviceId);
+      if (addedCheck?.captureReady && addedCheck?.firstFrameReady) {
+        text('phase5-device-warning', `摄像头 ${index} 已添加并完成首帧检查。`);
+      }
+    } catch (error) {
+      const hint = error.code === 'camera_discovery_required'
+        ? '可用设备列表已过期，请先点击“发现可用设备”重新扫描。'
+        : `摄像头添加失败：${error.message}`;
+      text('phase5-device-warning', hint);
+    }
   }
 
   async function checkDevices() {
@@ -264,9 +283,11 @@
           ? '机器人端在线，但版本过旧或协议不兼容，请升级 Robot Runtime 后重试。'
           : '设备检查完成：存在未连接或未取得首样本的设备，请查看状态。');
       await loadOverview();
+      return result;
     } catch (error) {
       text('phase5-device-warning', `设备检查失败：${error.message}`);
       await loadOverview();
+      return null;
     }
   }
 

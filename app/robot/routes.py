@@ -546,14 +546,19 @@ def get_students():
 def get_courses():
     """获取当前数据库课程；旧 JSON 仅在数据库不可用时降级。"""
     try:
+        from app.course_scope import filter_course_payloads
         from database.models import Course
 
-        courses = [item.to_dict() for item in Course.query.order_by(Course.id).all()]
+        courses = filter_course_payloads(
+            [item.to_dict() for item in Course.query.order_by(Course.id).all()]
+        )
         return jsonify({'success': True, 'courses': courses})
     except Exception as e:
         logger.warning("数据库课程列表读取失败，降级到 legacy JSON: %s", e)
         try:
-            courses = get_robot_service().get_courses()
+            from app.course_scope import filter_course_payloads
+
+            courses = filter_course_payloads(get_robot_service().get_courses())
             return jsonify({'success': True, 'courses': courses, 'source': 'legacy'})
         except Exception as legacy_error:
             logger.error("获取课程列表失败: %s", legacy_error)

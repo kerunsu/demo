@@ -8,6 +8,7 @@
  */
 (function (global) {
   const VOICE_STORAGE_KEY = "asd-agent-voice-name";
+  const DEFAULT_SPEECH_RATE = 0.88;
 
   let availableVoices = [];
   let preferredVoice = null;
@@ -16,6 +17,7 @@
   let warmWatchdog = null;
   let speakGeneration = 0;
   let activeSpeech = null;
+  let currentSpeechRate = DEFAULT_SPEECH_RATE;
   const completedSpeechIds = new Map();
   const COMPLETED_SPEECH_TTL_MS = 2 * 60 * 1000;
   const COMPLETED_SPEECH_MAX = 256;
@@ -145,6 +147,22 @@
     if (preferredVoice) saveVoiceName(preferredVoice.name);
   }
 
+  function normalizeSpeechRate(value, fallback = DEFAULT_SPEECH_RATE) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0.5 && parsed <= 2
+      ? Math.round(parsed * 100) / 100
+      : fallback;
+  }
+
+  function setBrowserSpeechRate(value) {
+    currentSpeechRate = normalizeSpeechRate(value, currentSpeechRate);
+    return currentSpeechRate;
+  }
+
+  function getBrowserSpeechRate() {
+    return currentSpeechRate;
+  }
+
   function isBrowserSpeechSynthesisSupported() {
     return Boolean(getSpeechSynthesis());
   }
@@ -254,10 +272,11 @@
     return true;
   }
 
-  function estimateSpeechMs(content) {
+  function estimateSpeechMs(content, speechRate = currentSpeechRate) {
     // ~3.5 字/秒 + 缓冲；给对话长句留足时间
     const chars = Math.max(1, String(content || "").length);
-    return Math.min(20000, Math.max(3500, Math.round(chars * 320) + 1200));
+    const rateFactor = DEFAULT_SPEECH_RATE / normalizeSpeechRate(speechRate);
+    return Math.min(30000, Math.max(3500, Math.round(chars * 320 * rateFactor) + 1200));
   }
 
   function safeCancel(synth) {
@@ -342,7 +361,8 @@
 
       const utterance = new SpeechSynthesisUtterance(content);
       utterance.lang = (preferredVoice && preferredVoice.lang) || "zh-CN";
-      utterance.rate = 0.88;
+      const speechRate = normalizeSpeechRate(options.rate, currentSpeechRate);
+      utterance.rate = speechRate;
       utterance.pitch = 1.05;
       utterance.volume = 1;
       if (preferredVoice) utterance.voice = preferredVoice;
@@ -429,7 +449,7 @@
           if (!isCurrentAttempt()) return;
           safeCancel(synth);
           finishOnce("ended", "end_watchdog");
-        }, estimateSpeechMs(content) + 4000);
+        }, estimateSpeechMs(content, speechRate) + 4000);
       };
       utterance.onend = () => {
         clearAllWatch();
@@ -500,6 +520,8 @@
     subscribeBrowserSpeechVoiceChanges,
     getPreferredBrowserSpeechVoiceName,
     setPreferredBrowserSpeechVoice,
+    setBrowserSpeechRate,
+    getBrowserSpeechRate,
     isBrowserSpeechSynthesisSupported,
     isBrowserSpeechUnlocked,
     isBrowserSpeechWarm: () => speechWarmState === "ready",

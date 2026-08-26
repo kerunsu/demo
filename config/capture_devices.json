@@ -1,4 +1,25 @@
 {
-  "devices": [],
+  "devices": [
+    {
+      "capabilities": {
+        "displayName": "摄像头 0"
+      },
+      "device_id": "server.camera.0",
+      "enabled": true,
+      "format": {},
+      "kind": "video",
+      "location": "server",
+      "owner": "server",
+      "priority": 0,
+      "required": false,
+      "role": "primary_environment",
+      "runtime_id": null,
+      "schema_version": 1,
+      "selector": {
+        "index": 0
+      },
+      "track_id": "server_camera_0-11d8faa740a7"
+    }
+  ],
   "schemaVersion": 1
 }

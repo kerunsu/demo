@@ -33,7 +33,9 @@ behavior finishes. That return uses the idle motion's normal per-motion
 `speedMultiplier`, so it is tuned in the Action Library instead of by adding a
 second state-machine delay. The repository default `空动作` uses `0.5` for a
 gentler return; changing that one action updates local, child-agent and Robot
-Runtime playback consistently.
+Runtime playback consistently. Idle transition replacement is non-blocking:
+the next formal action cancels the previous worker cooperatively and starts at
+once instead of waiting for a thread join.
 
 InteractionProfileV2 is keyed by course, then event/scene/line context. A
 binding may describe motions, expressions, fixed audio/TTS speech and timing.
@@ -58,6 +60,12 @@ rule-specific question slots in addition to general hint and praise. Legacy
 course/item audio paths remain readable for database compatibility but are no
 longer editable in the course page and are not runtime inputs.
 
+Server Configuration Center -> Overview also owns `browser_speech_rate` in
+`config/runtime_modes.yaml`. The range is `0.5..2.0`, default `0.88`, and a
+missing field in an older file preserves that default. Saving is same-directory
+temporary write + `fsync` + atomic replace. `BROWSER_SPEECH_RATE` is an
+environment fallback only; the persisted runtime value wins after restart.
+
 Phrase selection is keyed by course type, not by an individual course row.
 Creating a course under an existing type therefore makes it use that type's
 enabled phrases immediately; the Realtime Phrases page queries and displays the
@@ -65,7 +73,45 @@ currently linked course rows on every refresh. Device and recording operations
 are a top-level Configuration Center area at `/server/config/devices`, not an
 Interaction Content subview.
 
+## Course answer pronunciation tolerance
+
+`config/onomatopoeia_aliases.yaml` remains the reviewed answer vocabulary for
+naming and onomatopoeia courses. Its existing `aliases` mapping adds accepted
+animal sounds. The additive `phonetic_groups` list groups characters that the
+browser recognizer commonly confuses because they are homophones or close in
+pronunciation; the first character is only the internal matching representative.
+For example, 狗/沟 and 汪/旺 share a group, so the displayed and persisted
+transcript remains unchanged while the correct course keyword is accepted.
+
+An absent or empty `phonetic_groups` section preserves the former exact-text
+matching behavior. Keep groups narrow and reviewable: adding an unrelated
+character makes every keyword containing that group equivalent during course
+answer matching. The file is already included by the recursive `config/`
+configuration sync/export.
+
 ## Teacher course presets
+
+`config/demo_course_scope.json` is the deployment-level curriculum boundary.
+Schema v1 stores ordered `enabledCourseTypes`; this demo deployment fixes the
+list to `mimic`, `pairing` and `ordering`. The Server applies it to production course
+selection, Configuration Center course/preset catalogs, phrase-course lists,
+configuration-sync course exports and new report scoring/projection. Missing or
+invalid scope data fails closed to the same three types. It does not delete the
+other course rows, assets or historical reports from SQLite/storage.
+
+## Mimic pose recognition
+
+`config/analyzers.yaml` keeps the pose analyzer and matcher in `real` mode and
+loads `models/pose_landmarker_lite.task`. The matcher defaults are a `0.72`
+action-joint score threshold, minimum landmark visibility `0.35`, distance
+scale `action_sigma=0.55`, mirrored matching enabled, at least four successful
+frames held for `0.6s`, and a maximum `0.55s` gap between contributing frames.
+These settings are reviewed as one unit: lowering the score or hold time raises
+false positives; increasing either makes young children's approximate actions
+harder to accept. Missing model/target pose is an unavailable recognizer and
+must never be converted into an automatic correct answer. The deployment-root
+model file is supplied to MediaPipe as bytes so a Windows drive-letter path
+cannot be reinterpreted relative to the Python package directory.
 
 Course presets are managed in Configuration Center -> Interaction Content ->
 Course Presets and stored in `config/course_presets.json` with

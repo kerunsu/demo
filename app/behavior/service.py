@@ -67,6 +67,10 @@ class BehaviorService:
     def get_training(self, training_session_id: str) -> Optional[TrainingSessionRecord]:
         return self.store.get_training(training_session_id)
 
+    def bind_directory(self, training_session_id: str, human_dir_name: str):
+        """Bind behavior artifacts to the media session's readable directory."""
+        return self.store.bind_directory(training_session_id, human_dir_name)
+
     def open_window(self, training_session_id: str, **kwargs) -> QuestionWindow:
         return self.timeline.open_window(training_session_id, **kwargs)
 

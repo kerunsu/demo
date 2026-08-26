@@ -60,7 +60,7 @@ matchers
   - **用途**：集中管理服务端配置与路径；会创建 `static/recordings`、`static/results`、`static/temp`、`logs` 等目录。
   - **常用字段**：`SECRET_KEY`、`SQLALCHEMY_DATABASE_URI`、视频/音频采样参数、分析开关、队列大小、日志级别等。
   - **常用方法**
-    - `get_recording_path(session_id)`: 返回该 session 的录制目录（并确保存在）
+    - `get_recording_path(session_id)`: 只解析该 session 的录制目录；第一笔真实写入才创建目录
     - `get_result_path(session_id)`: 返回结果目录（并确保存在）
     - `get_video_file_path(session_id) / get_audio_file_path(session_id) / get_result_file_path(session_id)`: 拼接输出文件完整路径
 
@@ -401,7 +401,7 @@ matchers
   - **MockSpeechAnalyzer**：Mock 语音分析器
   - **MockSessionSpeechAnalyzer**：会话级 mock 语音分析器（汇总/窗口）
 - `real_speech_analyzer.py`
-  - **RealSpeechAnalyzer**：真实语音 ASR 分析器（依赖 torch/funasr/librosa 等，见 requirements-optional-analyzers.txt）
+  - **RealSpeechAnalyzer**：旧版可选本地 ASR 分析器；生产配置默认关闭，儿童端以浏览器识别文本为准
   - `_preprocess_audio/analyze_audio/analyze_chunk`：预处理、全量分析、chunk 分析
 - `__init__.py`
   - 汇总导出 audio analyzers

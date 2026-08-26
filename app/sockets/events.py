@@ -273,6 +273,7 @@ def _update_play_request(
     is_aux: Optional[bool] = None,
     interaction_context: Optional[Dict[str, Any]] = None,
     interactive_auto_praise: Optional[bool] = None,
+    teacher_rating_required: Optional[bool] = None,
     keep: bool = True,
 ) -> None:
     with _play_request_lock:
@@ -289,6 +290,8 @@ def _update_play_request(
             entry['isAux'] = bool(is_aux)
         if interactive_auto_praise is not None:
             entry['interactiveAutoPraise'] = bool(interactive_auto_praise)
+        if teacher_rating_required is not None:
+            entry['teacherRatingRequired'] = bool(teacher_rating_required)
         if interaction_context is not None:
             entry['interactionContext'] = dict(interaction_context)
         if content_forward_data is not None and not bool(is_aux):
@@ -1656,10 +1659,11 @@ def trigger_keyword_parity_praise(
     robot_service=None,
     audio_service=None,
     on_before_child_play=None,
+    source: str = 'keyword_listen',
     _retry_count: int = 0,
 ) -> Dict[str, Any]:
     """
-    Naming/拟声关键词命中 → 与教师点「表扬」同级的原子包：
+    命名/拟声关键词或模仿动作命中 → 与教师点「表扬」同级的原子包：
     表情 + 动作 + 鼓励动画 + 表扬 TTS，并写入 play_request 缓存供
     behavior_animation_ended → 教师打分。
 
@@ -1672,6 +1676,7 @@ def trigger_keyword_parity_praise(
     sid = str(session_id or '').strip()
     req_id = str(request_id or '').strip()
     ct = str(course_type or '').strip().lower()
+    praise_source = str(source or 'keyword_listen').strip() or 'keyword_listen'
     empty = {
         'ok': False,
         'serverPlayed': False,
@@ -1680,7 +1685,9 @@ def trigger_keyword_parity_praise(
         'behaviorAnimation': None,
         'sessionId': sid or None,
     }
-    if not sid or not req_id or ct not in ('naming', 'speech', 'onomatopoeia'):
+    if not sid or not req_id or ct not in (
+        'naming', 'speech', 'onomatopoeia', 'mimic', 'imitation', 'pose'
+    ):
         return empty
 
     try:
@@ -1689,7 +1696,7 @@ def trigger_keyword_parity_praise(
 
             robot_service = get_robot_service()
         reservation = robot_service.reserve_behavior(
-            behavior_id=f'keyword-praise-{uuid.uuid4().hex[:12]}',
+            behavior_id=f'auto-praise-{uuid.uuid4().hex[:12]}',
             request_id=req_id,
             session_id=sid,
         )
@@ -1894,7 +1901,7 @@ def trigger_keyword_parity_praise(
                 'behaviorId': behavior_id,
                 'sessionId': sid,
                 'isAux': True,
-                'source': 'keyword_listen',
+                'source': praise_source,
                 'animationExpected': bool(behavior_animation),
                 'animationSkipped': not bool(behavior_animation),
             },
@@ -1913,6 +1920,7 @@ def trigger_keyword_parity_praise(
             'courseId': behavior_payload.get('courseId'),
             'itemId': behavior_payload.get('itemId'),
             'studentId': behavior_payload.get('studentId'),
+            'source': praise_source,
         }
         if callable(on_before_child_play):
             try:
@@ -1976,6 +1984,7 @@ def _dispatch_v2_speech_commands(
             'interactionId': behavior_id,
             'requestId': request_id,
             'request_id': request_id,
+            'speechRate': float(Config.BROWSER_SPEECH_RATE),
         }
         if line_id:
             payload['lineId'] = line_id
@@ -2169,6 +2178,21 @@ _child_sid_bindings: Dict[str, Dict[str, Any]] = {}
 _child_sid_capabilities: Dict[str, Optional[bool]] = {}
 _child_sync_attempted_sids = set()
 _child_session_owners: Dict[str, str] = {}
+
+
+def get_connected_child_sid(session_id: Any) -> Optional[str]:
+    """Return the child that currently owns an exact runtime session room."""
+    key = str(session_id or '').strip()
+    if not key:
+        return None
+    with _presence_lock:
+        owner_sid = _child_session_owners.get(key)
+        if not owner_sid:
+            return None
+        detail = _presence_details['child'].get(owner_sid) or {}
+        if not detail.get('online', True):
+            return None
+        return str(owner_sid)
 
 
 def _now_ms() -> int:
@@ -2453,11 +2477,14 @@ def _should_forward_animation_terminal_to_teacher(
     request_id: Optional[str],
     behavior_id: Optional[str],
 ) -> bool:
-    """Teacher scoring only. Interactive auto-praise must not open rating."""
+    """Forward only praise terminals that participate in teacher scoring."""
     entry = _play_request_entry_for(request_id)
     if not entry or not behavior_id:
         return False
-    if entry.get('interactiveAutoPraise'):
+    if (
+        entry.get('interactiveAutoPraise')
+        or entry.get('teacherRatingRequired') is False
+    ):
         return False
     return str(entry.get('behaviorId') or '') == str(behavior_id)
 
@@ -3678,7 +3705,9 @@ def register_socket_events(socketio):
                 'request_id': request_id,
             })
             return
+        aux_flags = _aux_flags(payload)
         wants_aux = _has_aux_intent(payload)
+        is_teacher_praise = bool(aux_flags.get('praise'))
         logger.info(
             'play_resource 收到 request=%s question=%s aux=%s',
             request_id,
@@ -3866,7 +3895,29 @@ def register_socket_events(socketio):
             resolved_file = result.get('resolved_file')
             is_aux_op = bool(result.get('is_aux_operation', False))
             behavior_animation = result.get('behavior_animation')
-            aux_flags = _aux_flags(payload)
+            # PlayResourceHandler has now replaced the client courseType with
+            # the database-backed value. Praise workflow policy must be derived
+            # only after that normalization, never from a stale client label.
+            normalized_course_type = str(
+                payload.get('courseType') or payload.get('course_type') or ''
+            ).strip().lower()
+            interactive_teacher_praise = bool(
+                is_teacher_praise
+                and normalized_course_type in {
+                    'pairing', 'matching', 'ordering', 'sequencing'
+                }
+            )
+            if is_teacher_praise:
+                # Pairing/ordering praise uses the same multimodal behavior plan
+                # as every other course. Only its post-animation workflow differs:
+                # remove the overlay and reveal the already committed question.
+                payload['teacherRatingRequired'] = not interactive_teacher_praise
+                payload['returnToCurrentQuestion'] = interactive_teacher_praise
+                payload['holdLastFrame'] = not interactive_teacher_praise
+                _update_play_request(
+                    request_id,
+                    teacher_rating_required=not interactive_teacher_praise,
+                )
             interaction_event_type = (
                 'question_presented' if aux_flags.get('question')
                 else 'praise' if aux_flags.get('praise')
@@ -4333,6 +4384,12 @@ def register_socket_events(socketio):
                 ),
                 'resourceReadySupported': resource_ready_supported,
             }
+            if is_teacher_praise:
+                success_ack.update({
+                    'teacherRatingRequired': not interactive_teacher_praise,
+                    'returnToCurrentQuestion': interactive_teacher_praise,
+                    'holdLastFrame': not interactive_teacher_praise,
+                })
             if robot_result.get('shadowReport'):
                 success_ack['shadowReport'] = robot_result.get('shadowReport')
             _update_play_request(
@@ -5403,7 +5460,7 @@ def register_socket_events(socketio):
 
     @socketio.on('matching_question_ready')
     def handle_matching_question_ready(data):
-        """配对新题展示后播「选和上面一样的」（教师端不再自动发裸 aux.question）。
+        """配对新题展示后播「找出和这个一样的」（教师端不再自动发裸 aux.question）。
 
         Hard rule: every item switch asks immediately. Child answers wait for
         the current question to finish, then play queued praise/encourage.

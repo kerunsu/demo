@@ -8,6 +8,8 @@ unchanged when the registry is edited.
 from __future__ import annotations
 
 from dataclasses import asdict
+import threading
+import time
 
 from flask import Blueprint, jsonify, request
 
@@ -17,6 +19,26 @@ from app.monitor.configured_cameras import discover_local_cameras
 
 
 capture_devices_bp = Blueprint("capture_devices", __name__, url_prefix="/api/v2/capture")
+_CANDIDATE_CACHE_TTL_SEC = 120.0
+_candidate_cache_lock = threading.RLock()
+_candidate_cache: dict[int, dict] = {}
+_candidate_cache_at = 0.0
+
+
+def _replace_candidate_cache(candidates: list[dict]) -> None:
+    global _candidate_cache_at
+    with _candidate_cache_lock:
+        _candidate_cache.clear()
+        _candidate_cache.update({int(item["index"]): dict(item) for item in candidates})
+        _candidate_cache_at = time.monotonic()
+
+
+def _recent_candidate(index: int) -> dict | None:
+    with _candidate_cache_lock:
+        if time.monotonic() - _candidate_cache_at > _CANDIDATE_CACHE_TTL_SEC:
+            return None
+        candidate = _candidate_cache.get(int(index))
+        return dict(candidate) if candidate is not None else None
 
 
 def _bool_value(value, *, field: str) -> bool:
@@ -162,7 +184,6 @@ def discover_capture_devices():
 def capture_device_candidates():
     """Probe local cameras without silently registering any of them."""
     try:
-        candidates = discover_local_cameras()
         configured_devices = [
             device for device in get_device_registry().list_devices()
             if device.kind == "video" and device.owner == "server" and "index" in device.selector
@@ -171,6 +192,11 @@ def capture_device_candidates():
             int(device.selector.get("index")): device.device_id
             for device in configured_devices
         }
+        # A configured camera may already be held open by the monitor preview.
+        # Never ask DirectShow to open it a second time merely to render this
+        # list; that native re-open caused python.exe heap corruption on Windows.
+        candidates = discover_local_cameras(skip_indexes=configured)
+        _replace_candidate_cache(candidates)
     except Exception as exc:
         return jsonify({"success": False, "error": "camera_discovery_failed", "detail": str(exc)}), 500
     for candidate in candidates:
@@ -185,7 +211,8 @@ def capture_device_candidates():
                 "kind": "video",
                 "name": str(device.capabilities.get("displayName") or f"摄像头 {index}"),
                 "configuredDeviceId": device.device_id,
-                "available": False,
+                "available": None,
+                "probeSkipped": "configured_camera_not_reopened",
             })
     return jsonify({"success": True, "candidates": candidates})
 
@@ -205,9 +232,13 @@ def add_capture_device_candidate():
         ), None)
         if existing:
             return jsonify({"success": True, "created": False, "device": _json_device(existing)})
-        candidates = {item["index"]: item for item in discover_local_cameras()}
-        if index not in candidates:
-            return jsonify({"success": False, "error": "camera_not_available"}), 404
+        candidate = _recent_candidate(index)
+        if candidate is None:
+            return jsonify({
+                "success": False,
+                "error": "camera_discovery_required",
+                "detail": "请先重新扫描可用摄像头，再点击添加",
+            }), 409
         server_videos = [
             item for item in registry.list_devices()
             if item.kind == "video" and item.owner == "server"
@@ -224,7 +255,7 @@ def add_capture_device_candidate():
             selector={"index": index},
             enabled=True,
             required=_bool_value(payload.get("required", False), field="required"),
-            capabilities={"displayName": candidates[index]["name"]},
+            capabilities={"displayName": candidate["name"]},
         )
         registry.register(device)
     except (TypeError, ValueError) as exc:

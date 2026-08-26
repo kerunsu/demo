@@ -10,18 +10,18 @@
   <style>
     /* Aligned with DemoRobot ordering training UI */
     :root {
-      --bg-top: #2ebbf4;
-      --bg-bottom: #a2e8f9;
-      --bg-gradient: linear-gradient(180deg, #2ebbf4 0%, #a2e8f9 100%);
+      --bg-top: #ffe89a;
+      --bg-bottom: #ffffff;
+      --bg-gradient: linear-gradient(180deg, #ffe89a 0%, #fff4c8 42%, #ffffff 100%);
       --card-bg: #ffffff;
       --primary-color: #0284c7;
       --accent-blue: #3b82f6;
       --success-color: #4cd964;
       --error-color: #ff6b6b;
       --hint-color: #f1c40f;
-      /* inset 底部不再用 #f0f9ff 硬边带（会与白底形成接缝），改柔和蓝色内阴影 */
-      --shadow-light: 0 10px 20px rgba(0, 0, 0, 0.08), inset 0 -6px 12px rgba(2, 132, 199, 0.10);
-      --shadow-hover: 0 15px 25px rgba(0, 0, 0, 0.12), inset 0 -6px 12px rgba(2, 132, 199, 0.14);
+      --shadow-light: 0 12px 28px rgba(110, 82, 20, 0.13);
+      --shadow-hover: 0 18px 36px rgba(110, 82, 20, 0.19);
+      --ordering-card-size: min(52.8vh, 492px);
     }
 
     * {
@@ -56,7 +56,7 @@
       display: flex;
       flex-direction: column;
       padding: clamp(12px, 2.2vh, 24px) clamp(12px, 2.5vw, 28px);
-      max-width: 1080px;
+      max-width: none;
       margin: 0 auto;
       width: 100%;
       height: 100%;
@@ -76,29 +76,19 @@
       min-height: min(22vh, 200px);
     }
 
-    .speech-bubble {
-      background: #fff;
-      border-radius: 20px;
-      padding: 12px 25px;
-      font-size: clamp(18px, 2.6vh, 22px);
-      font-weight: 900;
-      color: var(--primary-color);
-      box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
-      margin: 0;
-      text-align: center;
-    }
-
     .rule-text-wrapper {
-      background: rgba(255, 255, 255, 0.55);
-      width: min(74vw, 420px);
-      min-height: min(16vh, 130px);
+      background: #ffffff;
+      width: min(88.8vw, 504px);
+      min-height: min(19.2vh, 156px);
       padding: 0 24px;
       border-radius: 40px;
       display: flex;
       justify-content: center;
       align-items: center;
-      border: 6px solid white;
-      box-shadow: 0 15px 30px rgba(0, 100, 200, 0.15);
+      border: 5px solid rgba(255, 255, 255, 0.96);
+      box-shadow: var(--shadow-light);
+      overflow: hidden;
+      contain: paint;
     }
 
     .rule-text {
@@ -123,24 +113,31 @@
       justify-content: center;
       align-items: center;
       min-height: 0;
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
+      overscroll-behavior-x: contain;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(180, 132, 20, 0.35) transparent;
+      scroll-snap-type: x proximity;
     }
 
     .options-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(215px, 1fr));
+      display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
       gap: clamp(20px, 4vw, 50px);
-      width: 100%;
-      max-width: 830px;
-      align-items: stretch;
-      justify-items: stretch;
+      width: max-content;
+      min-width: 100%;
+      padding: 12px max(16px, 3vw);
+      align-items: center;
+      justify-content: center;
     }
 
     .option-card {
       background: var(--card-bg);
-      border-radius: 30px;
-      padding: 14px;
-      border: 5px solid #f0f9ff;
+      border-radius: 36px;
+      padding: 16px;
+      border: 5px solid rgba(255, 255, 255, 0.96);
       box-shadow: var(--shadow-light);
       cursor: pointer;
       transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
@@ -148,13 +145,20 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 100%;
-      min-height: min(39vh, 375px);
-      max-height: min(44vh, 410px);
+      flex: 0 0 var(--ordering-card-size);
+      width: var(--ordering-card-size);
+      height: var(--ordering-card-size);
+      min-height: 0;
+      max-height: none;
       aspect-ratio: 1;
       position: relative;
       transform-style: preserve-3d;
       overflow: hidden;
+      scroll-snap-align: center;
+      isolation: isolate;
+      contain: paint;
+      backface-visibility: hidden;
+      will-change: transform, opacity;
     }
 
     @media (hover: hover) and (pointer: fine) {
@@ -172,12 +176,15 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
-      border-radius: 20px;
+      border-radius: 26px;
       pointer-events: none;
     }
 
     .option-card.correct {
       background-color: var(--success-color);
+      border-color: var(--success-color);
+      outline: 5px solid rgba(76, 217, 100, 0.3);
+      outline-offset: -10px;
       transform: scale(1.08) !important;
       box-shadow: 0 0 40px rgba(76, 217, 100, 0.7);
       z-index: 10;
@@ -193,6 +200,7 @@
     }
 
     .option-card.wrong {
+      border-color: rgba(255, 86, 86, 0.78);
       opacity: 0.3 !important;
       transform: scale(0.82) !important;
       transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
@@ -252,7 +260,9 @@
     }
 
     .option-card.hint-highlight {
-      border: 4px solid var(--hint-color);
+      border-color: var(--hint-color);
+      outline: 4px solid rgba(241, 196, 15, 0.32);
+      outline-offset: -8px;
       box-shadow: 0 0 30px rgba(241, 196, 15, 0.6);
       animation: hint-pulse 1.5s infinite ease-in-out;
       z-index: 5;
@@ -307,7 +317,7 @@
     .game-overlay {
       position: fixed;
       inset: 0;
-      background: linear-gradient(180deg, rgba(46, 187, 244, 0.96) 0%, rgba(162, 232, 249, 0.96) 100%);
+      background: linear-gradient(180deg, rgba(255, 232, 154, 0.97) 0%, rgba(255, 255, 255, 0.97) 100%);
       backdrop-filter: blur(8px);
       z-index: 100;
       display: flex;
@@ -344,33 +354,15 @@
     }
 
     @media (max-width: 780px) {
-      .options-grid {
-        grid-template-columns: 1fr;
-        max-width: 360px;
-        gap: 15px;
-      }
-      .option-card {
-        min-height: min(34vh, 270px);
-        max-height: min(37vh, 305px);
-      }
+      :root { --ordering-card-size: min(44.4vh, 366px); }
+      .options-grid { gap: 15px; }
       .rule-text {
         font-size: clamp(28px, 8vw, 40px);
-      }
-      .speech-bubble {
-        font-size: 18px;
-        padding: 10px 16px;
       }
     }
 
     @media (max-height: 640px) and (orientation: landscape) {
-      .options-grid {
-        grid-template-columns: repeat(2, minmax(170px, 1fr));
-        max-width: 730px;
-      }
-      .option-card {
-        min-height: min(44vh, 255px);
-        max-height: min(49vh, 290px);
-      }
+      :root { --ordering-card-size: min(58.8vh, 348px); }
       .rule-zone { min-height: auto; }
       .rule-text-wrapper {
         min-height: 72px;
@@ -404,7 +396,6 @@
   <div class="immersive-container ordering-mode">
     <!-- 规则提示区 -->
     <div class="rule-zone">
-      <p class="speech-bubble">请根据规则选择正确的图片</p>
       <div class="rule-text-wrapper">
         <div class="rule-text" id="ruleText">准备中...</div>
       </div>
@@ -1248,7 +1239,7 @@
         const speakIntent = isCorrect ? 'praise' : 'encourage';
         const token = (this._advanceToken = (this._advanceToken || 0) + 1);
         const waitPackage = this.waitForFeedbackPackage(speakIntent, {
-          minMs: 900,
+          minMs: isCorrect ? 2000 : 900,
           maxMs: 20000,
           waitAnimation: !!isCorrect,
         });
@@ -1305,7 +1296,7 @@
         cards.forEach(card => {
           if (card.dataset.path === selectedOption.path) {
             if (isCorrect) {
-              card.classList.add('correct');
+              card.classList.add('correct-lvl3');
             } else {
               card.classList.add('wrong');
             }
@@ -1313,6 +1304,18 @@
             card.classList.add('wrong');
           }
         });
+        if (isCorrect) {
+          this.ruleText.classList.add('bounce-big');
+          document.body.classList.add('flash-bg');
+          window.setTimeout(() => document.body.classList.remove('flash-bg'), 2000);
+          const selectedCard = this.optionsGrid.querySelector(
+            `.option-card[data-path="${selectedOption.path}"]`,
+          );
+          if (selectedCard) {
+            const rect = selectedCard.getBoundingClientRect();
+            createExplosion(rect.left + rect.width / 2, rect.top + rect.height / 2, 3);
+          }
+        }
       }
       
       showHint() {
@@ -1322,7 +1325,11 @@
         const cards = this.optionsGrid.querySelectorAll('.option-card');
         cards.forEach(card => {
           // 跳过已选择的卡片
-          if (card.classList.contains('wrong') || card.classList.contains('correct')) return;
+          if (
+            card.classList.contains('wrong') ||
+            card.classList.contains('correct') ||
+            card.classList.contains('correct-lvl3')
+          ) return;
           
           if (card.dataset.path === this.correctOption.path) {
             card.classList.add('hint-highlight');

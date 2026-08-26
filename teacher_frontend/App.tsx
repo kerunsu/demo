@@ -652,9 +652,10 @@ function TeacherApp() {
 }
 
 export default function App() {
-  const preview = import.meta.env.DEV
-    ? new URLSearchParams(window.location.search).get('preview')
+  const previewParams = import.meta.env.DEV
+    ? new URLSearchParams(window.location.search)
     : null;
+  const preview = previewParams?.get('preview') || null;
 
   if (preview === 'control' && DevControlPagePreview) {
     return (
@@ -662,6 +663,19 @@ export default function App() {
         <DevControlPagePreview />
       </Suspense>
     );
+  }
+
+  if (preview === 'report') {
+    const trainingSessionId = previewParams?.get('trainingSessionId') || '';
+    if (trainingSessionId) {
+      return (
+        <ReportPage
+          trainingSessionId={trainingSessionId}
+          studentName={previewParams?.get('studentId')}
+          onBack={() => undefined}
+        />
+      );
+    }
   }
 
   return <TeacherApp />;

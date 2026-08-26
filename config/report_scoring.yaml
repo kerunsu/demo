@@ -4,6 +4,10 @@
 schema_version: education-training-index-v2-teacher-rating
 score_boundary: education_training_reference_only
 
+# 教师报告中的课程表现参考目标线。它只用于比较本次训练结果，
+# 不是年龄常模、百分位或临床标准。
+course_goal_score: 70
+
 # --- 五维综合权重（和=100）---
 weights:
   attention: 20

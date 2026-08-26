@@ -75,17 +75,24 @@ def course_preset_client(tmp_path, monkeypatch):
     )
     with app.app_context():
         db.create_all()
-        course_type = CourseType(id=1, name="命名")
-        db.session.add(course_type)
+        pairing_type = CourseType(id=1, name="配对")
+        ordering_type = CourseType(id=2, name="排序")
+        naming_type = CourseType(id=3, name="命名")
+        mimic_type = CourseType(id=4, name="模仿")
+        db.session.add_all([pairing_type, ordering_type, naming_type, mimic_type])
         db.session.add_all([
-            Course(id=2, course_type_id=1, title="认识苹果"),
-            Course(id=3, course_type_id=1, title="认识动物"),
-            Course(id=4, course_type_id=1, title="空课程"),
+            Course(id=1, course_type_id=4, title="模仿课程"),
+            Course(id=9, course_type_id=1, title="配对课程"),
+            Course(id=10, course_type_id=2, title="排序课程"),
+            Course(id=12, course_type_id=1, title="空课程"),
+            Course(id=13, course_type_id=3, title="历史命名课程"),
         ])
         db.session.flush()
         db.session.add_all([
-            CourseItem(course_id=2, name="苹果", type="image"),
-            CourseItem(course_id=3, name="小猫", type="image"),
+            CourseItem(course_id=1, name="举起双手", type="image"),
+            CourseItem(course_id=9, name="相同图片", type="interactive"),
+            CourseItem(course_id=10, name="大小排序", type="interactive"),
+            CourseItem(course_id=13, name="苹果", type="image"),
         ])
         db.session.commit()
         yield app.test_client()
@@ -97,38 +104,46 @@ def test_course_preset_api_crud_and_teacher_catalog(course_preset_client):
     empty = course_preset_client.get("/api/config/course-presets").get_json()
     assert empty["success"] is True
     assert empty["presets"] == []
-    assert [course["id"] for course in empty["courseCatalog"]] == [2, 3, 4]
+    assert empty["enabledCourseTypes"] == ["mimic", "pairing", "ordering"]
+    assert [course["id"] for course in empty["courseCatalog"]] == [1, 9, 10, 12]
 
     response = course_preset_client.post("/api/config/course-presets", json={
         "name": "课堂默认",
         "description": "按课堂顺序",
-        "courseIds": [3, 2],
+        "courseIds": [10, 9],
         "isDefault": True,
     })
     assert response.status_code == 201
     created = response.get_json()
     preset_id = created["preset"]["id"]
     assert created["defaultPresetId"] == preset_id
-    assert created["preset"]["courseIds"] == [3, 2]
+    assert created["preset"]["courseIds"] == [10, 9]
     assert created["preset"]["available"] is True
-    assert [course["id"] for course in created["preset"]["courses"]] == [3, 2]
+    assert [course["id"] for course in created["preset"]["courses"]] == [10, 9]
 
     updated = course_preset_client.put(f"/api/config/course-presets/{preset_id}", json={
         "name": "课堂默认",
         "description": "调整顺序",
-        "courseIds": [2, 3],
+        "courseIds": [9, 10],
         "isDefault": False,
     })
     assert updated.status_code == 200
-    assert updated.get_json()["preset"]["courseIds"] == [2, 3]
+    assert updated.get_json()["preset"]["courseIds"] == [9, 10]
     assert updated.get_json()["defaultPresetId"] == preset_id
 
     rejected = course_preset_client.post("/api/config/course-presets", json={
         "name": "无效方案",
-        "courseIds": [4],
+        "courseIds": [12],
     })
     assert rejected.status_code == 400
-    assert rejected.get_json()["error"] == "课程没有课点: 4"
+    assert rejected.get_json()["error"] == "课程没有课点: 12"
+
+    disabled = course_preset_client.post("/api/config/course-presets", json={
+        "name": "历史课程方案",
+        "courseIds": [13],
+    })
+    assert disabled.status_code == 400
+    assert disabled.get_json()["error"] == "Demo 机仅允许模仿、配对和排序课程: 13"
 
     deleted = course_preset_client.delete(f"/api/config/course-presets/{preset_id}")
     assert deleted.status_code == 200
@@ -147,3 +162,18 @@ def test_course_preset_surfaces_are_wired_to_shared_api():
     assert 'data-view="presets"' in server
     assert 'id="course-preset-selected"' in server
     assert "loadCoursePresetLibrary" in shell
+
+
+def test_quick_assessment_uses_direct_course_checkboxes_for_every_preset_course():
+    teacher = (ROOT / "teacher_frontend" / "components" / "CourseSelectionPage.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert "compactQuickAssessmentCourse" in teacher
+    assert "mode === 'assessment'" in teacher
+    assert "(viewedPreset || selectedPreset)?.courseIds.includes(course.id)" in teacher
+    assert "keepQuickAssessmentLayout" in teacher
+    assert "selectedPreset?.courseIds.includes(courseId)" in teacher
+    assert "直接勾选整课，无需逐项打开" in teacher
+    assert "勾选后自动使用本课程全部" in teacher
+    assert "course.items.length > 0 && !compactQuickAssessmentCourse" in teacher

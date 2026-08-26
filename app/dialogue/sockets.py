@@ -17,6 +17,8 @@ import uuid
 from flask import request, session as flask_session
 from flask_socketio import emit
 
+from app.config import Config
+
 
 
 from app.dialogue.page_context_store import merge_page_context
@@ -33,7 +35,6 @@ from app.dialogue.service import (
 
 )
 
-from app.dialogue.stt import transcribe_audio_base64
 
 from app.utils.logger import setup_logger
 
@@ -77,6 +78,47 @@ def _authorize_teacher_control(data: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": True, "trainingSessionId": str(training_id), "teacherId": teacher_id}
 
 
+def _resolve_manual_wake_target(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve an active course and its exact child without a teacher lease gate."""
+    session_id = str(data.get("sessionId") or data.get("session_id") or "").strip()
+    if not session_id:
+        return {"ok": False, "error": "session_id_missing"}
+    try:
+        from app.session import get_session_manager
+
+        runtime = get_session_manager().get_session(session_id)
+    except Exception:
+        runtime = None
+    if runtime is None:
+        return {"ok": False, "error": "session_not_found"}
+    if not runtime.is_active():
+        return {"ok": False, "error": "active_course_missing"}
+    training_id = str(getattr(runtime, "training_session_id", None) or "").strip()
+    course_id = getattr(runtime, "course_id", None)
+    course_type = str((getattr(runtime, "metadata", None) or {}).get("course_type") or "").strip()
+    if not training_id or (course_id is None and not course_type):
+        return {"ok": False, "error": "active_course_missing"}
+    requested_training = str(
+        data.get("trainingSessionId") or data.get("training_session_id") or ""
+    ).strip()
+    if requested_training and requested_training != training_id:
+        return {"ok": False, "error": "session_mismatch"}
+    try:
+        from app.sockets.events import get_connected_child_sid
+
+        child_sid = get_connected_child_sid(session_id)
+    except Exception:
+        child_sid = None
+    if not child_sid:
+        return {"ok": False, "error": "child_not_connected"}
+    return {
+        "ok": True,
+        "sessionId": session_id,
+        "trainingSessionId": training_id,
+        "childSid": child_sid,
+    }
+
+
 def _audit_dialogue(event: str, data: Dict[str, Any], **extra: Any) -> None:
     try:
         from app.behavior.audit_timeline import record_audit_event
@@ -93,6 +135,32 @@ def _audit_dialogue(event: str, data: Dict[str, Any], **extra: Any) -> None:
         )
     except Exception:
         pass
+
+
+def _record_visible_dialogue_message(
+    *,
+    session_id: str,
+    role: str,
+    text: str,
+    request_id: Optional[str],
+) -> None:
+    """Best-effort transcript persistence must never break a live dialogue."""
+    try:
+        from app.services.recording_timeline import append_dialogue_timeline_message
+
+        append_dialogue_timeline_message(
+            str(session_id),
+            role=role,
+            text=text,
+            request_id=request_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "对话文本落盘失败 sid=%s role=%s: %s",
+            session_id,
+            role,
+            exc,
+        )
 
 
 
@@ -237,6 +305,8 @@ def _emit_speak(
 
         "dialogueRequestId": dialogue_request_id,
 
+        "speechRate": float(Config.BROWSER_SPEECH_RATE),
+
     }
     if expression_match:
         payload["expression"] = expression_match["emotion"]
@@ -356,6 +426,12 @@ def _child_room(session_id: Any) -> Optional[str]:
     return None
 
 
+def _teacher_room(session_id: Any) -> Optional[str]:
+    if session_id and session_id != "default":
+        return f"session_{session_id}_teacher"
+    return None
+
+
 
 
 
@@ -467,6 +543,12 @@ def _handle_dialogue_utterance(
     transcript = (child_text or "").strip()
 
     llm_text = transcript
+    _record_visible_dialogue_message(
+        session_id=session_id,
+        role="child",
+        text=transcript,
+        request_id=request_id,
+    )
     _audit_dialogue(
         "dialogue_utterance_received",
         {"sessionId": session_id, "requestId": request_id},
@@ -477,9 +559,11 @@ def _handle_dialogue_utterance(
         details={"transcript": transcript, "sttProvider": stt_provider},
     )
 
-    # 唤醒词优先建立对话状态；其余命名/拟声作答全部由课程状态机消费。
+    # 唤醒词优先建立对话状态。未唤醒时，命名/拟声窗口继续吞掉错答；
+    # 已唤醒后只有真正的课程关键词命中才截断，普通对话必须继续进入 LLM。
+    awake_before_turn = bool(svc.is_session_awake(session_id, page_context))
     wake_candidate = False
-    if not svc.is_session_awake(session_id, page_context):
+    if not awake_before_turn:
         try:
             wake_candidate, _ = parse_wake_utterance(transcript)
         except Exception:
@@ -490,10 +574,11 @@ def _handle_dialogue_utterance(
         page_context=page_context,
         stt_provider=stt_provider,
         request_id=request_id,
+        consume_course_miss=not awake_before_turn,
     ):
         return
 
-    if not svc.is_session_awake(session_id, page_context):
+    if not awake_before_turn:
 
         from app.config import Config
 
@@ -546,14 +631,13 @@ def _handle_dialogue_utterance(
 
                     "transcript": transcript,
 
-                    "hint": "请说：麦麦，麦麦",
+                    "hint": "请说：麦麦",
 
                     "requestId": request_id,
 
                 },
 
             )
-
             return
 
 
@@ -582,6 +666,18 @@ def _handle_dialogue_utterance(
 
 
         if not remainder:
+
+            _record_visible_dialogue_message(
+
+                session_id=session_id,
+
+                role="maimai",
+
+                text=WAKE_ACK_REPLY,
+
+                request_id=request_id,
+
+            )
 
             _emit_speak(
 
@@ -706,6 +802,12 @@ def _handle_dialogue_utterance(
 
         payload["wake"] = True
 
+    _record_visible_dialogue_message(
+        session_id=session_id,
+        role="maimai",
+        text=reply.get("reply", ""),
+        request_id=request_id,
+    )
     emit("child_dialogue_result", payload)
     _audit_dialogue(
         "dialogue_reply_generated",
@@ -744,55 +846,99 @@ def register_dialogue_events(socketio) -> None:
     @socketio.on("teacher_dialogue_wake")
     def handle_teacher_dialogue_wake(data):
         data = data or {}
-        access = _authorize_teacher_control(data)
-        if not access.get("ok"):
+        request_id = str(
+            data.get("requestId") or data.get("request_id") or f"manual-wake-{uuid.uuid4().hex[:12]}"
+        )
+        target = _resolve_manual_wake_target(data)
+        if not target.get("ok"):
             emit("teacher_dialogue_control_ack", {
-                "success": False, "action": "wake", "error": access.get("error")
+                "success": False,
+                "action": "wake",
+                "error": target.get("error"),
+                "requestId": request_id,
             })
             return
-        session_id = str(data.get("sessionId") or data.get("session_id") or "").strip()
-        if not session_id:
-            emit("teacher_dialogue_control_ack", {
-                "success": False, "action": "wake", "error": "session_id_missing"
-            })
-            return
-        page_context = merge_page_context({}, session_id)
+        session_id = target["sessionId"]
+        raw_context = data.get("pageContext") or data.get("page_context") or {}
+        page_context = merge_page_context(
+            raw_context if isinstance(raw_context, dict) else {},
+            session_id,
+        )
         get_dialogue_service().set_awake(session_id, page_context)
         payload = {
             "success": True,
             "action": "wake",
             "awake": True,
             "sessionId": session_id,
-            "trainingSessionId": access["trainingSessionId"],
+            "trainingSessionId": target["trainingSessionId"],
             "reason": "teacher_manual",
+            "requestId": request_id,
         }
         emit("child_dialogue_wake_state", payload, room=_child_room(session_id), include_self=False)
         emit("teacher_dialogue_control_ack", payload)
         _audit_dialogue(
             "dialogue_manual_wake",
             payload,
-            actor=f"teacher:{access['teacherId']}",
+            actor="teacher_ui",
             source="teacher_ui",
             phase="applied",
             status="awake",
             details={"soundPlayed": False},
         )
 
+    @socketio.on("teacher_dialogue_sleep")
+    def handle_teacher_dialogue_sleep(data):
+        data = data or {}
+        request_id = str(
+            data.get("requestId") or data.get("request_id") or f"manual-sleep-{uuid.uuid4().hex[:12]}"
+        )
+        target = _resolve_manual_wake_target(data)
+        if not target.get("ok"):
+            emit("teacher_dialogue_control_ack", {
+                "success": False,
+                "action": "sleep",
+                "error": target.get("error"),
+                "requestId": request_id,
+            })
+            return
+        session_id = target["sessionId"]
+        get_dialogue_service().clear_awake(session_id)
+        payload = {
+            "success": True,
+            "action": "sleep",
+            "awake": False,
+            "sessionId": session_id,
+            "trainingSessionId": target["trainingSessionId"],
+            "reason": "teacher_manual",
+            "requestId": request_id,
+        }
+        emit("child_dialogue_wake_state", payload, room=_child_room(session_id), include_self=False)
+        emit("teacher_dialogue_control_ack", payload)
+        _audit_dialogue(
+            "dialogue_manual_sleep",
+            payload,
+            actor="teacher_ui",
+            source="teacher_ui",
+            phase="applied",
+            status="asleep",
+        )
+
     @socketio.on("teacher_dialogue_visibility")
     def handle_teacher_dialogue_visibility(data):
         data = data or {}
-        access = _authorize_teacher_control(data)
-        if not access.get("ok"):
+        request_id = str(
+            data.get("requestId") or data.get("request_id") or f"dialogue-visibility-{uuid.uuid4().hex[:12]}"
+        )
+        target = _resolve_manual_wake_target(data)
+        if not target.get("ok"):
             emit("teacher_dialogue_control_ack", {
-                "success": False, "action": "visibility", "error": access.get("error")
+                "success": False,
+                "action": "visibility",
+                "error": target.get("error"),
+                "requestId": request_id,
             })
             return
-        session_id = str(data.get("sessionId") or data.get("session_id") or "").strip()
-        if not session_id:
-            emit("teacher_dialogue_control_ack", {
-                "success": False, "action": "visibility", "error": "session_id_missing"
-            })
-            return
+        session_id = target["sessionId"]
         visible = bool(data.get("visible"))
         with _dialogue_ui_lock:
             _dialogue_ui_visible[session_id] = visible
@@ -801,14 +947,15 @@ def register_dialogue_events(socketio) -> None:
             "action": "visibility",
             "visible": visible,
             "sessionId": session_id,
-            "trainingSessionId": access["trainingSessionId"],
+            "trainingSessionId": target["trainingSessionId"],
+            "requestId": request_id,
         }
         emit("child_dialogue_visibility", payload, room=_child_room(session_id), include_self=False)
         emit("teacher_dialogue_control_ack", payload)
         _audit_dialogue(
             "dialogue_panel_visibility",
             payload,
-            actor=f"teacher:{access['teacherId']}",
+            actor="teacher_ui",
             source="teacher_ui",
             phase="applied",
             status="visible" if visible else "hidden",
@@ -823,12 +970,72 @@ def register_dialogue_events(socketio) -> None:
         with _dialogue_ui_lock:
             visible = _dialogue_ui_visible.get(session_id, True)
         from app.config import Config
+        raw_context = data.get("pageContext") or data.get("page_context") or {}
+        page_context = merge_page_context(
+            raw_context if isinstance(raw_context, dict) else {},
+            session_id,
+        )
+        awake = bool(get_dialogue_service().is_session_awake(session_id, page_context))
         emit("child_dialogue_control_state", {
             "success": True,
             "sessionId": session_id,
             "visible": visible,
+            "awake": awake,
             "wakeWordEnabled": bool(Config.DIALOGUE_WAKE_WORD_ENABLED),
         })
+
+    @socketio.on("teacher_dialogue_state_request")
+    def handle_teacher_dialogue_state_request(data):
+        data = data or {}
+        target = _resolve_manual_wake_target(data)
+        if not target.get("ok"):
+            emit("teacher_dialogue_control_state", {
+                "success": False,
+                "error": target.get("error"),
+                "sessionId": data.get("sessionId") or data.get("session_id"),
+            })
+            return
+        session_id = target["sessionId"]
+        raw_context = data.get("pageContext") or data.get("page_context") or {}
+        page_context = merge_page_context(
+            raw_context if isinstance(raw_context, dict) else {},
+            session_id,
+        )
+        with _dialogue_ui_lock:
+            visible = _dialogue_ui_visible.get(session_id, True)
+        emit("teacher_dialogue_control_state", {
+            "success": True,
+            "sessionId": session_id,
+            "trainingSessionId": target["trainingSessionId"],
+            "awake": bool(get_dialogue_service().is_session_awake(session_id, page_context)),
+            "visible": visible,
+        })
+
+    @socketio.on("child_dialogue_runtime_state")
+    def handle_child_dialogue_runtime_state(data):
+        data = data or {}
+        session_id = str(data.get("sessionId") or data.get("session_id") or "").strip()
+        if not session_id:
+            return
+        try:
+            from app.sockets.events import get_connected_child_sid
+
+            if get_connected_child_sid(session_id) != request.sid:
+                logger.warning("忽略非当前儿童端的对话状态: session=%s sid=%s", session_id, request.sid)
+                return
+        except Exception:
+            return
+        payload = {
+            "success": True,
+            "sessionId": session_id,
+            "requestId": data.get("requestId") or data.get("request_id"),
+            "awake": bool(data.get("awake")),
+            "listening": bool(data.get("listening")),
+            "recognitionActive": bool(data.get("recognitionActive")),
+            "microphoneBlocked": bool(data.get("microphoneBlocked")),
+            "reason": data.get("reason"),
+        }
+        emit("teacher_dialogue_runtime_state", payload, room=_teacher_room(session_id))
 
     @socketio.on("child_dialogue_text")
 
@@ -843,6 +1050,12 @@ def register_dialogue_events(socketio) -> None:
             session_id = data.get("sessionId") or data.get("session_id") or "default"
 
             child_text = (data.get("text") or "").strip()
+
+            recognition_provider = str(
+                data.get("recognitionProvider")
+                or data.get("recognition_provider")
+                or ""
+            ).strip()[:80] or None
 
             dialogue_request_id = str(
                 data.get("requestId")
@@ -882,7 +1095,10 @@ def register_dialogue_events(socketio) -> None:
                 phase="received",
                 status="accepted",
                 client_timestamp=(data.get("clientTiming") or {}).get("sentAtClientMs"),
-                details={"clientTiming": data.get("clientTiming") or {}},
+                details={
+                    "clientTiming": data.get("clientTiming") or {},
+                    "recognitionProvider": recognition_provider,
+                },
             )
 
 
@@ -915,6 +1131,8 @@ def register_dialogue_events(socketio) -> None:
 
                 room=room,
 
+                stt_provider=recognition_provider,
+
                 request_id=dialogue_request_id,
 
             )
@@ -928,146 +1146,21 @@ def register_dialogue_events(socketio) -> None:
 
 
     @socketio.on("child_dialogue_audio")
-
     def handle_child_dialogue_audio(data):
-
-        """浏览器麦克风采集 → FunASR → 唤醒门控 → LLM → 浏览器 TTS。"""
-
-        try:
-
-            data = data or {}
-
-            session_id = data.get("sessionId") or data.get("session_id") or "default"
-
-            audio_b64 = data.get("audioBase64") or data.get("audio_base64") or ""
-
-            mime_type = data.get("mimeType") or data.get("mime_type") or "audio/webm"
-
-            dialogue_request_id = str(
-                data.get("requestId")
-                or data.get("request_id")
-                or f"dialogue-turn-{uuid.uuid4().hex[:12]}"
-            )
-
-            client_timing = (
-                data.get("clientTiming")
-                if isinstance(data.get("clientTiming"), dict)
-                else {}
-            )
-
-            raw_ctx = data.get("pageContext") or data.get("page_context") or {}
-
-            page_context = merge_page_context(
-
-                raw_ctx if isinstance(raw_ctx, dict) else {},
-
-                str(session_id) if session_id else None,
-
-            )
-
-            room = _child_room(session_id)
-
-
-
-            _audit_dialogue(
-                "dialogue.audio_received",
-                {"sessionId": session_id, "requestId": dialogue_request_id},
-                actor="child",
-                source="child_ui",
-                phase="received",
-                status="accepted",
-                client_timestamp=client_timing.get("sentAtClientMs"),
-                details={
-                    "mimeType": mime_type,
-                    "base64Chars": len(str(audio_b64 or "")),
-                    "clientTiming": client_timing,
-                },
-            )
-
-            stt_started = time.perf_counter()
-            stt = transcribe_audio_base64(audio_b64, mime_type=mime_type)
-            stt_duration_ms = round((time.perf_counter() - stt_started) * 1000, 3)
-
-            _audit_dialogue(
-                "dialogue.stt_completed",
-                {"sessionId": session_id, "requestId": dialogue_request_id},
-                phase="completed",
-                status="ok" if stt.get("ok") else "failed",
-                degraded=not bool(stt.get("ok")),
-                error=stt.get("error") if not stt.get("ok") else None,
-                details={
-                    "durationMs": stt_duration_ms,
-                    "provider": stt.get("provider"),
-                    "timing": stt.get("timing") or {},
-                    "transcriptLength": len(str(stt.get("transcript") or "")),
-                },
-            )
-
-            if not stt.get("ok"):
-
-                emit(
-
-                    "child_dialogue_result",
-
-                    {
-
-                        "ok": False,
-
-                        "error": stt.get("error") or "stt_failed",
-
-                        "stage": "stt",
-                        "requestId": dialogue_request_id,
-
-                    },
-
-                )
-
-                return
-
-
-
-            transcript = stt["transcript"]
-
-            logger.info(
-
-                "对话页上下文(audio) sid=%s course=%s prompt=%s target=%s options=%s wrong=%s",
-
-                session_id,
-
-                page_context.get("courseType"),
-
-                (page_context.get("prompt") or "")[:40],
-
-                (page_context.get("target") or "")[:40],
-
-                len(page_context.get("options") or []),
-
-                page_context.get("wrongAttempts"),
-
-            )
-
-            _handle_dialogue_utterance(
-
-                session_id=str(session_id),
-
-                child_text=transcript,
-
-                page_context=page_context,
-
-                room=room,
-
-                stt_provider=stt.get("provider"),
-
-                request_id=dialogue_request_id,
-
-            )
-
-        except Exception as exc:  # noqa: BLE001
-
-            logger.error("child_dialogue_audio 失败: %s", exc, exc_info=True)
-
-            emit("child_dialogue_result", {"ok": False, "error": str(exc)})
-
+        """兼容旧儿童端；生产识别已统一为浏览器返回文本。"""
+        payload = data if isinstance(data, dict) else {}
+        request_id = str(
+            payload.get("requestId")
+            or payload.get("request_id")
+            or f"dialogue-turn-{uuid.uuid4().hex[:12]}"
+        )
+        logger.info("拒绝旧音频识别请求 request=%s：请使用浏览器语音识别", request_id)
+        emit("child_dialogue_result", {
+            "ok": False,
+            "error": "browser_speech_required",
+            "stage": "stt",
+            "requestId": request_id,
+        })
 
     @socketio.on("dialogue_latency_event")
     def handle_dialogue_latency_event(data):
@@ -1130,6 +1223,17 @@ def register_dialogue_events(socketio) -> None:
 
                 },
 
+            )
+            emit(
+                "teacher_dialogue_runtime_state",
+                {
+                    "success": True,
+                    "sessionId": session_id,
+                    "awake": False,
+                    "listening": True,
+                    "reason": data.get("reason") or "manual_sleep",
+                },
+                room=_teacher_room(session_id),
             )
 
             logger.info(

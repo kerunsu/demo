@@ -1,24 +1,9 @@
 /**
- * 儿童端自由对话：连续自动聆听（能量 VAD）→ FunASR → LLM → browser TTS
- * - 默认走本机麦克风 PCM→WAV → child_dialogue_audio（FunASR / voice-service）
- * - 浏览器 SpeechRecognition 仅作无 FunASR 时的兜底，不再依赖按住说话
- * - 机器人朗读时保持麦克风采集，回答在朗读结束后提交，避免抢断与丢句首
+ * 儿童端自由对话：浏览器 SpeechRecognition → 课程关键词/LLM → browser TTS。
+ * 生产儿童端只发送已识别文本，不采集或上传 WAV，也不依赖本地 ASR 模型。
  */
 (function (global) {
-  const TARGET_SAMPLE_RATE = 16000;
-  // Fixed low thresholds treated projector/fan noise as speech on some
-  // classroom PCs.  Keep conservative floors, then adapt to the quietest
-  // part of the last two seconds so a different microphone needs no tuning.
-  const MIN_START_LEVEL = 0.035;
-  const MIN_SILENCE_LEVEL = 0.022;
-  const MAX_NOISE_FLOOR = 0.08;
-  const MIN_VOICE_MS = 180;
-  const MIN_TURN_MS = 700;
-  const SILENCE_END_MS = 900;
   const COOLDOWN_MS = 180;
-  const MAX_TURN_MS = 12000;
-  /** 开说前环形缓冲：覆盖 MIN_VOICE_MS 确认窗 + 提问结束后的句首 */
-  const PREROLL_MS = 700;
 
   const MAX_LOG_MESSAGES = 8;
   const PANEL_COLLAPSED_KEY = "eiart.child.dialogue.collapsed";
@@ -47,34 +32,13 @@
   let lastPageFingerprint = "";
   let lastFingerprintCheckAt = 0;
 
-  let mediaStream = null;
-  let audioContext = null;
-  let analyser = null;
-  let meterFrame = null;
-  let captureNode = null;
-  let silenceGain = null;
-
-  let capturingTurn = false;
-  let voiceStartedAt = null;
-  let silenceStartedAt = null;
-  let silenceStartedAtClientMs = null;
-  let turnStartedAt = null;
-  let turnCaptureStartedAtClientMs = null;
-  let pcmChunks = [];
-  /** 朗读中已经说完的回答：等 TTS 结束再送识别，不打断麦麦。 */
-  let pendingTtsTurn = null;
+  /** 朗读中浏览器已经识别的回答：等 TTS 结束再发送，不打断麦麦。 */
   let pendingTtsTranscript = "";
-  /** 最近 PREROLL_MS 的 PCM，在 VAD 确认开说前也持续写入 */
-  let prerollChunks = [];
-  let prerollSamples = 0;
-  let captureSampleRate = TARGET_SAMPLE_RATE;
-  let noiseFloor = 0.018;
-  let recentNoiseLevels = [];
-  let lastNoiseEstimateAt = 0;
+  let pendingTtsTranscriptReference = "";
+  let activeTtsReferenceText = "";
 
   let speechRec = null;
   let speechRecActive = false;
-  let usingBrowserSpeechFallback = false;
   /** 麦克风曾被拒绝/不安全上下文：禁止无点击自动重试 */
   let micBlocked = false;
 
@@ -107,8 +71,8 @@
     dialoguePanelVisible = visible !== false;
     const panel = document.getElementById("dialoguePanel");
     if (!panel) return;
-    panel.style.display = dialoguePanelVisible ? "block" : "none";
-    panel.style.visibility = dialoguePanelVisible ? "visible" : "hidden";
+    panel.hidden = !dialoguePanelVisible;
+    panel.classList.toggle("is-hidden", !dialoguePanelVisible);
     panel.setAttribute("aria-hidden", dialoguePanelVisible ? "false" : "true");
   }
 
@@ -136,6 +100,7 @@
     if (!socket) return;
     socket.emit("child_dialogue_control_state_request", {
       sessionId: sessionId || getSessionId(),
+      pageContext: buildPageContext(),
       clientTimestamp: Date.now(),
     });
   }
@@ -146,9 +111,11 @@
       courseType: global.currentCourseType || "",
       courseId: global.currentCourseId || null,
       itemId: global.currentItemId || null,
+      questionId: global.currentQuestionId || null,
       prompt: global.currentQuestionPrompt || "",
       target: global.currentSpeechTarget || "",
       speechTarget: global.currentSpeechTarget || "",
+      objectName: global.currentItemName || "",
       name: global.currentItemName || global.currentSpeechTarget || "",
       label: global.currentSpeechTarget || "",
     };
@@ -189,39 +156,14 @@
     const courseType = String(ctx.courseType || ctx.course_type || "")
       .trim()
       .toLowerCase();
+    const courseId = String(ctx.courseId || ctx.course_id || "").trim();
     const qid = String(ctx.questionId || ctx.question_id || "").trim();
     const itemId = String(
       ctx.itemId != null ? ctx.itemId : ctx.item_id != null ? ctx.item_id : ""
     ).trim();
     let qIndex = ctx.questionIndex;
     if (qIndex == null) qIndex = ctx.question_index;
-    const target = String(
-      ctx.target ||
-        ctx.targetText ||
-        ctx.speechTarget ||
-        ctx.itemLabel ||
-        ctx.label ||
-        ctx.name ||
-        ""
-    )
-      .trim()
-      .slice(0, 40);
-    const options = ctx.options || ctx.optionsLeftToRight || [];
-    const optParts = [];
-    if (Array.isArray(options)) {
-      options.forEach((opt) => {
-        if (opt && typeof opt === "object") {
-          optParts.push(
-            String(opt.id || opt.label || opt.name || opt.src || "")
-          );
-        } else {
-          optParts.push(String(opt));
-        }
-      });
-    } else if (typeof options === "string") {
-      optParts.push(options.trim());
-    }
-    return [courseType, qid, itemId, qIndex != null ? String(qIndex) : "", target, optParts.join(",")].join("|");
+    return [courseType, courseId, qid, itemId, qIndex != null ? String(qIndex) : ""].join("|");
   }
 
   function setDialogueAwake(awake, opts) {
@@ -245,6 +187,43 @@
     setDialogueAwake(false, { updateStatus: true });
   }
 
+  function emitDialogueRuntimeState(extra) {
+    const socket = getSocket();
+    if (!socket || !socket.connected) return;
+    socket.emit("child_dialogue_runtime_state", {
+      sessionId: getSessionId(),
+      awake: dialogueAwake,
+      listening: autoListenEnabled && !micBlocked,
+      recognitionActive: speechRecActive,
+      microphoneBlocked: micBlocked,
+      clientTimestamp: Date.now(),
+      ...(extra || {}),
+    });
+  }
+
+  function ensureListeningAfterTeacherWake(requestId) {
+    lastPageFingerprint = pageContextFingerprint(buildPageContext());
+    if (micBlocked) {
+      setStatus("已唤醒，请在儿童端允许麦克风");
+      emitDialogueRuntimeState({ requestId, reason: "microphone_blocked" });
+      return false;
+    }
+    if (autoListenEnabled) {
+      maybeResumeListening();
+      emitDialogueRuntimeState({ requestId, reason: "already_listening" });
+      return true;
+    }
+    const started = startBrowserSpeechRecognition();
+    if (!started) {
+      setStatus("已唤醒，请点“开始自动聆听”并允许麦克风");
+    }
+    emitDialogueRuntimeState({
+      requestId,
+      reason: started ? "teacher_wake_started" : "microphone_start_failed",
+    });
+    return started;
+  }
+
   /**
    * 题目指纹变化时退出本地唤醒，并通知服务端。
    * @returns {boolean} 是否发生了切换
@@ -265,7 +244,7 @@
     if (asrPausedForTts) return "朗读中，仍在聆听…";
     if (dialogueBusy) return dialogueAwake ? "思考中…" : (wakeWordEnabled ? "请说唤醒词" : "等待教师唤醒");
     if (dialogueAwake) return "已唤醒，可以说了";
-    return wakeWordEnabled ? "请说：麦麦，麦麦" : "等待教师端点击唤醒智能体";
+    return wakeWordEnabled ? "请说：麦麦" : "等待教师端点击唤醒智能体";
   }
 
   function updateSleepButton() {
@@ -278,25 +257,6 @@
   function setStatus(text) {
     const el = document.getElementById("dialogueStatus");
     if (el) el.textContent = text;
-  }
-
-  async function checkVoiceHealth() {
-    try {
-      const response = await fetch("/api/v2/voice/health", { cache: "no-store" });
-      const data = await response.json();
-      if (data && data.ready) return true;
-      const deps = (data && data.dependencies) || {};
-      const missing = Object.keys(deps).filter((key) => deps[key] === false);
-      const detail = (data && data.error) || "语音识别模型未就绪";
-      const suffix = missing.length ? `（缺少 ${missing.join("、")}）` : "";
-      setStatus(`语音识别不可用：${detail}${suffix}`);
-      appendDialogueLog("system", `语音识别状态：${detail}${suffix}`);
-      return false;
-    } catch (error) {
-      setStatus("语音识别服务不可达，请检查 Server");
-      appendDialogueLog("system", "语音识别服务不可达，请检查 Server 的 voice-service");
-      return false;
-    }
   }
 
   /**
@@ -467,89 +427,7 @@
     return global.SpeechRecognition || global.webkitSpeechRecognition || null;
   }
 
-  function rmsFromTimeDomain(samples) {
-    let sum = 0;
-    for (let i = 0; i < samples.length; i += 1) {
-      const v = (samples[i] - 128) / 128;
-      sum += v * v;
-    }
-    return Math.sqrt(sum / Math.max(1, samples.length));
-  }
-
-  function concatenateFloat32(chunks) {
-    const total = chunks.reduce((n, c) => n + c.length, 0);
-    const out = new Float32Array(total);
-    let offset = 0;
-    chunks.forEach((c) => {
-      out.set(c, offset);
-      offset += c.length;
-    });
-    return out;
-  }
-
-  function downsampleBuffer(input, inputRate, outputRate) {
-    if (inputRate === outputRate) return input;
-    if (inputRate < outputRate) return input;
-    const ratio = inputRate / outputRate;
-    const outLen = Math.max(1, Math.round(input.length / ratio));
-    const output = new Float32Array(outLen);
-    let inputOffset = 0;
-    for (let i = 0; i < outLen; i += 1) {
-      const next = Math.round((i + 1) * ratio);
-      let sum = 0;
-      let count = 0;
-      for (let j = inputOffset; j < next && j < input.length; j += 1) {
-        sum += input[j];
-        count += 1;
-      }
-      output[i] = count > 0 ? sum / count : 0;
-      inputOffset = next;
-    }
-    return output;
-  }
-
-  function encodePcm16Wav(samples, sampleRateHz) {
-    const bytesPerSample = 2;
-    const header = 44;
-    const buffer = new ArrayBuffer(header + samples.length * bytesPerSample);
-    const view = new DataView(buffer);
-    const writeAscii = (offset, text) => {
-      for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i));
-    };
-    writeAscii(0, "RIFF");
-    view.setUint32(4, 36 + samples.length * bytesPerSample, true);
-    writeAscii(8, "WAVE");
-    writeAscii(12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, sampleRateHz, true);
-    view.setUint32(28, sampleRateHz * bytesPerSample, true);
-    view.setUint16(32, bytesPerSample, true);
-    view.setUint16(34, 16, true);
-    writeAscii(36, "data");
-    view.setUint32(40, samples.length * bytesPerSample, true);
-    let offset = header;
-    for (let i = 0; i < samples.length; i += 1) {
-      const clamped = Math.max(-1, Math.min(1, samples[i]));
-      view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
-      offset += 2;
-    }
-    return new Blob([buffer], { type: "audio/wav" });
-  }
-
-  async function blobToBase64(blob) {
-    const buffer = await blob.arrayBuffer();
-    let binary = "";
-    const bytes = new Uint8Array(buffer);
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-    }
-    return btoa(binary);
-  }
-
-  function emitDialogueText(text) {
+  function emitDialogueText(text, recognitionProvider = "") {
     const socket = getSocket();
     if (!socket) {
       setStatus("未连接");
@@ -572,369 +450,26 @@
       sessionId: getSessionId(),
       requestId,
       text: trimmed,
+      ...(recognitionProvider ? { recognitionProvider } : {}),
       pageContext: buildPageContext(),
       clientTiming: { sentAtClientMs },
     });
     return true;
   }
 
-  async function emitDialogueAudioWav(blob, captureTiming = {}) {
-    const socket = getSocket();
-    if (!socket) {
-      setStatus("未连接");
-      return;
-    }
-    if (!blob || blob.size < 320) {
-      setStatus("太短了，继续说…");
-      return;
-    }
-    syncAwakeForPageContext();
-    dialogueBusy = true;
-    childBubbleLoggedForPending = false;
-    setListenButtonState();
-    setStatus(dialogueAwake ? "识别中（FunASR）…" : "识别唤醒中…");
-    try {
-      const requestId = makeDialogueRequestId();
-      const encodingStartedAtClientMs = Date.now();
-      const audioBase64 = await blobToBase64(blob);
-      const encodedAtClientMs = Date.now();
-      const sentAtClientMs = Date.now();
-      socket.emit("child_dialogue_audio", {
-        sessionId: getSessionId(),
-        requestId,
-        audioBase64,
-        mimeType: "audio/wav",
-        pageContext: buildPageContext(),
-        clientTiming: {
-          ...captureTiming,
-          encodingStartedAtClientMs,
-          encodedAtClientMs,
-          encodingMs: encodedAtClientMs - encodingStartedAtClientMs,
-          sentAtClientMs,
-        },
-      });
-    } catch (err) {
-      console.error("上传对话音频失败", err);
-      setStatus("发送失败");
-      dialogueBusy = false;
-      childBubbleLoggedForPending = false;
-      setListenButtonState();
-      maybeResumeListening();
-    }
-  }
-
-  function canCapture() {
-    return (
-      autoListenEnabled &&
-      !dialogueBusy &&
-      (asrPausedForTts || Date.now() >= cooldownUntil) &&
-      !!mediaStream &&
-      !!analyser
-    );
-  }
-
-  function clearPreroll() {
-    prerollChunks = [];
-    prerollSamples = 0;
-  }
-
-  function pushPreroll(input) {
-    const copy = new Float32Array(input);
-    prerollChunks.push(copy);
-    prerollSamples += copy.length;
-    const maxSamples = Math.max(
-      1,
-      Math.floor(captureSampleRate * (PREROLL_MS / 1000))
-    );
-    while (prerollSamples > maxSamples && prerollChunks.length > 0) {
-      const dropped = prerollChunks.shift();
-      prerollSamples -= dropped.length;
-    }
-  }
-
-  function seedPcmFromPreroll() {
-    pcmChunks = prerollChunks.map((c) => new Float32Array(c));
-  }
-
-  function rememberAmbientLevel(level, now) {
-    recentNoiseLevels.push({ level, at: now });
-    const cutoff = now - 2000;
-    while (recentNoiseLevels.length && recentNoiseLevels[0].at < cutoff) {
-      recentNoiseLevels.shift();
-    }
-    if (now - lastNoiseEstimateAt < 250 || recentNoiseLevels.length < 12) return;
-    lastNoiseEstimateAt = now;
-    const sorted = recentNoiseLevels.map((entry) => entry.level).sort((a, b) => a - b);
-    const quietIndex = Math.max(0, Math.floor((sorted.length - 1) * 0.2));
-    const observed = Math.min(MAX_NOISE_FLOOR, sorted[quietIndex]);
-    noiseFloor = noiseFloor * 0.72 + observed * 0.28;
-  }
-
-  function currentVadLevels() {
-    const start = Math.min(0.16, Math.max(MIN_START_LEVEL, noiseFloor * 2.2 + 0.008));
-    const silence = Math.min(start * 0.78, Math.max(MIN_SILENCE_LEVEL, noiseFloor * 1.45 + 0.004));
-    const reset = Math.max(silence + 0.008, start * 0.82);
-    return { start, silence, reset };
-  }
-
-  function prerollHasVoice() {
-    if (!prerollChunks.length) return false;
-    const merged = concatenateFloat32(prerollChunks);
-    if (!merged.length) return false;
-    let sum = 0;
-    for (let i = 0; i < merged.length; i += 1) {
-      const value = merged[i];
-      sum += value * value;
-    }
-    return Math.sqrt(sum / merged.length) >= currentVadLevels().start;
-  }
-
-  function finalizeCapturedTurn() {
-    if (!capturingTurn) return;
-    capturingTurn = false;
-    const chunks = pcmChunks;
-    const captureEndedAtClientMs = Date.now();
-    const captureStartedAtClientMs = turnCaptureStartedAtClientMs;
-    const speechEndedAtClientMs = silenceStartedAtClientMs;
-    pcmChunks = [];
-    voiceStartedAt = null;
-    silenceStartedAt = null;
-    silenceStartedAtClientMs = null;
-    turnStartedAt = null;
-    turnCaptureStartedAtClientMs = null;
-    if (!chunks.length) return;
-    const merged = concatenateFloat32(chunks);
-    const down = downsampleBuffer(merged, captureSampleRate, TARGET_SAMPLE_RATE);
-    const wav = encodePcm16Wav(down, TARGET_SAMPLE_RATE);
-    const timing = {
-      captureStartedAtClientMs,
-      speechEndedAtClientMs,
-      captureEndedAtClientMs,
-      captureDurationMs: captureStartedAtClientMs != null
-        ? captureEndedAtClientMs - captureStartedAtClientMs
-        : null,
-      vadSilenceTailMs: speechEndedAtClientMs != null
-        ? captureEndedAtClientMs - speechEndedAtClientMs
-        : null,
-      audioDurationMs: Math.round((down.length / TARGET_SAMPLE_RATE) * 1000),
-      vadConfirmationMs: MIN_VOICE_MS,
-      configuredSilenceEndMs: SILENCE_END_MS,
-      prerollMs: PREROLL_MS,
-      capturedDuringTts: asrPausedForTts,
-    };
-    if (asrPausedForTts) {
-      if (!pendingTtsTurn) pendingTtsTurn = { wav, timing };
-      setStatus("已听到，朗读结束后识别…");
-      return;
-    }
-    void emitDialogueAudioWav(wav, timing);
-  }
-
-  function onPcmFrame(input) {
-    if (!capturingTurn) return;
-    pcmChunks.push(new Float32Array(input));
-    const now = performance.now();
-    const elapsed = now - (turnStartedAt || now);
-    if (elapsed >= MAX_TURN_MS) {
-      finalizeCapturedTurn();
-    }
-  }
-
-  function meterTick() {
-    if (!analyser || !autoListenEnabled) return;
-    const nowWall = Date.now();
-    if (nowWall - lastFingerprintCheckAt >= 400) {
-      lastFingerprintCheckAt = nowWall;
-      syncAwakeForPageContext();
-    }
-    const samples = new Uint8Array(analyser.fftSize);
-    analyser.getByteTimeDomainData(samples);
-    const level = Math.min(1, rmsFromTimeDomain(samples));
-    const now = performance.now();
-
-    if (!capturingTurn && !asrPausedForTts && !dialogueBusy) {
-      rememberAmbientLevel(level, now);
-    }
-    const vad = currentVadLevels();
-
-    if (!canCapture()) {
-      if (capturingTurn) {
-        // 服务端识别忙时才丢弃半截；TTS 本身不再让 canCapture=false。
-        capturingTurn = false;
-        pcmChunks = [];
-        voiceStartedAt = null;
-        silenceStartedAt = null;
-        silenceStartedAtClientMs = null;
-        turnStartedAt = null;
-        turnCaptureStartedAtClientMs = null;
-      }
-      meterFrame = window.requestAnimationFrame(meterTick);
-      return;
-    }
-
-    if (!capturingTurn) {
-      const prerollReady = prerollHasVoice();
-      if (prerollReady || level >= vad.start) {
-        voiceStartedAt = voiceStartedAt || now;
-        // The pre-roll protects the first syllable, but it must never bypass
-        // the confirmation window; that was the main source of phantom turns.
-        if (now - voiceStartedAt >= MIN_VOICE_MS) {
-          capturingTurn = true;
-          turnStartedAt = now;
-          turnCaptureStartedAtClientMs = Date.now();
-          silenceStartedAt = null;
-          silenceStartedAtClientMs = null;
-          // 用开说前环形缓冲作种子，避免丢掉确认窗内的句首音节
-          seedPcmFromPreroll();
-          setStatus(asrPausedForTts ? "朗读中，仍在听你的回答…" : "正在听…");
-        }
-      } else {
-        voiceStartedAt = null;
-        setStatus(listenIdleStatus());
-      }
-    } else {
-      if (level <= vad.silence) {
-        silenceStartedAt = silenceStartedAt || now;
-        silenceStartedAtClientMs = silenceStartedAtClientMs || Date.now();
-        const spoken = now - (turnStartedAt || now);
-        if (spoken >= MIN_TURN_MS && now - silenceStartedAt >= SILENCE_END_MS) {
-          finalizeCapturedTurn();
-        }
-      } else if (level >= vad.reset) {
-        silenceStartedAt = null;
-        silenceStartedAtClientMs = null;
-      }
-    }
-
-    meterFrame = window.requestAnimationFrame(meterTick);
-  }
-
-  function releaseAudioGraph(keepStream) {
-    if (meterFrame != null) {
-      window.cancelAnimationFrame(meterFrame);
-      meterFrame = null;
-    }
-    recentNoiseLevels = [];
-    noiseFloor = 0.018;
-    lastNoiseEstimateAt = 0;
-    if (captureNode) {
-      captureNode.onaudioprocess = null;
-      try {
-        captureNode.disconnect();
-      } catch (_) {}
-      captureNode = null;
-    }
-    if (silenceGain) {
-      try {
-        silenceGain.disconnect();
-      } catch (_) {}
-      silenceGain = null;
-    }
-    analyser = null;
-    if (audioContext && audioContext.state !== "closed") {
-      void audioContext.close();
-    }
-    audioContext = null;
-    if (!keepStream && mediaStream) {
-      mediaStream.getTracks().forEach((t) => t.stop());
-      mediaStream = null;
-    }
-    capturingTurn = false;
-    pcmChunks = [];
-    pendingTtsTurn = null;
-    pendingTtsTranscript = "";
-    clearPreroll();
-    voiceStartedAt = null;
-    silenceStartedAt = null;
-    silenceStartedAtClientMs = null;
-    turnStartedAt = null;
-    turnCaptureStartedAtClientMs = null;
-  }
-
-  async function openMicStream() {
-    const attempts = [
-      {
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      },
-      { audio: true },
-    ];
-    let lastErr = null;
-    for (const constraints of attempts) {
-      try {
-        return await navigator.mediaDevices.getUserMedia(constraints);
-      } catch (err) {
-        lastErr = err;
-      }
-    }
-    throw lastErr || new Error("getUserMedia failed");
-  }
-
-  async function startFunasrAutoListen() {
-    if (!isMicContextOk()) {
-      const err = new Error("insecure_context");
-      err.name = "SecurityError";
-      throw err;
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      const err = new Error("no_getUserMedia");
-      err.name = "no_getUserMedia";
-      throw err;
-    }
-    global.BrowserTts?.unlockBrowserSpeechOutput?.();
-    mediaStream = await openMicStream();
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioContext.state === "suspended") {
-      await audioContext.resume();
-    }
-    captureSampleRate = audioContext.sampleRate || TARGET_SAMPLE_RATE;
-    const source = audioContext.createMediaStreamSource(mediaStream);
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 512;
-    source.connect(analyser);
-
-    // ScriptProcessor：采集 PCM 供 WAV/FunASR（兼容性优先）
-    const bufferSize = 4096;
-    captureNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
-    silenceGain = audioContext.createGain();
-    silenceGain.gain.value = 0;
-    captureNode.onaudioprocess = (ev) => {
-      const input = ev.inputBuffer.getChannelData(0);
-      // TTS 期间也持续写入 pre-roll，保住孩子抢答的第一个音节。
-      if (autoListenEnabled) {
-        pushPreroll(input);
-      }
-      if (!capturingTurn) return;
-      onPcmFrame(input);
-    };
-    source.connect(captureNode);
-    captureNode.connect(silenceGain);
-    silenceGain.connect(audioContext.destination);
-
-    micBlocked = false;
-    autoListenEnabled = true;
-    usingBrowserSpeechFallback = false;
-    setListenButtonState();
-    setStatus(listenIdleStatus());
-    meterFrame = window.requestAnimationFrame(meterTick);
-  }
-
   function failMicAndStop(kind, logLabel, detail) {
     console.warn(logLabel || "麦克风不可用", detail || kind);
     micBlocked = kind === "denied" || kind === "insecure";
     autoListenEnabled = false;
-    stopBrowserSpeechFallback();
-    releaseAudioGraph(false);
-    usingBrowserSpeechFallback = false;
+    stopBrowserSpeechRecognition();
     setListenButtonState();
     setStatus(micHelpMessage(kind));
+    if (dialogueAwake) {
+      emitDialogueRuntimeState({ reason: `microphone_${kind || "failed"}` });
+    }
   }
 
-  function stopBrowserSpeechFallback() {
+  function stopBrowserSpeechRecognition() {
     if (!speechRec) return;
     try {
       speechRec.onend = null;
@@ -944,7 +479,7 @@
     speechRec = null;
   }
 
-  function startBrowserSpeechFallback() {
+  function startBrowserSpeechRecognition() {
     if (!isMicContextOk()) {
       failMicAndStop("insecure", "浏览器识别跳过：非安全上下文");
       return false;
@@ -973,11 +508,14 @@
           const text = finalText.trim();
           finalText = "";
           if (asrPausedForTts) {
-            if (!pendingTtsTranscript) pendingTtsTranscript = text;
+            if (!pendingTtsTranscript) {
+              pendingTtsTranscript = text;
+              pendingTtsTranscriptReference = activeTtsReferenceText;
+            }
             setStatus("已听到，朗读结束后识别…");
           } else {
             cooldownUntil = Date.now() + COOLDOWN_MS;
-            emitDialogueText(text);
+            emitDialogueText(text, "browser-speech-recognition");
           }
         }
       };
@@ -989,20 +527,8 @@
         if (code === "aborted" || code === "no-speech") return;
         const kind = classifyMicFailure(code);
         if (kind === "denied" || kind === "insecure") {
-          // 优先改走 FunASR（getUserMedia→VAD→WAV），不再展示英文 not-allowed
-          stopBrowserSpeechFallback();
-          usingBrowserSpeechFallback = false;
-          void (async () => {
-            try {
-              await startFunasrAutoListen();
-            } catch (err) {
-              failMicAndStop(
-                classifyMicFailure(err) === "other" ? kind : classifyMicFailure(err),
-                "SpeechRecognition not-allowed 后 FunASR 仍失败",
-                err
-              );
-            }
-          })();
+          stopBrowserSpeechRecognition();
+          failMicAndStop(kind, "浏览器语音识别权限不可用", code);
           return;
         }
         if (autoListenEnabled && !dialogueBusy) {
@@ -1017,7 +543,6 @@
         speechRecActive = false;
         if (
           autoListenEnabled &&
-          usingBrowserSpeechFallback &&
           !dialogueBusy &&
           !asrPausedForTts &&
           !micBlocked
@@ -1034,9 +559,9 @@
       speechRecActive = true;
       micBlocked = false;
       autoListenEnabled = true;
-      usingBrowserSpeechFallback = true;
       setListenButtonState();
       setStatus(listenIdleStatus());
+      if (dialogueAwake) emitDialogueRuntimeState({ reason: "recognition_started" });
       return true;
     } catch (err) {
       console.warn("无法启动浏览器语音识别", err);
@@ -1048,25 +573,7 @@
     }
   }
 
-  function fallbackAfterLocalSttFailure(errorText) {
-    if (usingBrowserSpeechFallback) return false;
-    if (!/(voice_service|funasr|LOCAL_MODEL|model.*(?:error|unavailable|pending))/i.test(errorText)) {
-      return false;
-    }
-    console.warn("本地语音模型不可用，切换浏览器语音识别", errorText);
-    releaseAudioGraph(false);
-    autoListenEnabled = true;
-    if (startBrowserSpeechFallback()) {
-      setStatus("本地语音模型不可用，已切换浏览器识别，请继续说");
-      return true;
-    }
-    autoListenEnabled = false;
-    setListenButtonState();
-    setStatus("本地语音模型未安装；请安装 FunASR，或改用支持语音识别的 Chrome");
-    return true;
-  }
-
-  async function startAutoListen() {
+  function startAutoListen() {
     if (autoListenEnabled) return;
     if (!bindResultHandler()) {
       setStatus("未连接");
@@ -1078,83 +585,74 @@
       return;
     }
     micBlocked = false;
-    try {
-      await startFunasrAutoListen();
-    } catch (err) {
-      console.warn("FunASR 自动聆听启动失败", err);
-      releaseAudioGraph(false);
-      const kind = classifyMicFailure(err);
-      // 权限/安全上下文失败时不要再走 SpeechRecognition（同样会 not-allowed）
-      if (kind === "denied" || kind === "insecure" || kind === "unavailable") {
-        failMicAndStop(kind, "FunASR 麦克风启动失败", err);
-        return;
-      }
-      console.warn("尝试浏览器 SpeechRecognition 兜底", err);
-      if (!startBrowserSpeechFallback()) {
-        failMicAndStop("other", "麦克风不可用", err);
-      }
+    if (!getSpeechRecognitionCtor()) {
+      failMicAndStop("unavailable", "当前浏览器不支持语音识别");
+      return;
+    }
+    if (!startBrowserSpeechRecognition()) {
+      failMicAndStop("other", "无法启动浏览器语音识别");
     }
   }
 
   function stopAutoListen() {
     autoListenEnabled = false;
-    stopBrowserSpeechFallback();
-    releaseAudioGraph(false);
-    usingBrowserSpeechFallback = false;
-    pendingTtsTurn = null;
+    stopBrowserSpeechRecognition();
     pendingTtsTranscript = "";
+    pendingTtsTranscriptReference = "";
+    activeTtsReferenceText = "";
     setListenButtonState();
     setStatus("已停止聆听");
   }
 
-  function pauseAsrForTts() {
+  function pauseAsrForTts(spokenText = "") {
     asrPausedForTts = true;
+    const reference = String(spokenText || "").trim().slice(0, 500);
+    if (reference) activeTtsReferenceText = reference;
     setListenButtonState();
     if (autoListenEnabled) setStatus("朗读中，仍在聆听…");
   }
 
+  function isLikelyTtsEcho(transcript, referenceText) {
+    const normalize = (value) => String(value || "")
+      .replace(/[\s\u3000，。！？、；：,.!?;:'"“”‘’（）()\[\]【】<>《》…—～~·]/g, "")
+      .toLowerCase();
+    const heard = normalize(transcript);
+    const spoken = normalize(referenceText);
+    return heard.length >= 2 && spoken.length >= 2 && (
+      spoken.includes(heard) || heard.includes(spoken)
+    );
+  }
+
   function resumeAsrAfterTts() {
     asrPausedForTts = false;
-    const pendingTurn = pendingTtsTurn;
     const pendingTranscript = pendingTtsTranscript;
-    pendingTtsTurn = null;
+    const pendingTranscriptEchoReference = pendingTtsTranscriptReference;
     pendingTtsTranscript = "";
-    if (pendingTurn) {
-      cooldownUntil = 0;
-      setListenButtonState();
-      setStatus("正在识别刚才的回答…");
-      void emitDialogueAudioWav(pendingTurn.wav, pendingTurn.timing);
-      return;
-    }
+    pendingTtsTranscriptReference = "";
+    activeTtsReferenceText = "";
     if (pendingTranscript) {
+      if (isLikelyTtsEcho(pendingTranscript, pendingTranscriptEchoReference)) {
+        cooldownUntil = Date.now() + COOLDOWN_MS;
+        setStatus("已过滤扬声器回声，继续聆听…");
+        setListenButtonState();
+        maybeResumeListening();
+        return;
+      }
       cooldownUntil = 0;
       setListenButtonState();
       setStatus("正在识别刚才的回答…");
-      emitDialogueText(pendingTranscript);
+      emitDialogueText(pendingTranscript, "browser-speech-recognition");
       return;
     }
-    cooldownUntil = capturingTurn ? 0 : Date.now() + COOLDOWN_MS;
+    cooldownUntil = Date.now() + COOLDOWN_MS;
     setListenButtonState();
-    if (capturingTurn) setStatus("正在听…");
     maybeResumeListening();
   }
 
   function maybeResumeListening() {
     if (!autoListenEnabled || dialogueBusy || asrPausedForTts || micBlocked) return;
-    if (usingBrowserSpeechFallback) {
-      if (!speechRecActive) startBrowserSpeechFallback();
-      else setStatus(listenIdleStatus());
-      return;
-    }
-    if (mediaStream && analyser) {
-      setStatus(listenIdleStatus());
-      if (meterFrame == null) meterFrame = window.requestAnimationFrame(meterTick);
-      return;
-    }
-    // 无流时不自动重新 getUserMedia（需用户再次点击，才能弹出权限）
-    setStatus("请点击「开始自动聆听」以启用麦克风");
-    autoListenEnabled = false;
-    setListenButtonState();
+    if (!speechRecActive) startBrowserSpeechRecognition();
+    else setStatus(listenIdleStatus());
   }
 
   function sendTextFromInput() {
@@ -1182,9 +680,6 @@
       if (!data || !data.ok) {
         const err = String((data && data.error) || "unknown");
         childBubbleLoggedForPending = false;
-        if (fallbackAfterLocalSttFailure(err)) {
-          return;
-        }
         if (err === "not_awake") {
           setDialogueAwake(false, { updateStatus: false });
           const transcript = String((data && data.transcript) || "").trim();
@@ -1193,11 +688,13 @@
             appendChildTranscript(transcript);
           }
           childBubbleLoggedForPending = false;
-          setStatus("请说：麦麦，麦麦");
+          setStatus("请说：麦麦");
           maybeResumeListening();
           return;
         }
-        if (/EMPTY|empty|no_speech|audio_too_short/i.test(err)) {
+        if (/tts_echo/i.test(err)) {
+          setStatus("已过滤扬声器回声，继续说…");
+        } else if (/EMPTY|empty|no_speech|audio_too_short|implausible_transcript/i.test(err)) {
           setStatus("没听清，继续说…");
         } else {
           setStatus(`对话失败: ${err}`);
@@ -1238,7 +735,7 @@
           if (global.BrowserTts?.isBrowserSpeechBusy?.()) return;
           if (!global.BrowserTts?.isBrowserSpeechSynthesisSupported?.()) return;
           console.warn("[child_dialogue] robot_speak_text 未触发，本地补读");
-          pauseAsrForTts();
+          pauseAsrForTts(speakFallback);
           global.BrowserTts.unlockBrowserSpeechOutput?.();
           global.BrowserTts.speakBrowserText(speakFallback, {
             onEnd: () => resumeAsrAfterTts(),
@@ -1252,7 +749,16 @@
       }
     });
     socket.on("child_dialogue_wake_state", (data) => {
-      setDialogueAwake(!!(data && data.awake), { updateStatus: true });
+      const awake = !!(data && data.awake);
+      setDialogueAwake(awake, { updateStatus: true });
+      if (awake) {
+        ensureListeningAfterTeacherWake(data && data.requestId);
+      } else {
+        emitDialogueRuntimeState({
+          requestId: data && data.requestId,
+          reason: (data && data.reason) || "agent_closed",
+        });
+      }
     });
     socket.on("child_dialogue_visibility", (data) => {
       applyDialoguePanelVisibility(!data || data.visible !== false);
@@ -1261,7 +767,12 @@
       if (!data) return;
       wakeWordEnabled = data.wakeWordEnabled === true;
       applyDialoguePanelVisibility(data.visible !== false);
-      setStatus(listenIdleStatus());
+      setDialogueAwake(data.awake === true, { updateStatus: false });
+      if (data.awake === true) {
+        ensureListeningAfterTeacherWake(data.requestId);
+      } else {
+        setStatus(listenIdleStatus());
+      }
     });
     // 连续 ASR 识别文本（含错答/未命中）；与 child_dialogue_result 短窗去重
     socket.on("child_speech_recognized", (data) => {
@@ -1328,7 +839,7 @@
     if (sleepBtn) {
       sleepBtn.addEventListener("click", () => {
         emitDialogueSleep("manual_sleep");
-        setStatus("请说：麦麦，麦麦");
+        setStatus("请说：麦麦");
       });
     }
     btn.addEventListener("click", async (ev) => {
@@ -1411,8 +922,7 @@
     }
 
     waitForSocketAndBind(50);
-    checkVoiceHealth();
-    console.log("[child_dialogue] UI 已绑定：唤醒词「麦麦，麦麦」→ FunASR → LLM");
+    console.log("[child_dialogue] UI 已绑定：浏览器语音识别 → 唤醒词/课程关键词 → LLM");
   }
 
   global.ChildDialogue = {

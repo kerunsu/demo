@@ -34,13 +34,13 @@ class PlaybackState:
                 return False
             self._stop_event.set()
             t = self._thread
-        if t and t.is_alive():
-            t.join(timeout=0.5)
-        with self._lock:
             if self._thread is t:
                 self._thread = None
                 self.current_request_id = None
                 self._stop_event = threading.Event()
+        # Do not join here.  Starting a formal action must pre-empt an idle
+        # transition immediately; the old worker owns its stop event and will
+        # exit without being able to clear the new worker's state.
         return True
 
     def stop(self, expected_request_id: Optional[str] = None) -> bool:

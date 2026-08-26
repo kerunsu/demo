@@ -91,6 +91,7 @@ class FeedbackService:
             # 实时推送
             if self._config.enable_realtime and self._socketio:
                 event_data = {
+                    'sessionId': session_id,
                     'session_id': session_id,
                     'matcher_type': match_result.matcher_type,
                     'score': match_result.score,
@@ -100,7 +101,7 @@ class FeedbackService:
                     'details': match_result.details
                 }
                 
-                self._socketio.emit('match_result', event_data)
+                self._socketio.emit('match_result', event_data, room=session_id)
                 logger.debug(f"发送匹配结果: {session_id}, score={match_result.score}")
             
             return True

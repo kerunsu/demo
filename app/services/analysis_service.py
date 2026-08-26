@@ -406,6 +406,10 @@ class AnalysisService:
             state.enable_triggers = cfg.get('enable_triggers', state.enable_triggers)
             state.pose_target_set = False
             state.speech_target_set = False
+            # Remove the previous item's target before the new target is
+            # resolved. Camera frames may arrive concurrently with a teacher
+            # item switch and must never score against the prior card.
+            self._vision_pipeline.reset_pose_target()
 
             self._trigger_system.clear_session_triggers(session_id)
             if state.enable_triggers:
@@ -429,11 +433,11 @@ class AnalysisService:
         course_type = course_config.get('course_type', 'default') if course_config else 'default'
         
         # 根据课程类型注册触发器
-        if course_type in ['imitation', 'pose']:
-            # 姿态匹配成功触发器
-            threshold = course_config.get('pose_threshold', 0.95) if course_config else 0.95
-            trigger = TriggerFactory.pose_match_success(threshold=threshold)
-            self._trigger_system.register_trigger(trigger, session_id)
+        if course_type in ['mimic', 'imitation', 'pose']:
+            # 姿态答对由 PoseAutoPraiseService 统一走与拟声课程相同的
+            # 表扬、教师评分上下文和审计链路；旧 pose trigger 只播放
+            # 一段 MP3，且会与完整表扬包重复，因此不再注册。
+            pass
         
         if course_type in ['naming', 'speech', 'onomatopoeia']:
             # 答对自动表扬改由 keyword_listen（提问 TTS 结束后武装，
@@ -472,11 +476,11 @@ class AnalysisService:
                 logger.warning(f"会话不存在: {session_id}")
                 return False
             
-            self._vision_pipeline.set_pose_target(target_keypoints, name)
-            self._sessions[session_id].pose_target_set = True
+            success = self._vision_pipeline.set_pose_target(target_keypoints, name)
+            self._sessions[session_id].pose_target_set = bool(success)
             
             logger.info(f"设置姿态目标: {session_id}, name={name}")
-            return True
+            return bool(success)
     
     def set_pose_target_from_image(
         self,
@@ -585,6 +589,8 @@ class AnalysisService:
         if normalized == 'playing':
             state.system_audio_active = True
             state.ignore_audio_until = float('inf')
+            if (state.course_type or '').lower() in ('mimic', 'imitation', 'pose'):
+                self._vision_pipeline.reset_pose_stability(session_id)
             # Dump robot echo so it cannot be recognized as a child answer.
             if analyzer and hasattr(analyzer, 'reset_buffer'):
                 analyzer.reset_buffer()
@@ -651,6 +657,20 @@ class AnalysisService:
             analysis_results, match_results = self._run_realtime_video_analysis(
                 frame, context
             )
+            # The target card is visible while the robot asks the question, but
+            # the child must actually hold the action after the prompt. Never
+            # accumulate/emit a pose success during question, hint or praise TTS.
+            if (
+                state.system_audio_active
+                and (state.course_type or '').lower()
+                in ('mimic', 'imitation', 'pose')
+            ):
+                self._vision_pipeline.reset_pose_stability(session_id)
+                for result in match_results:
+                    if getattr(result, 'matcher_type', '') == 'pose_matcher':
+                        result.passed = False
+                        result.details['stable_passed'] = False
+                        result.details['gated_by_system_audio'] = True
             elapsed_ms = (time.time() - video_start) * 1000.0
             self._record_diagnostics(analysis_results, elapsed_ms, source='video_realtime')
             
@@ -1132,6 +1152,13 @@ class AnalysisService:
             from app.services.keyword_listen import get_keyword_listen_service
 
             get_keyword_listen_service().clear(session_id)
+        except Exception:
+            pass
+
+        try:
+            from app.services.pose_auto_praise import get_pose_auto_praise_service
+
+            get_pose_auto_praise_service().clear(session_id)
         except Exception:
             pass
         

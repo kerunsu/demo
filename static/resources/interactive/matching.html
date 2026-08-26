@@ -8,20 +8,21 @@
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700&display=swap" rel="stylesheet">
   
   <style>
-    /* Aligned with DemoRobot training UI: sky-blue gradient + large image cards */
+    /* Pairing and ordering share the same calm warm-yellow classroom background. */
     :root {
-      --bg-top: #2ebbf4;
-      --bg-bottom: #a2e8f9;
-      --bg-gradient: linear-gradient(180deg, #2ebbf4 0%, #a2e8f9 100%);
+      --bg-top: #ffe89a;
+      --bg-bottom: #ffffff;
+      --bg-gradient: linear-gradient(180deg, #ffe89a 0%, #fff4c8 42%, #ffffff 100%);
       --card-bg: #ffffff;
       --primary-color: #0284c7;
       --accent-blue: #3b82f6;
       --success-color: #4cd964;
       --error-color: #ff6b6b;
       --hint-color: #f1c40f;
-      /* inset 底部不再用 #f0f9ff 硬边带（会与白底形成接缝），改柔和蓝色内阴影 */
-      --shadow-light: 0 10px 20px rgba(0, 0, 0, 0.08), inset 0 -6px 12px rgba(2, 132, 199, 0.10);
-      --shadow-hover: 0 15px 25px rgba(0, 0, 0, 0.12), inset 0 -6px 12px rgba(2, 132, 199, 0.14);
+      --shadow-light: 0 12px 28px rgba(110, 82, 20, 0.13);
+      --shadow-hover: 0 18px 36px rgba(110, 82, 20, 0.19);
+      --target-card-size: min(53.28vh, 439px);
+      --option-card-size: min(43.2vh, 367px);
     }
 
     * {
@@ -51,13 +52,13 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      padding: clamp(12px, 2.2vh, 24px) clamp(12px, 2.5vw, 28px);
+      padding: clamp(4px, 1vh, 12px) clamp(12px, 2.5vw, 28px);
       max-width: none;
       margin: 0 auto;
       width: 100%;
       height: 100%;
       position: relative;
-      gap: clamp(8px, 1.5vh, 16px);
+      gap: clamp(2px, 0.5vh, 8px);
     }
 
     .hint-btn {
@@ -99,37 +100,40 @@
       align-items: center;
       gap: 0;
       padding-top: clamp(4px, 1vh, 12px);
-      min-height: min(47vh, 390px);
+      min-height: 0;
     }
 
     .target-frame {
-      background: rgba(255, 255, 255, 0.55);
-      width: min(44.4vh, 366px);
-      height: min(44.4vh, 366px);
-      border-radius: 40px;
+      background: #ffffff;
+      width: var(--target-card-size);
+      height: var(--target-card-size);
+      border-radius: 42px;
       display: flex;
       justify-content: center;
       align-items: center;
-      border: 6px solid white;
-      box-shadow: 0 15px 30px rgba(0, 100, 200, 0.15);
+      border: 5px solid rgba(255, 255, 255, 0.96);
+      box-shadow: var(--shadow-light);
       overflow: hidden;
       position: relative;
       transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
       z-index: 2;
-      padding: 10px;
+      padding: 14px;
+      isolation: isolate;
+      contain: paint;
+      backface-visibility: hidden;
     }
 
     .target-image {
       width: 100%;
       height: 100%;
-      border-radius: 24px;
+      border-radius: 28px;
       object-fit: contain;
       display: block;
       transition: opacity 0.3s ease;
     }
 
     .visual-divider {
-      height: 22px;
+      height: 8px;
       flex: 0 0 auto;
       display: flex;
       justify-content: center;
@@ -147,7 +151,7 @@
 
     .options-zone {
       flex: 1 1 auto;
-      padding: clamp(4px, 1vh, 12px) 0;
+      padding: 2px 0;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -157,6 +161,7 @@
       overscroll-behavior-x: contain;
       scrollbar-width: thin;
       scrollbar-color: rgba(2, 132, 199, 0.35) transparent;
+      scroll-snap-type: x proximity;
     }
 
     .options-grid {
@@ -168,14 +173,14 @@
       gap: clamp(8px, 1.4vw, 18px);
       width: max-content;
       min-width: 100%;
-      padding: 8px max(8px, 2vw);
+      padding: 8px max(12px, 2vw);
     }
 
     .option-card {
       background: var(--card-bg);
-      border-radius: 28px;
-      padding: 8px;
-      border: 5px solid #f0f9ff;
+      border-radius: 34px;
+      padding: 14px;
+      border: 5px solid rgba(255, 255, 255, 0.96);
       box-shadow: var(--shadow-light);
       cursor: pointer;
       transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
@@ -187,12 +192,16 @@
       align-items: center;
       justify-content: center;
       /* 选项数量只改变横向总宽度，不再压缩儿童的点击目标。 */
-      flex: 0 0 min(36vh, 306px);
-      width: min(36vh, 306px);
-      height: min(36vh, 306px);
+      flex: 0 0 var(--option-card-size);
+      width: var(--option-card-size);
+      height: var(--option-card-size);
       max-width: none;
       overflow: hidden;
       scroll-snap-align: center;
+      isolation: isolate;
+      contain: paint;
+      backface-visibility: hidden;
+      will-change: transform, opacity;
     }
 
     @media (hover: hover) and (pointer: fine) {
@@ -211,12 +220,15 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
-      border-radius: 18px;
+      border-radius: 24px;
       pointer-events: none;
     }
 
     .option-card.correct {
       background-color: var(--success-color);
+      border-color: var(--success-color);
+      outline: 5px solid rgba(76, 217, 100, 0.3);
+      outline-offset: -10px;
       transform: scale(1.05) !important;
       box-shadow: 0 0 30px rgba(76, 217, 100, 0.6);
       z-index: 10;
@@ -233,6 +245,7 @@
     }
 
     .option-card.wrong {
+      border-color: rgba(255, 86, 86, 0.78);
       opacity: 0.35 !important;
       transform: scale(0.82) !important;
       transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
@@ -292,7 +305,9 @@
     }
 
     .option-card.hint-highlight {
-      border: 4px solid var(--hint-color);
+      border-color: var(--hint-color);
+      outline: 4px solid rgba(241, 196, 15, 0.32);
+      outline-offset: -8px;
       box-shadow: 0 0 25px rgba(241, 196, 15, 0.5);
       animation: hint-pulse 1.5s infinite ease-in-out;
       z-index: 5;
@@ -360,7 +375,7 @@
     .game-overlay {
       position: fixed;
       inset: 0;
-      background: linear-gradient(180deg, rgba(46, 187, 244, 0.96) 0%, rgba(162, 232, 249, 0.96) 100%);
+      background: linear-gradient(180deg, rgba(255, 232, 154, 0.97) 0%, rgba(255, 255, 255, 0.97) 100%);
       backdrop-filter: blur(8px);
       z-index: 100;
       display: flex;
@@ -399,33 +414,27 @@
     #technical-panel { display: none !important; }
 
     @media (max-width: 780px) {
-      .target-zone { min-height: min(41vh, 336px); }
+      :root {
+        --target-card-size: min(48.96vh, 367px);
+        --option-card-size: min(41.76vh, 295px);
+      }
+      .target-zone { min-height: 0; }
       .target-frame {
-        width: min(40.8vh, 306px);
-        height: min(40.8vh, 306px);
         border-radius: 32px;
       }
       .option-card {
         border-radius: 22px;
         border-width: 4px;
         padding: 6px;
-        flex-basis: min(34.8vh, 246px);
-        width: min(34.8vh, 246px);
-        height: min(34.8vh, 246px);
       }
     }
 
     @media (max-height: 640px) and (orientation: landscape) {
+      :root {
+        --target-card-size: min(43.2vh, 317px);
+        --option-card-size: min(41.76vh, 266px);
+      }
       .target-zone { min-height: auto; }
-      .target-frame {
-        width: min(36vh, 264px);
-        height: min(36vh, 264px);
-      }
-      .option-card {
-        flex-basis: min(34.8vh, 222px);
-        width: min(34.8vh, 222px);
-        height: min(34.8vh, 222px);
-      }
     }
   </style>
 </head>
@@ -886,7 +895,7 @@
               : (data.images || []).map((src) => ({ src }))
             ).map((item, index) => {
               const src = typeof item === 'string' ? item : item.src;
-              // 加载时不按 index 标「左边」——该图可能被用作上面目标
+              // 加载时不按 index 标「左边」——该图可能被用作目标样图
               const label = (item && item.label) || labelFromMatchingSrc(src);
               return {
                 id: `img_${index}`,
@@ -1206,8 +1215,9 @@
       }
 
       renderOptionCards() {
-        // 生成选项卡片（单行排布，按数量缩放）
+        // 生成固定尺寸选项卡片；数量增加只延长横向滚动区域。
         const optionsGrid = document.getElementById('optionsGrid');
+        const optionsZone = document.getElementById('optionsZone');
         optionsGrid.innerHTML = '';
         const optionCount = this.currentOptions.length;
         optionsGrid.dataset.count = String(optionCount);
@@ -1232,6 +1242,7 @@
           
           optionsGrid.appendChild(card);
         });
+        if (optionsZone) optionsZone.scrollLeft = 0;
       }
 
       emitQuestionReady() {
@@ -1293,7 +1304,7 @@
       }
 
       buildPageContext() {
-        // 对齐 DemoRobot：上面=target，下面从左到右=options（1-based）
+        // 目标样图=target，选项从左到右=options（1-based）
         const options = (this.currentOptions || []).map((opt, index) => {
           const label = opt.label || this.labelFromSrc(opt.src, index);
           return {
@@ -1308,13 +1319,13 @@
         );
         const targetLabel = this.currentTarget
           ? (this.currentTarget.label || this.labelFromSrc(this.currentTarget.src))
-          : '上面那张';
+          : '这张';
         const targetDescription = this.currentTarget
           ? (this.currentTarget.description || targetLabel)
           : targetLabel;
         return {
           courseType: 'pairing',
-          prompt: '选和上面一样的。',
+          prompt: '找出和这个一样的。',
           target: targetLabel,
           targetDescription,
           options,
@@ -1372,11 +1383,12 @@
           // 忽略已经选错的卡片
           if (card.classList.contains('wrong')) return;
           // 忽略已经选对的卡片
-          if (card.classList.contains('correct')) return;
+          if (card.classList.contains('correct') || card.classList.contains('correct-lvl3')) return;
           
           if (card.dataset.isCorrect === "true") {
             // 正确答案：黄色光晕呼吸效果
             card.classList.add('hint-highlight');
+            card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
           } else {
             // 错误答案：变暗缩小
             card.classList.add('dimmed');
@@ -1418,12 +1430,18 @@
             }
           }
           
-          cardElement.classList.add('correct');
+          // 恢复原有整卡翻转反馈；contain: paint 保证旋转时不露图片尖角。
+          cardElement.classList.add('correct-lvl3');
           cardElement.classList.remove('hint-highlight', 'dimmed');
+          document.getElementById('targetFrame').classList.add('bounce-big');
+          document.body.classList.add('flash-bg');
+          window.setTimeout(() => document.body.classList.remove('flash-bg'), 3200);
+          const rect = cardElement.getBoundingClientRect();
+          createExplosion(rect.left + rect.width / 2, rect.top + rect.height / 2, 3);
 
           const token = (this._advanceToken = (this._advanceToken || 0) + 1);
           const waitPackage = this.waitForFeedbackPackage('praise', {
-            minMs: 900,
+            minMs: 2800,
             maxMs: 20000,
             waitAnimation: true,
           });

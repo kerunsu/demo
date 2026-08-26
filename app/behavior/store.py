@@ -1,6 +1,8 @@
-"""
-行为观测持久化：内存索引 + JSON 文件
-目录：static/recordings/behavior/{training_session_id}/
+"""行为观测持久化：内存索引 + JSON 文件。
+
+新会话与 ``sessions`` 使用同一个易读目录名，例如
+``static/recordings/behavior/姓名-年龄-YYYYMMDD-N/``。训练 UUID 仍然是文件内的
+稳定主键；历史 ``behavior/{training_session_id}`` 目录继续按原路径读取。
 """
 from __future__ import annotations
 
@@ -39,15 +41,117 @@ class BehaviorStore:
         self._interaction_events: Dict[str, List[InteractionEvent]] = {}
         self._summaries: Dict[str, SessionBehaviorSummary] = {}
         self._active_by_student: Dict[int, str] = {}  # student_id -> training_session_id
+        self._directories: Dict[str, Path] = {}
 
     @property
     def root(self) -> Path:
         return self._base
 
-    def _dir(self, training_session_id: str) -> Path:
-        d = self._base / training_session_id
-        d.mkdir(parents=True, exist_ok=True)
-        return d
+    @staticmethod
+    def _validate_directory_name(value: Any) -> str:
+        name = str(value or "").strip()
+        if not name or name in {".", ".."} or Path(name).name != name:
+            raise ValueError("behavior_directory_name_invalid")
+        return name
+
+    @staticmethod
+    def _record_directory_name(record: TrainingSessionRecord) -> Optional[str]:
+        metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        value = metadata.get("human_dir_name") or metadata.get("humanDirName")
+        return str(value).strip() if value else None
+
+    def _find_dir(self, training_session_id: str) -> Optional[Path]:
+        """Resolve a training directory without creating filesystem state."""
+        key = str(training_session_id or "").strip()
+        if not key:
+            return None
+        cached = self._directories.get(key)
+        if cached is not None:
+            return cached
+
+        # Historical layout: behavior/{training_session_id}/.
+        legacy = self._base / key
+        if legacy.is_dir():
+            self._directories[key] = legacy
+            return legacy
+
+        # New layout: behavior/{human_dir_name}/, with the UUID in training.json.
+        try:
+            children = list(self._base.iterdir())
+        except OSError:
+            return None
+        for child in children:
+            training_path = child / "training.json"
+            if not child.is_dir() or not training_path.is_file():
+                continue
+            try:
+                data = json.loads(training_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                continue
+            if (
+                isinstance(data, dict)
+                and str(data.get("training_session_id") or "") == key
+            ):
+                self._directories[key] = child
+                return child
+        return None
+
+    def _write_dir(self, training_session_id: str) -> Path:
+        """Resolve the authoritative directory and create it only for a write."""
+        key = str(training_session_id or "").strip()
+        if not key:
+            raise ValueError("training_session_id_required")
+        existing = self._find_dir(key)
+        if existing is not None:
+            return existing
+        record = self._trainings.get(key)
+        preferred = self._record_directory_name(record) if record else None
+        name = self._validate_directory_name(preferred or key)
+        directory = self._base / name
+        directory.mkdir(parents=True, exist_ok=True)
+        self._directories[key] = directory
+        return directory
+
+    def bind_directory(self, training_session_id: str, human_dir_name: str) -> Path:
+        """Bind behavior output to the readable media-session directory name.
+
+        Binding itself does not create an empty directory. Existing historical
+        UUID directories are retained in place; this method never migrates stored
+        session data implicitly.
+        """
+        with self._lock:
+            key = str(training_session_id or "").strip()
+            if not key:
+                raise ValueError("training_session_id_required")
+            name = self._validate_directory_name(human_dir_name)
+            target = self._base / name
+            current = self._find_dir(key)
+            if current is not None and current != target:
+                logger.warning(
+                    "保留历史 behavior 目录: training=%s current=%s requested=%s",
+                    key, current, target,
+                )
+                return current
+            if current is None and target.exists():
+                owner = None
+                training_path = target / "training.json"
+                try:
+                    data = json.loads(training_path.read_text(encoding="utf-8"))
+                    if isinstance(data, dict):
+                        owner = str(data.get("training_session_id") or "") or None
+                except (OSError, ValueError, TypeError):
+                    pass
+                if owner != key:
+                    raise ValueError(f"behavior_directory_already_exists:{name}")
+            self._directories[key] = target
+            record = self._trainings.get(key)
+            if record is not None:
+                metadata = dict(record.metadata or {})
+                metadata["human_dir_name"] = name
+                metadata["directory_schema"] = "readable-session-v1"
+                record.metadata = metadata
+                self.save_training(record)
+            return target
 
     def _write_json(self, path: Path, data: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -88,7 +192,7 @@ class BehaviorStore:
             elif record.student_id is not None and record.status == "finalized":
                 if self._active_by_student.get(record.student_id) == record.training_session_id:
                     self._active_by_student.pop(record.student_id, None)
-            path = self._dir(record.training_session_id) / "training.json"
+            path = self._write_dir(record.training_session_id) / "training.json"
             self._write_json(path, record.to_dict())
 
     def get_training(self, training_session_id: str) -> Optional[TrainingSessionRecord]:
@@ -100,8 +204,8 @@ class BehaviorStore:
 
     def _load_training_from_disk(self, training_session_id: str) -> None:
         """按需从磁盘回填 training / windows / 观测（服务重启后 refresh 依赖此路径）。"""
-        d = self._base / training_session_id
-        if not d.exists():
+        d = self._find_dir(training_session_id)
+        if d is None:
             return
         try:
             tpath = d / "training.json"
@@ -199,11 +303,43 @@ class BehaviorStore:
                     ids.append(tid)
             return ids
 
+    def list_persisted_training_ids(self) -> List[str]:
+        """List stored training IDs, independent of directory naming layout."""
+        with self._lock:
+            try:
+                directories = sorted(
+                    (item for item in self._base.iterdir() if item.is_dir()),
+                    key=lambda item: item.stat().st_mtime,
+                    reverse=True,
+                )
+            except OSError:
+                return []
+            result: List[str] = []
+            seen = set()
+            for directory in directories:
+                training_id = None
+                training_path = directory / "training.json"
+                try:
+                    data = json.loads(training_path.read_text(encoding="utf-8"))
+                    if isinstance(data, dict) and data.get("training_session_id"):
+                        training_id = str(data["training_session_id"])
+                except (OSError, ValueError, TypeError):
+                    pass
+                # Legacy directories used the training UUID as their name. A
+                # report-only historical directory may not have training.json.
+                training_id = training_id or directory.name
+                if training_id in seen:
+                    continue
+                seen.add(training_id)
+                self._directories.setdefault(training_id, directory)
+                result.append(training_id)
+            return result
+
     # ---- windows ----
     def save_window(self, window: QuestionWindow) -> None:
         with self._lock:
             self._windows.setdefault(window.training_session_id, {})[window.question_id] = window
-            path = self._dir(window.training_session_id) / "windows" / f"{window.question_id}.json"
+            path = self._write_dir(window.training_session_id) / "windows" / f"{window.question_id}.json"
             self._write_json(path, window.to_dict())
 
     def get_window(self, training_session_id: str, question_id: str) -> Optional[QuestionWindow]:
@@ -224,19 +360,19 @@ class BehaviorStore:
     def add_attention(self, obs: AttentionObservation) -> None:
         with self._lock:
             self._attention.setdefault(obs.training_session_id, []).append(obs)
-            path = self._dir(obs.training_session_id) / "attention.jsonl"
+            path = self._write_dir(obs.training_session_id) / "attention.jsonl"
             self._append_jsonl(path, obs.to_dict())
 
     def add_language(self, obs: LanguageObservation) -> None:
         with self._lock:
             self._language.setdefault(obs.training_session_id, []).append(obs)
-            path = self._dir(obs.training_session_id) / "language.jsonl"
+            path = self._write_dir(obs.training_session_id) / "language.jsonl"
             self._append_jsonl(path, obs.to_dict())
 
     def add_emotion(self, obs: EmotionObservation) -> None:
         with self._lock:
             self._emotion.setdefault(obs.training_session_id, []).append(obs)
-            path = self._dir(obs.training_session_id) / "emotion.jsonl"
+            path = self._write_dir(obs.training_session_id) / "emotion.jsonl"
             self._append_jsonl(path, obs.to_dict())
 
     def add_interaction_event(self, event: InteractionEvent) -> None:
@@ -244,7 +380,7 @@ class BehaviorStore:
             self._interaction_events.setdefault(
                 event.training_session_id, []
             ).append(event)
-            path = self._dir(event.training_session_id) / "interaction_timeline.jsonl"
+            path = self._write_dir(event.training_session_id) / "interaction_timeline.jsonl"
             self._append_jsonl(path, event.to_dict())
 
     def list_interaction_events(
@@ -297,14 +433,17 @@ class BehaviorStore:
     def save_summary(self, summary: SessionBehaviorSummary) -> None:
         with self._lock:
             self._summaries[summary.training_session_id] = summary
-            path = self._dir(summary.training_session_id) / "session_summary.json"
+            path = self._write_dir(summary.training_session_id) / "session_summary.json"
             self._write_json(path, summary.to_dict())
 
     def get_summary(self, training_session_id: str) -> Optional[SessionBehaviorSummary]:
         with self._lock:
             if training_session_id in self._summaries:
                 return self._summaries[training_session_id]
-            path = self._dir(training_session_id) / "session_summary.json"
+            directory = self._find_dir(training_session_id)
+            if directory is None:
+                return None
+            path = directory / "session_summary.json"
             if path.exists():
                 try:
                     data = json.loads(path.read_text(encoding="utf-8"))
@@ -318,12 +457,15 @@ class BehaviorStore:
             return None
 
     def save_report(self, training_session_id: str, report: Dict[str, Any]) -> Path:
-        path = self._dir(training_session_id) / "report.json"
+        path = self._write_dir(training_session_id) / "report.json"
         self._write_json(path, report)
         return path
 
     def get_report(self, training_session_id: str) -> Optional[Dict[str, Any]]:
-        path = self._dir(training_session_id) / "report.json"
+        directory = self._find_dir(training_session_id)
+        if directory is None:
+            return None
+        path = directory / "report.json"
         if not path.exists():
             return None
         try:
@@ -333,12 +475,15 @@ class BehaviorStore:
             return None
 
     def save_manual_report(self, training_session_id: str, report: Dict[str, Any]) -> Path:
-        path = self._dir(training_session_id) / "report.manual.json"
+        path = self._write_dir(training_session_id) / "report.manual.json"
         self._write_json(path, report)
         return path
 
     def get_manual_report(self, training_session_id: str) -> Optional[Dict[str, Any]]:
-        path = self._dir(training_session_id) / "report.manual.json"
+        directory = self._find_dir(training_session_id)
+        if directory is None:
+            return None
+        path = directory / "report.manual.json"
         if not path.exists():
             return None
         try:
@@ -348,7 +493,10 @@ class BehaviorStore:
             return None
 
     def clear_manual_report(self, training_session_id: str) -> None:
-        path = self._dir(training_session_id) / "report.manual.json"
+        directory = self._find_dir(training_session_id)
+        if directory is None:
+            return
+        path = directory / "report.manual.json"
         if path.exists():
             try:
                 path.unlink()
@@ -356,12 +504,15 @@ class BehaviorStore:
                 logger.warning("删除 report.manual 失败: %s", e)
 
     def save_published_report(self, training_session_id: str, report: Dict[str, Any]) -> Path:
-        path = self._dir(training_session_id) / "report.published.json"
+        path = self._write_dir(training_session_id) / "report.published.json"
         self._write_json(path, report)
         return path
 
     def get_published_report(self, training_session_id: str) -> Optional[Dict[str, Any]]:
-        path = self._dir(training_session_id) / "report.published.json"
+        directory = self._find_dir(training_session_id)
+        if directory is None:
+            return None
+        path = directory / "report.published.json"
         if not path.exists():
             return None
         try:

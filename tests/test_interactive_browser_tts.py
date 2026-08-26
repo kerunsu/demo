@@ -1,5 +1,6 @@
 """配对/排序交互课：browser TTS 走 robot_speak_text，不走预录 MP3。"""
 import os
+from pathlib import Path
 
 from app.dialogue.phrases import (
     get_phrase_bank,
@@ -7,6 +8,26 @@ from app.dialogue.phrases import (
     pick_phrase,
 )
 from app.dialogue.phrase_library import effective_lines
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_browser_speech_rate_is_runtime_configurable_and_applies_next_utterance():
+    browser_tts = (ROOT / "static/js/browser_tts.js").read_text(encoding="utf-8")
+    child = (ROOT / "static/js/child.js").read_text(encoding="utf-8")
+    server = (ROOT / "templates/server/config.html").read_text(encoding="utf-8")
+    server_js = (ROOT / "static/js/config_algo.js").read_text(encoding="utf-8")
+
+    assert "setBrowserSpeechRate" in browser_tts
+    assert "utterance.rate = speechRate" in browser_tts
+    assert "utterance.rate = 0.88" not in browser_tts
+    assert 'socket.on("browser_speech_rate_updated"' in child
+    assert "rate: data.speechRate" in child
+    assert 'id="ov-speech-rate"' in server
+    assert "browserSpeechRate: Number(speechRate)" in server_js
+    apply_block = server_js.split("async function applyRuntimeModes()", 1)[1].split("async function", 1)[0]
+    assert "window.confirm" not in apply_block
 
 
 def test_pairing_ordering_praise_pools_match_demorobot_style():
@@ -42,6 +63,16 @@ def test_ordering_rule_aware_question_phrases():
     # 新题提问不得落进鼓励/重试句
     fallback = bank["question"]["ordering"]
     assert all("再选" not in line and "再试" not in line for line in fallback)
+
+
+def test_child_ordering_page_has_no_redundant_top_helper_text():
+    html = (
+        Path(__file__).resolve().parents[1]
+        / "static/resources/interactive/sequencing.html"
+    ).read_text(encoding="utf-8")
+    assert "请根据规则选择正确的图片" not in html
+    assert 'class="speech-bubble"' not in html
+    assert 'id="ruleText"' in html
 
 
 def test_pick_phrase_pairing_praise_from_course_pool(monkeypatch):
@@ -85,16 +116,17 @@ def test_selected_question_ask_pools():
     assert q["pose"] == mimic
 
     pairing = [
-        "找出和上面一样的。",
-        "下面哪张和上面一样？",
-        "选一张最像上面的。",
+        "找出和这个一样的。",
+        "哪张和这个一样？",
+        "选一张最像这个的。",
         "找一找，哪张是一样的？",
-        "点和上面相同的那一张。",
-        "哪一张和上面完全一样？",
-        "先看上面，再找一样的。",
+        "点和这个相同的那一张。",
+        "哪一张和这个完全一样？",
+        "先看这个，再找一样的。",
     ]
     assert q["pairing"] == pairing
     assert q["matching"] == pairing
+    assert all("上面" not in line for line in pairing)
 
     # 抽取应落在池内；排序提问未改；社交走独立 intent 非 question
     for _ in range(15):

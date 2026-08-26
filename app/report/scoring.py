@@ -4,6 +4,8 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 import yaml
 
+from app.course_scope import enabled_course_dimensions, enabled_course_types
+
 
 DEFAULT_WEIGHTS = {
     "attention": 20,
@@ -18,6 +20,13 @@ DEFAULT_COURSE_WEIGHTS = {
     "onomatopoeia": 1,
     "pairing": 1,
     "ordering": 1,
+}
+COURSE_LABELS = {
+    "mimic": "模仿",
+    "naming": "命名",
+    "onomatopoeia": "拟声",
+    "pairing": "配对",
+    "ordering": "排序",
 }
 
 COURSE_ALIASES = {
@@ -40,7 +49,7 @@ def load_scoring_config() -> Dict[str, Any]:
     from app.config import BASE_DIR
     path = BASE_DIR / "config" / "report_scoring.yaml"
     if not path.exists():
-        return {
+        cfg = {
             "schema_version": "education-training-index-v2-teacher-rating",
             "score_boundary": "education_training_reference_only",
             "weights": DEFAULT_WEIGHTS,
@@ -62,8 +71,14 @@ def load_scoring_config() -> Dict[str, Any]:
             },
             "narrative_provider": "rule",
         }
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    else:
+        with open(path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+    # The deployable curriculum scope is a separate reviewed fact source.  It
+    # narrows report output without duplicating course lists in scoring YAML.
+    cfg["enabled_course_types"] = list(enabled_course_types())
+    cfg["enabled_dimension_keys"] = list(enabled_course_dimensions())
+    return cfg
 
 
 def validate_scoring_config(cfg: Dict[str, Any]) -> List[str]:
@@ -171,10 +186,20 @@ def _response_score(response_ms: Optional[float], cfg: Dict[str, Any]) -> Option
 
 def build_course_metrics(summary: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     """从题目窗口构建类型平衡的课程分、表现率和响应时长。"""
-    course_points: Dict[str, List[float]] = {key: [] for key in DEFAULT_COURSE_WEIGHTS}
-    performance_points: Dict[str, List[float]] = {key: [] for key in DEFAULT_COURSE_WEIGHTS}
-    response_points: Dict[str, List[float]] = {key: [] for key in DEFAULT_COURSE_WEIGHTS}
-    rating_counts: Dict[str, int] = {key: 0 for key in DEFAULT_COURSE_WEIGHTS}
+    configured_types = cfg.get("enabled_course_types")
+    active_course_types = [
+        _canonical_course_type(value)
+        for value in configured_types
+        if _canonical_course_type(value) in COURSE_LABELS
+    ] if isinstance(configured_types, list) else list(DEFAULT_COURSE_WEIGHTS)
+    active_course_types = list(dict.fromkeys(active_course_types))
+    if not active_course_types and not isinstance(configured_types, list):
+        active_course_types = list(DEFAULT_COURSE_WEIGHTS)
+    course_points: Dict[str, List[float]] = {key: [] for key in active_course_types}
+    performance_points: Dict[str, List[float]] = {key: [] for key in active_course_types}
+    response_points: Dict[str, List[float]] = {key: [] for key in active_course_types}
+    rating_counts: Dict[str, int] = {key: 0 for key in active_course_types}
+    observed_counts: Dict[str, int] = {key: 0 for key in active_course_types}
     missing_rating_types = set()
     interactive_cfg = cfg.get("interactive_course") or {}
     accuracy_weight = float(interactive_cfg.get("accuracy_weight", 0.75))
@@ -186,6 +211,7 @@ def build_course_metrics(summary: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[s
         course_type = _canonical_course_type(window.get("course_type"))
         if course_type not in course_points:
             continue
+        observed_counts[course_type] += 1
         metrics = window.get("task_metrics") or {}
         teacher = metrics.get("teacher_rating") if isinstance(metrics.get("teacher_rating"), dict) else {}
         teacher_score = teacher.get("normalized_score")
@@ -262,6 +288,38 @@ def build_course_metrics(summary: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[s
     overall = _weighted_mean(course_scores, course_weights)
     task_performance = _weighted_mean(performance_by_type, course_weights)
     avg_response_ms = _weighted_mean(response_by_type, course_weights)
+    target_score = _clamp(
+        float(
+            cfg.get(
+                "course_goal_score",
+                (cfg.get("grade_thresholds") or {}).get("good", 70),
+            )
+        )
+    )
+    course_evaluations = []
+    for course_type in active_course_types:
+        label = COURSE_LABELS[course_type]
+        score = course_scores.get(course_type)
+        observed = int(observed_counts.get(course_type) or 0)
+        if score is not None:
+            status = "evaluated"
+        elif observed > 0:
+            status = "insufficient_data"
+        else:
+            status = "not_evaluated"
+        course_evaluations.append({
+            "courseType": course_type,
+            "label": label,
+            "status": status,
+            "score": round(float(score), 1) if score is not None else None,
+            "targetScore": round(float(target_score), 1),
+            "gapToTarget": (
+                round(float(score) - float(target_score), 1)
+                if score is not None else None
+            ),
+            "itemCount": observed,
+            "teacherRatingCount": int(rating_counts.get(course_type) or 0),
+        })
 
     return {
         "course_scores": course_scores,
@@ -273,6 +331,9 @@ def build_course_metrics(summary: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[s
         "covered_course_types": [key for key, value in response_by_type.items() if value is not None],
         "response_sample_count": sum(len(values) for values in response_points.values()),
         "rating_counts": rating_counts,
+        "observed_counts": observed_counts,
+        "course_evaluations": course_evaluations,
+        "course_goal_score": target_score,
         "missing_rating_types": sorted(missing_rating_types),
     }
 
@@ -360,13 +421,20 @@ def compute_dimensions(
     if ordering is None:
         ordering = _normalize_rate(task.get("sequencing_accuracy"))
 
-    values: List[Tuple[str, Optional[float], str]] = [
+    all_values: List[Tuple[str, Optional[float], str]] = [
         ("attention", attention, "ATTENTION_DATA_MISSING"),
         ("expressiveLanguage", expressive, "EXPRESSIVE_DATA_MISSING"),
         ("receptiveLanguage", receptive, "RECEPTIVE_DATA_MISSING"),
         ("matching", matching, "MATCHING_DATA_MISSING"),
         ("ordering", ordering, "SEQUENCING_DATA_MISSING"),
     ]
+    configured_dimensions = cfg.get("enabled_dimension_keys")
+    dimension_keys = (
+        {str(key) for key in configured_dimensions}
+        if isinstance(configured_dimensions, list)
+        else {key for key, _value, _limitation in all_values}
+    )
+    values = [item for item in all_values if item[0] in dimension_keys]
     dimensions: Dict[str, Any] = {}
     modules: Dict[str, str] = {}
     limitations: List[str] = list(summary.get("limitations") or [])
@@ -415,6 +483,8 @@ def compute_dimensions(
             key: (round(value, 1) if value is not None else None)
             for key, value in course_scores.items()
         },
+        "courseEvaluations": course_metrics["course_evaluations"],
+        "courseGoalScore": round(float(course_metrics["course_goal_score"]), 1),
         "taskPerformance": (
             round(course_metrics["task_performance"], 1)
             if course_metrics["task_performance"] is not None else None

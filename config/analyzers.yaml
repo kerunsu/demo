@@ -22,7 +22,7 @@ analyzers:
   speech:
     accumulation_duration: 2
     device: cuda
-    enabled: true
+    enabled: false
     frame_rms_threshold: 0.014
     language: zh
     max_input_gain: 3.0
@@ -44,11 +44,17 @@ logging:
   log_metrics: true
 matchers:
   pose:
+    action_sigma: 0.55
+    allow_mirror: true
     enabled: true
+    max_frame_gap_seconds: 0.55
+    min_keypoint_visibility: 0.35
     mode: real
-    threshold: 0.85
+    stable_frames: 4
+    stable_hold_seconds: 0.6
+    threshold: 0.72
   speech:
-    enabled: true
+    enabled: false
     mode: real
     threshold: 60
 performance:

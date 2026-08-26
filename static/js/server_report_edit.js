@@ -1,16 +1,12 @@
 (function () {
   const tid = window.__REPORT_EDIT_ID__;
   const DIM_KEYS = [
-    ["attention", "注意力"],
-    ["expressiveLanguage", "表达性语言"],
-    ["receptiveLanguage", "接收性语言"],
+    ["attention", "注意力与模仿参与"],
     ["matching", "配对"],
     ["ordering", "排序"],
   ];
   const COURSE_KEYS = [
     ["mimic", "模仿"],
-    ["naming", "命名"],
-    ["onomatopoeia", "拟声"],
     ["pairing", "配对"],
     ["ordering", "排序"],
   ];
@@ -40,6 +36,16 @@
     if (v === "" || v == null) return null;
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
+  }
+
+  function parseRecommendationBody(body) {
+    const text = String(body || "").trim();
+    const match = text.match(
+      /练什么[：:]\s*([\s\S]*?)\s*为什么[：:]\s*([\s\S]*?)\s*(?:进步判断|如何判断进步)[：:]\s*([\s\S]*)/
+    );
+    return match
+      ? { practice: match[1].trim(), why: match[2].trim(), progressCheck: match[3].trim() }
+      : null;
   }
 
   function renderDims() {
@@ -147,14 +153,27 @@
       courseScores[key] = numOrNull(input && input.value);
     });
     const recommendations = [];
+    const originalRecommendations = ((report && report.narrative) || {}).recommendations || [];
     const count = els.recs.querySelectorAll("[data-rec-title]").length;
     for (let i = 0; i < count; i++) {
       const titleEl = els.recs.querySelector('[data-rec-title="' + i + '"]');
       const bodyEl = els.recs.querySelector('[data-rec-body="' + i + '"]');
-      recommendations.push({
+      const original = originalRecommendations[i] || {};
+      const body = (bodyEl && bodyEl.value) || "";
+      const next = {
+        ...original,
         title: (titleEl && titleEl.value) || "",
-        body: (bodyEl && bodyEl.value) || "",
-      });
+        body: body,
+      };
+      if (body !== String(original.body || "")) {
+        delete next.evidence;
+        delete next.practice;
+        delete next.why;
+        delete next.progressCheck;
+        const parsed = parseRecommendationBody(body);
+        if (parsed) Object.assign(next, parsed);
+      }
+      recommendations.push(next);
     }
     return {
       overall: numOrNull(els.overall.value),

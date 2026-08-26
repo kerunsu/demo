@@ -35,6 +35,22 @@ class AudioPipeline(BasePipeline):
         super().__init__('audio', config)
 
         config_mgr = get_config_manager()
+        # Production speech recognition is browser-owned.  Keep the historical
+        # analyzer classes importable for old reports/tests, but never construct
+        # or warm a local ASR model from the Server pipeline.
+        self._speech_enabled = False
+        if not self._speech_enabled:
+            self._speech_analyzer = None
+            self._speech_matcher = None
+            self._session_speech_analyzer = MockSessionSpeechAnalyzer(
+                config=config.get('session_speech', {}) if config else {}
+            )
+            self.add_session_analyzer(self._session_speech_analyzer)
+            self._chunk_count = 0
+            self._analysis_results = []
+            self._uninit_warn_at = 0.0
+            logger.info("本地语音分析已关闭；课程语音以儿童浏览器识别文本为准")
+            return
 
         # 语音分析器（Type A）
         try:
@@ -133,11 +149,13 @@ class AudioPipeline(BasePipeline):
         audio_chunk: np.ndarray,
         context: AnalysisContext
     ) -> Tuple[List[AnalysisResult], List[MatchResult]]:
+        if not self._speech_enabled:
+            return [], []
         if not self._is_initialized:
             now = time.time()
             if now - float(getattr(self, '_uninit_warn_at', 0.0) or 0.0) >= 5.0:
                 self._uninit_warn_at = now
-                logger.warning("流水线未初始化（连续音频分析跳过；检查 FunASR/torch 或 voice-service）")
+                logger.warning("音频流水线未初始化，已跳过连续音频分析")
             return [], []
 
         analysis_results = []

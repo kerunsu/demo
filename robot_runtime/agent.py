@@ -1150,6 +1150,8 @@ class MediaRecorderState:
         data = {}
         if duration is not None:
             data["duration"] = str(duration)
+        if self.human_dir_name:
+            data["humanDirName"] = self.human_dir_name
         if video_path and video_path.exists():
             data["sha256_video"] = _sha256_file(video_path)
         if audio_path and audio_path.exists():

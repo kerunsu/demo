@@ -41,12 +41,26 @@ class AmbientCameraService:
             logger.warning("OpenCV 不可用，环境摄像头降级: %s", e)
             return None
 
-    def list_devices(self, max_index: int = 6) -> List[Dict[str, Any]]:
+    def list_devices(
+        self,
+        max_index: int = 6,
+        *,
+        skip_indexes: Optional[List[int]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Probe unused indexes only.
+
+        Reopening a DirectShow camera that is already owned by the preview
+        worker can crash the whole Python process inside the native backend, so
+        configured/live indexes are deliberately excluded by the caller.
+        """
         cv2 = self._ensure_cv2()
         devices: List[Dict[str, Any]] = []
         if cv2 is None:
             return devices
+        skipped = {int(value) for value in (skip_indexes or [])}
         for idx in range(max_index):
+            if idx in skipped:
+                continue
             cap = None
             try:
                 cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW) if hasattr(cv2, "CAP_DSHOW") else cv2.VideoCapture(idx)

@@ -505,6 +505,8 @@ class PlayResourceHandler:
             existing_session = None
             session_manager = get_session_manager()
             behavior = get_behavior_service()
+            behavior_root = getattr(getattr(behavior, 'store', None), 'root', None)
+            behavior_roots = [behavior_root] if behavior_root is not None else []
 
             aux_flags = aux if isinstance(aux, dict) else {}
             has_aux_flag = bool(
@@ -618,12 +620,28 @@ class PlayResourceHandler:
                 data.get('trainingSessionId')
                 or data.get('training_session_id')
             )
+            allocated_human_dir = None
+            allocated_recording_n = None
             if not training_session_id and student_id is not None:
                 training_session_id = behavior.get_active_training_id(int(student_id))
             if not training_session_id:
+                name, age = load_student_label(
+                    int(student_id) if student_id is not None else None
+                )
+                allocated_human_dir, allocated_recording_n = allocate_human_dir_name(
+                    student_id=int(student_id) if student_id is not None else None,
+                    student_name=name,
+                    student_age=age,
+                    additional_roots=behavior_roots,
+                )
                 training = behavior.open_training(
                     student_id=int(student_id) if student_id is not None else None,
-                    metadata={'source': 'play_resource'}
+                    metadata={
+                        'source': 'play_resource',
+                        'human_dir_name': allocated_human_dir,
+                        'recording_n': allocated_recording_n,
+                        'directory_schema': 'readable-session-v1',
+                    }
                 )
                 training_session_id = training.training_session_id
 
@@ -634,14 +652,32 @@ class PlayResourceHandler:
             )
             created_new_media = False
             if session is None:
-                name, age = load_student_label(
-                    int(student_id) if student_id is not None else None
+                training_record = behavior.get_training(training_session_id)
+                training_metadata = dict(
+                    getattr(training_record, 'metadata', None) or {}
                 )
-                human_dir, n = allocate_human_dir_name(
-                    student_id=int(student_id) if student_id is not None else None,
-                    student_name=name,
-                    student_age=age,
+                human_dir = (
+                    allocated_human_dir
+                    or training_metadata.get('human_dir_name')
+                    or training_metadata.get('humanDirName')
                 )
+                n = allocated_recording_n or training_metadata.get('recording_n')
+                if not human_dir:
+                    name, age = load_student_label(
+                        int(student_id) if student_id is not None else None
+                    )
+                    human_dir, n = allocate_human_dir_name(
+                        student_id=int(student_id) if student_id is not None else None,
+                        student_name=name,
+                        student_age=age,
+                        additional_roots=behavior_roots,
+                    )
+                if not n:
+                    try:
+                        n = int(str(human_dir).rsplit('-', 1)[-1])
+                    except (TypeError, ValueError):
+                        n = 1
+                behavior.bind_directory(training_session_id, human_dir)
                 session = session_manager.create_session(
                     student_id=student_id,
                     course_id=course_id,
@@ -1122,6 +1158,8 @@ class PrepareTrainingHandler:
                 )
             )
             behavior = get_behavior_service()
+            behavior_root = getattr(getattr(behavior, 'store', None), 'root', None)
+            behavior_roots = [behavior_root] if behavior_root is not None else []
             session_manager = get_session_manager()
 
             # 产品部署只有一套教师/儿童/机器人。新建任何训练都先结束所有
@@ -1191,22 +1229,30 @@ class PrepareTrainingHandler:
                         'error': f'finalize_behavior:{exc}',
                     })
 
-            training = behavior.open_training(
-                student_id=student_id,
-                metadata={
-                    'source': 'prepare_training',
-                    'mode': mode,
-                },
-            )
-            training_session_id = training.training_session_id
-            question_id = f"{training_session_id}_warmup"
-
             name, age = load_student_label(student_id)
             human_dir, n = allocate_human_dir_name(
                 student_id=student_id,
                 student_name=name,
                 student_age=age,
+                additional_roots=behavior_roots,
             )
+
+            # Allocate the shared readable identity before the first behavior
+            # write.  sessions/<name> and behavior/<name> now describe the same
+            # classroom run; UUIDs remain correlation fields inside the files.
+            training = behavior.open_training(
+                student_id=student_id,
+                metadata={
+                    'source': 'prepare_training',
+                    'mode': mode,
+                    'human_dir_name': human_dir,
+                    'recording_n': n,
+                    'directory_schema': 'readable-session-v1',
+                },
+            )
+            training_session_id = training.training_session_id
+            behavior.bind_directory(training_session_id, human_dir)
+            question_id = f"{training_session_id}_warmup"
 
             session = session_manager.create_session(
                 student_id=student_id,

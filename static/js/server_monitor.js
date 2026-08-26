@@ -838,12 +838,31 @@
     socket.on("report_ready_for_review", (payload) => {
       const id = payload && payload.trainingSessionId;
       if (!id) return;
+      if (state.reviewDismissed[id]) {
+        refreshPendingReviews();
+        return;
+      }
+      if (state.currentReviewId === id && !els.reviewModal?.classList.contains("hidden")) {
+        refreshPendingReviews();
+        return;
+      }
       openReviewModal(payload);
       refreshPendingReviews();
     });
 
-    socket.on("report_published", () => {
-      closeReviewModal();
+    socket.on("report_published", (payload) => {
+      const id = payload && payload.trainingSessionId;
+      if (id) {
+        state.reviewDismissed[id] = true;
+        state.pendingReviews = (state.pendingReviews || []).filter(
+          (item) => item.trainingSessionId !== id,
+        );
+        updateReviewBadge();
+      }
+      if (!id || state.currentReviewId === id) {
+        closeReviewModal();
+        return;
+      }
       refreshPendingReviews();
     });
   }
@@ -972,7 +991,12 @@
             method: "POST",
           });
           const json = await res.json();
-          if (!json.success) throw new Error(json.error || "publish_failed");
+          if (!res.ok || !json.success) throw new Error(json.error || "publish_failed");
+          state.reviewDismissed[id] = true;
+          state.pendingReviews = (state.pendingReviews || []).filter(
+            (item) => item.trainingSessionId !== id,
+          );
+          updateReviewBadge();
           if (els.reviewModal) els.reviewModal.classList.add("hidden");
           state.currentReviewId = null;
           refreshPendingReviews();

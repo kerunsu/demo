@@ -103,6 +103,7 @@ def _patch_audio(monkeypatch):
 
 def test_prepare_training_creates_warmup_without_analysis_session(monkeypatch):
     root = Path("tests/_tmp_prepare_behavior") / "t1"
+    shutil.rmtree(root, ignore_errors=True)
     root.mkdir(parents=True, exist_ok=True)
     _reset_sessions_tmp()
     _patch_behavior(monkeypatch, root)
@@ -122,6 +123,9 @@ def test_prepare_training_creates_warmup_without_analysis_session(monkeypatch):
     assert result.get("recording_mode") == "continuous"
     assert result.get("human_dir_name", "").startswith("测试生-6-")
     assert result["human_dir_name"].endswith("-1")
+    behavior_dir = root / result["human_dir_name"]
+    assert (behavior_dir / "training.json").is_file()
+    assert not (root / result["training_session_id"]).exists()
 
     session = get_session_manager().get_session(result["session_id"])
     assert session is not None

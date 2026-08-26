@@ -85,19 +85,24 @@
   }
 
   // ---------- Overview ----------
-  let runtimeBaseline = { child: 'agent', robot: 'robot_runtime', wakeWord: 'false' };
+  let runtimeBaseline = { child: 'agent', robot: 'robot_runtime', wakeWord: 'false', speechRate: '0.88' };
 
-  function fillRuntimeSelects(mediaMode, robotMode, wakeWordEnabled) {
+  function fillRuntimeSelects(mediaMode, robotMode, wakeWordEnabled, speechRate) {
     const m = document.getElementById('ov-child-media');
     const r = document.getElementById('ov-robot-mode');
     const w = document.getElementById('ov-wake-word');
+    const s = document.getElementById('ov-speech-rate');
+    const sv = document.getElementById('ov-speech-rate-value');
     if (m && (mediaMode === 'browser' || mediaMode === 'agent')) m.value = mediaMode;
     if (r && ['server_osc', 'child_agent', 'robot_runtime'].includes(robotMode)) r.value = robotMode;
     if (w) w.value = wakeWordEnabled === true ? 'true' : 'false';
+    if (s) s.value = String(Number(speechRate) || 0.88);
+    if (sv) sv.textContent = `${Number(s?.value || 0.88).toFixed(2)}×`;
     runtimeBaseline = {
       child: m ? m.value : 'agent',
       robot: r ? r.value : 'robot_runtime',
       wakeWord: w ? w.value : 'false',
+      speechRate: s ? s.value : '0.88',
     };
     updateRuntimeDirty();
   }
@@ -106,20 +111,24 @@
     const m = document.getElementById('ov-child-media');
     const r = document.getElementById('ov-robot-mode');
     const w = document.getElementById('ov-wake-word');
+    const s = document.getElementById('ov-speech-rate');
+    const sv = document.getElementById('ov-speech-rate-value');
     const btn = document.getElementById('btn-ov-apply-runtime');
     const hint = document.getElementById('ov-runtime-dirty');
-    if (!m || !r || !w || !btn) return;
-    const dirty = m.value !== runtimeBaseline.child || r.value !== runtimeBaseline.robot || w.value !== runtimeBaseline.wakeWord;
+    if (!m || !r || !w || !s || !btn) return;
+    if (sv) sv.textContent = `${Number(s.value).toFixed(2)}×`;
+    const dirty = m.value !== runtimeBaseline.child || r.value !== runtimeBaseline.robot || w.value !== runtimeBaseline.wakeWord || s.value !== runtimeBaseline.speechRate;
     btn.disabled = !dirty;
     if (hint) hint.textContent = dirty ? '有未应用的修改' : '';
   }
 
   function bindRuntimeDirty() {
-    ['ov-child-media', 'ov-robot-mode', 'ov-wake-word'].forEach((id) => {
+    ['ov-child-media', 'ov-robot-mode', 'ov-wake-word', 'ov-speech-rate'].forEach((id) => {
       const el = document.getElementById(id);
       if (!el || el.dataset.boundRuntime) return;
       el.dataset.boundRuntime = '1';
       el.addEventListener('change', updateRuntimeDirty);
+      if (id === 'ov-speech-rate') el.addEventListener('input', updateRuntimeDirty);
     });
   }
 
@@ -171,7 +180,7 @@
       const rep = repRes.config || {};
       const mediaMode = mediaRes.mode || mediaRes.data?.mode || mediaRes.childMediaMode || '—';
       const robotMode = robotRes.mode || robotRes.data?.mode || robotRes.controlMode || '—';
-      fillRuntimeSelects(mediaMode, robotMode, runtimeRes.dialogueWakeWordEnabled === true);
+      fillRuntimeSelects(mediaMode, robotMode, runtimeRes.dialogueWakeWordEnabled === true, runtimeRes.browserSpeechRate);
       bindRuntimeDirty();
 
       metrics.innerHTML = `
@@ -231,20 +240,15 @@
     const child = document.getElementById('ov-child-media')?.value;
     const robot = document.getElementById('ov-robot-mode')?.value;
     const wakeWord = document.getElementById('ov-wake-word')?.value;
-    if (!child || !robot || !wakeWord) return;
+    const speechRate = document.getElementById('ov-speech-rate')?.value;
+    if (!child || !robot || !wakeWord || !speechRate) return;
     if (
       child === runtimeBaseline.child &&
       robot === runtimeBaseline.robot &&
-      wakeWord === runtimeBaseline.wakeWord
+      wakeWord === runtimeBaseline.wakeWord &&
+      speechRate === runtimeBaseline.speechRate
     ) {
       toast('无更改', '请先修改下拉选项');
-      return;
-    }
-    if (
-      !window.confirm(
-        `应用并保存：儿童媒体=${child}，机械臂=${robot}（写入 runtime_modes.yaml，重启后仍生效）。继续？`
-      )
-    ) {
       return;
     }
     const data = await fetchJson('/api/server/runtime-modes', {
@@ -254,9 +258,10 @@
         childMediaMode: child,
         robotControlMode: robot,
         dialogueWakeWordEnabled: wakeWord === 'true',
+        browserSpeechRate: Number(speechRate),
       }),
     });
-    toast('已应用并保存', data.message || `${child} / ${robot}`);
+    toast('已应用并保存', `机器人语速 ${Number(data.browserSpeechRate || speechRate).toFixed(2)}×，下一句话起生效`);
     await loadOverview();
   }
 
@@ -569,14 +574,15 @@
     const s = cfg.analyzers?.speech || {};
     const ms = cfg.matchers?.speech || {};
     el.innerHTML = [
-      field('speech.enabled', boolSelect('s-en', s.enabled !== false)),
+      '<div class="cc-tiny">生产语音识别固定由儿童端浏览器提供；以下旧版本地分析参数只读保留。</div>',
+      field('speech.enabled（固定关闭）', boolSelect('s-en', false)),
       field('speech.mode', modeSelect('s-mode', s.mode)),
       field('speech.language', `<input class="cc-inp" id="s-lang" value="${esc(s.language || 'zh')}" />`),
       field(
         'speech.accumulation_duration',
         `<input class="cc-inp" type="number" id="s-acc" value="${s.accumulation_duration ?? 2}" step="0.5" />`
       ),
-      field('matchers.speech.enabled', boolSelect('ms-en', ms.enabled !== false)),
+      field('matchers.speech.enabled（固定关闭）', boolSelect('ms-en', false)),
       field('matchers.speech.mode', modeSelect('ms-mode', ms.mode)),
       field(
         'matchers.speech.threshold',
@@ -586,6 +592,7 @@
     el.querySelectorAll('input,select').forEach((n) =>
       n.addEventListener('change', () => setDirty('speech', true))
     );
+    el.querySelectorAll('input,select').forEach((n) => { n.disabled = true; });
 
     const adv = document.getElementById('speech-advanced-form');
     if (adv) {
@@ -611,6 +618,7 @@
       adv.querySelectorAll('input,select').forEach((n) =>
         n.addEventListener('change', () => setDirty('speech', true))
       );
+      adv.querySelectorAll('input,select').forEach((n) => { n.disabled = true; });
     }
   }
 
@@ -618,7 +626,7 @@
     return {
       analyzers: {
         speech: {
-          enabled: document.getElementById('s-en').value === 'true',
+          enabled: false,
           mode: modeVal('s-mode'),
           language: document.getElementById('s-lang').value,
           accumulation_duration: Number(document.getElementById('s-acc').value),
@@ -631,7 +639,7 @@
       },
       matchers: {
         speech: {
-          enabled: document.getElementById('ms-en').value === 'true',
+          enabled: false,
           mode: modeVal('ms-mode'),
           threshold: Number(document.getElementById('ms-th').value),
         },

@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -249,7 +250,6 @@ def upload_session_files(session_id: str):
       sha256_video / sha256_audio: form fields (optional)
       duration: form field (optional)
     """
-    session_dir = Config.get_recording_path(session_id)
     video_file = request.files.get("video")
     audio_file = request.files.get("audio")
     raw_manifest = request.form.get("trackManifest")
@@ -263,6 +263,51 @@ def upload_session_files(session_id: str):
     if not video_file and not audio_file and not track_manifest:
         return jsonify({"ok": False, "error": "video or audio file required"}), 400
 
+    registered_from_request = False
+    human_dir_name = str(
+        request.form.get("humanDirName")
+        or request.form.get("human_dir_name")
+        or ""
+    ).strip()
+    if human_dir_name:
+        if (
+            human_dir_name in {".", ".."}
+            or Path(human_dir_name).name != human_dir_name
+        ):
+            return jsonify({"ok": False, "error": "humanDirName invalid"}), 400
+        from app.services.recording_timeline import (
+            register_recording_dir,
+            resolve_recording_dir,
+        )
+
+        mapped = resolve_recording_dir(session_id)
+        if mapped is not None and mapped.name != human_dir_name:
+            return jsonify({"ok": False, "error": "humanDirName mismatch"}), 409
+        if mapped is None:
+            candidate = Config.RECORDINGS_DIR / "sessions" / human_dir_name
+            if candidate.exists():
+                owner = None
+                for metadata_name, id_key in (
+                    ("session_meta.json", "mediaSessionId"),
+                    ("archive_meta.json", "sessionId"),
+                ):
+                    metadata_path = candidate / metadata_name
+                    try:
+                        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                    except (OSError, ValueError, TypeError):
+                        continue
+                    if isinstance(metadata, dict) and metadata.get(id_key):
+                        owner = str(metadata[id_key])
+                        break
+                if owner != str(session_id):
+                    return jsonify({
+                        "ok": False,
+                        "error": "humanDirName already occupied",
+                    }), 409
+            register_recording_dir(session_id, human_dir_name)
+            registered_from_request = True
+    session_dir = Config.get_recording_path(session_id)
+
     saved = {}
     checksums = {}
     saved_tracks = []
@@ -271,7 +316,14 @@ def upload_session_files(session_id: str):
     seen_track_filenames = set()
     safe_track_id = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
     pending_tracks = []
+    staging_dir = None
     try:
+        if track_manifest:
+            staging_root = session_dir.parent
+            staging_root.mkdir(parents=True, exist_ok=True)
+            staging_dir = Path(tempfile.mkdtemp(
+                prefix=".archive-upload-", dir=staging_root
+            ))
         for raw_track in track_manifest:
             if not isinstance(raw_track, dict):
                 raise ValueError("trackManifest item must be an object")
@@ -299,7 +351,7 @@ def upload_session_files(session_id: str):
             seen_track_filenames.add(filename)
 
             target = session_dir / filename
-            temporary = session_dir / f".{filename}.{time.time_ns()}.upload"
+            temporary = staging_dir / filename
             uploaded.save(str(temporary))
             digest = _sha256_file(temporary)
             expected = str(raw_track.get("sha256") or "")
@@ -308,6 +360,8 @@ def upload_session_files(session_id: str):
             pending_tracks.append((raw_track, track_id, filename, target, temporary, digest))
 
         # All track files and hashes are valid before any final filename changes.
+        if pending_tracks:
+            session_dir.mkdir(parents=True, exist_ok=True)
         for raw_track, track_id, filename, target, temporary, digest in pending_tracks:
             os.replace(temporary, target)
             entry = dict(raw_track)
@@ -318,10 +372,18 @@ def upload_session_files(session_id: str):
             saved[f"track:{track_id}"] = str(target)
             checksums[f"track:{track_id}"] = digest
     except ValueError as exc:
+        if registered_from_request:
+            from app.services.recording_timeline import unregister_recording_dir
+
+            unregister_recording_dir(session_id)
         return jsonify({"ok": False, "error": str(exc)}), 400
     finally:
-        for _, _, _, _, temporary, _ in pending_tracks:
-            temporary.unlink(missing_ok=True)
+        if staging_dir is not None:
+            shutil.rmtree(staging_dir, ignore_errors=True)
+
+    # A validated primary file is also an actual write boundary. This remains
+    # idempotent after the track commit above.
+    session_dir.mkdir(parents=True, exist_ok=True)
 
     if video_file and video_file.filename:
         target = Config.get_video_file_path(session_id)
@@ -373,7 +435,7 @@ def upload_session_files(session_id: str):
         }
         if saved_tracks:
             meta["tracks"] = saved_tracks
-        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(meta_path, meta)
     except Exception as exc:
         logger.warning("写入 archive_meta 失败: %s", exc)
 

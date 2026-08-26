@@ -9,8 +9,9 @@ OSC_IP = os.environ.get('OSC_IP', '127.0.0.1')
 OSC_PORT = int(os.environ.get('OSC_PORT', 12000))
 SERVO_TIME = int(os.environ.get('SERVO_TIME', 100))  # 舵机移动时间参数
 
-# 静态姿势回归延迟（秒）
-IDLE_POSE_DELAY = float(os.environ.get('IDLE_POSE_DELAY', 0.0))
+# 静态姿势回归缓冲（秒）。短暂保留普通动作的末姿态，再柔和进入“空动作”；
+# 调度器会在新动作到达时立即取消这个计时，不会拖慢教师的下一次操作。
+IDLE_POSE_DELAY = float(os.environ.get('IDLE_POSE_DELAY', 0.6))
 
 # 机械臂控制模式
 # - server_osc: 由服务端直接发送 OSC 到 DollSer（仅后端与 DollSer 同机）

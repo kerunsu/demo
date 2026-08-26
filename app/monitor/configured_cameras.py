@@ -8,7 +8,11 @@ from typing import Any, Iterable
 from app.monitor.ambient_camera import AmbientCameraService
 
 
-def discover_local_cameras(max_index: int = 8) -> list[dict[str, Any]]:
+def discover_local_cameras(
+    max_index: int = 8,
+    *,
+    skip_indexes: Iterable[int] = (),
+) -> list[dict[str, Any]]:
     """Return local camera candidates without changing the device registry."""
 
     probe = AmbientCameraService()
@@ -19,7 +23,10 @@ def discover_local_cameras(max_index: int = 8) -> list[dict[str, Any]]:
             "kind": "video",
             "name": f"摄像头 {int(item['id'])}",
         }
-        for item in probe.list_devices(max_index=max_index)
+        for item in probe.list_devices(
+            max_index=max_index,
+            skip_indexes=[int(value) for value in skip_indexes],
+        )
     ]
 
 

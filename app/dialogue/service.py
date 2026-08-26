@@ -69,16 +69,23 @@ SYSTEM_PROMPT = """你是面向孤独症儿童课程训练的中文对话机器�
 5. 不要只说“你在认真尝试”。
 6. 儿童问“你是谁”时，可以介绍“我是麦麦”，随后邀请儿童回到当前题目。
 7. 儿童良性跑题时：先短短顺着一句，再拉回当前题目或下面的图片；不要百科展开。
-8. 优先引导儿童看上面的图片、看下面的图片、尝试点击或继续表达。"""
+8. 优先引导儿童看上面的图片、看下面的图片、尝试点击或继续表达。
+9. 拟声课的目标是让儿童开口模仿声音：示范一个短拟声，再邀请儿童跟着说；禁止要求儿童点击、指认或选择图片。"""
 
 ADULT_HELP_REPLY = "这个问题要找老师或家长。我们先停一下。"
 WAKE_ACK_REPLY = "我在这里"
-# FunASR 常把「麦麦」听成「妹妹/卖卖/慢慢/吗嘛」等；用 mai/mei/man/ma 近音字白名单匹配
-# XX，XX 或 XXXX（可选空格/标点分隔），句首唤醒，可带后续内容
+# 浏览器 ASR 常把「麦麦」听成「妹妹/卖卖/慢慢」等；用近音字白名单匹配。
+# 单个 XX 即可唤醒；旧版 XX，XX / XXXX 仍兼容。只识别句首，可带后续内容。
 _WAKE_MAI_CHARS = (
     "麦妹卖脉迈买唛玫枚莓媒埋霾"
     "慢慢满漫曼蛮瞒谩"
     "吗嘛妈麻马码玛骂"
+)
+# 两字短唤醒有更高误触风险，不纳入常见称呼「妈妈」所属的 ma 音节；
+# mai/mei/man 已覆盖「麦麦、买卖、卖卖、妹妹、慢慢」等浏览器 ASR 变体。
+_WAKE_SHORT_CHARS = (
+    "麦妹卖脉迈买唛玫枚莓媒埋霾"
+    "慢满漫曼蛮瞒谩"
 )
 _WAKE_SEP = r"[\s，,。.!！?？、·~～…\-—_]*"
 _WAKE_PAIR = rf"[{_WAKE_MAI_CHARS}]{_WAKE_SEP}[{_WAKE_MAI_CHARS}]"
@@ -91,6 +98,12 @@ _WAKE_COMPACT_RE = re.compile(
     rf"^[\s，,。.!！?？、·~～…\-—_]*"
     rf"[{_WAKE_MAI_CHARS}]{{4}}"
     rf"[\s，,。.!！?？、·~～…\-—_]*(.*)$",
+    re.DOTALL,
+)
+_WAKE_SHORT_RE = re.compile(
+    rf"^[\s，,。.!！?？、·~～…\-—_]*"
+    rf"[{_WAKE_SHORT_CHARS}]{_WAKE_SEP}[{_WAKE_SHORT_CHARS}]"
+    rf"{_WAKE_SEP}(.*)$",
     re.DOTALL,
 )
 # 音节级兜底：去掉标点后若句首四音节均为 mai/mei/man/ma（含已知同音映射），也算唤醒
@@ -238,6 +251,57 @@ def _benign_offtopic_rule_reply(child_text: str) -> str:
     return "你说得真好。我们先看屏幕吧。"
 
 
+_ONOMATOPOEIA_VISUAL_ACTION_RE = re.compile(
+    r"点击|点一|点这|选择|选一|指认|指出|哪一张|哪张|图片"
+)
+_ONOMATOPOEIA_VOICE_ACTION_RE = re.compile(
+    r"跟着|跟麦麦|说一|说说|学一|模仿|发声|声音|叫声|怎么叫|再来|试着说"
+)
+
+
+def _align_onomatopoeia_reply(
+    reply: str,
+    page_context: Optional[Dict[str, Any]],
+) -> str:
+    """拟声课硬约束：回复必须回到开口模仿，不能落成看图点击任务。"""
+    context = page_context or {}
+    course_type = str(
+        context.get("courseType") or context.get("course_type") or ""
+    ).strip().lower()
+    if course_type not in ("onomatopoeia", "mimic"):
+        return reply
+
+    from .image_semantics import humanize_label
+
+    raw_sound = (
+        context.get("speechTarget")
+        or context.get("speech_target")
+        or context.get("target")
+        or ""
+    )
+    sound = humanize_label(raw_sound, fallback="")[:8]
+    if sound:
+        practice = f"{sound}，跟麦麦说一次。"
+    else:
+        object_name = humanize_label(
+            context.get("objectName") or context.get("object_name") or "",
+            fallback="",
+        )[:8]
+        practice = (
+            f"学一学{object_name}的声音。"
+            if object_name
+            else "跟麦麦学一学声音。"
+        )
+
+    text = str(reply or "").strip()
+    if not text or _ONOMATOPOEIA_VISUAL_ACTION_RE.search(text):
+        return practice
+    if _ONOMATOPOEIA_VOICE_ACTION_RE.search(text):
+        return text
+    first_sentence = re.split(r"[。！？!?]", text, maxsplit=1)[0].strip()[:12]
+    return f"{first_sentence}。{practice}" if first_sentence else practice
+
+
 def _short_kid_visual(label: str, description: str = "") -> str:
     """把语义说明收成短视觉/特征说法；无说明则查物品短线索，再退回名称。"""
     name = str(label or "").strip()
@@ -263,7 +327,11 @@ def _short_kid_visual(label: str, description: str = "") -> str:
 
 
 def _page_context_fingerprint(page_context: Optional[Dict[str, Any]]) -> str:
-    """课型/条目/题目指纹：任一项变化即清空对话历史，避免串课串题。"""
+    """稳定的课型/条目/题目指纹。
+
+    目标文字、选项和提示会在同一题展示后继续补齐，不能参与身份判断；
+    否则教师刚唤醒后，一次正常的题面补报就会被误判为换题并清除唤醒。
+    """
     if not page_context:
         return ""
     course_type = (
@@ -271,6 +339,7 @@ def _page_context_fingerprint(page_context: Optional[Dict[str, Any]]) -> str:
         or page_context.get("course_type")
         or ""
     )
+    course_id = page_context.get("courseId") or page_context.get("course_id") or ""
     qid = (
         page_context.get("questionId")
         or page_context.get("question_id")
@@ -280,41 +349,13 @@ def _page_context_fingerprint(page_context: Optional[Dict[str, Any]]) -> str:
     q_index = page_context.get("questionIndex")
     if q_index is None:
         q_index = page_context.get("question_index")
-    target = (
-        page_context.get("target")
-        or page_context.get("targetText")
-        or page_context.get("speechTarget")
-        or page_context.get("itemLabel")
-        or page_context.get("label")
-        or page_context.get("name")
-        or ""
-    )
-    options = page_context.get("options") or page_context.get("optionsLeftToRight") or []
-    opt_parts: List[str] = []
-    if isinstance(options, list):
-        for opt in options:
-            if isinstance(opt, dict):
-                opt_parts.append(
-                    str(
-                        opt.get("id")
-                        or opt.get("label")
-                        or opt.get("name")
-                        or opt.get("src")
-                        or ""
-                    )
-                )
-            else:
-                opt_parts.append(str(opt))
-    elif isinstance(options, str):
-        opt_parts.append(options.strip())
     return "|".join(
         [
             str(course_type).strip().lower(),
+            str(course_id).strip(),
             str(qid).strip(),
             str(item_id).strip(),
             str(q_index if q_index is not None else ""),
-            str(target).strip()[:40],
-            ",".join(opt_parts),
         ]
     )
 
@@ -333,12 +374,12 @@ def _wake_syllables(text: str) -> list[str]:
 
 
 def parse_wake_utterance(text: str) -> tuple[bool, str]:
-    """识别唤醒词「麦麦，麦麦」及 ASR 近音变体。
+    """识别唤醒词「麦麦」及 ASR 近音变体。
 
     规则（句首）：
-    1. 两个近音字对：XX[分隔]XX，如「麦麦，麦麦」「妹妹，卖卖」
-    2. 四个近音字连写：如「麦麦麦麦」「慢慢慢慢」「卖卖麦吗」
-    3. 音节兜底：句首连续四个 mai/mei/man/ma 近音字（与上等价，便于扩展映射）
+    1. 一个 mai/mei/man 近音字对：XX，如「麦麦」「买卖」「妹妹」「慢慢」
+    2. 兼容两个近音字对：XX[分隔]XX，如「麦麦，麦麦」「妹妹，卖卖」
+    3. 兼容四个近音字连写及 mai/mei/man/ma 四音节旧变体
 
     Returns:
         (matched, remainder)：matched 为 True 表示句首是唤醒；
@@ -353,6 +394,9 @@ def parse_wake_utterance(text: str) -> tuple[bool, str]:
     m2 = _WAKE_COMPACT_RE.match(raw)
     if m2:
         return True, (m2.group(1) or "").strip()
+    m3 = _WAKE_SHORT_RE.match(raw)
+    if m3:
+        return True, (m3.group(1) or "").strip()
     # 音节兜底：至少四个 mai/mei/man/ma，remainder 从第 5 个有效汉字起
     syllables = _wake_syllables(raw)
     if len(syllables) >= 4 and all(s in _WAKE_SOFT_SYLLABLES for s in syllables[:4]):
@@ -413,7 +457,7 @@ class DialogueService:
         except ValueError:
             self.timeout_s = 90.0
         self._history: Dict[str, List[Dict[str, str]]] = {}
-        # session_id → 上次用于对话的题目/选项指纹
+        # session_id → 上次用于对话的稳定题目指纹
         self._context_fp: Dict[str, str] = {}
         # session_id → 唤醒时绑定的题目指纹；题目变化后需重新唤醒
         self._awake_fp: Dict[str, str] = {}
@@ -549,6 +593,15 @@ class DialogueService:
         else:
             heard = pick_phrase("question", str(course_type), variant=variant)
         lines.append(f"孩子听到的问题：{heard}")
+        if course_type_l == "onomatopoeia":
+            lines.append("课程目标：让儿童开口模仿声音，不需要点击、指认或选择图片。")
+            if object_name:
+                lines.append(f"练习对象：{object_name}")
+            if raw_target:
+                lines.append(f"练习声音：{raw_target}")
+            lines.append(
+                "回复要求：示范一个短拟声并邀请儿童跟着说；禁止说“点一张图”或要求儿童选择图片。"
+            )
         if category or rule_id or rule_text:
             lines.append(
                 f"当前规则：{rule_text or f'{category} {rule_id}'.strip()}".strip()
@@ -788,6 +841,7 @@ class DialogueService:
         *,
         session_id: str,
         page_context_text: str,
+        page_context: Optional[Dict[str, Any]] = None,
         context_switched: bool = False,
     ) -> Dict[str, Any]:
         if not self.api_key:
@@ -808,6 +862,7 @@ class DialogueService:
                 "问「下面第N张/下面第一张」必须只根据【当前】下面从左到右第N张作答，"
                 "禁止答上面的图片，禁止沿用历史里旧题目的选项名称。"
                 "当前页面上下文优先于聊天历史。"
+                "若当前是拟声课，只引导儿童开口模仿声音，可先示范短拟声；绝不要求点击、指认或选择图片。"
                 "不要反问孩子。"
                 "不要说“目标图”“选项”“训练目标”“页面上下文”“三角体”“立方体”“几何体”"
                 "“做朋友”“真有趣”：\n"
@@ -855,6 +910,7 @@ class DialogueService:
                 content = content.split("。")[0][:24]
         if not content:
             raise RuntimeError("ASD LLM returned empty reply")
+        content = _align_onomatopoeia_reply(content, page_context)
 
         history.append({"role": "user", "content": child_text})
         history.append({"role": "assistant", "content": content})
@@ -897,18 +953,23 @@ class DialogueService:
         if self.provider == "rule" or not self.api_key:
             if self.provider == "asd" and not self.api_key:
                 logger.warning("ASD key 未配置，对话降级为 rule")
-            return self._rule_reply(child_text, course_type)
+            result = self._rule_reply(child_text, course_type)
+            result["reply"] = _align_onomatopoeia_reply(result.get("reply", ""), page_context)
+            return result
 
         try:
             return self._asd_reply(
                 child_text,
                 session_id=session_id,
                 page_context_text=page_text,
+                page_context=page_context,
                 context_switched=context_switched,
             )
         except Exception as exc:  # noqa: BLE001
             logger.error("ASD 对话失败，降级 rule: %s", exc)
-            return self._rule_reply(child_text, course_type)
+            result = self._rule_reply(child_text, course_type)
+            result["reply"] = _align_onomatopoeia_reply(result.get("reply", ""), page_context)
+            return result
 
     def clear_history(self, session_id: str) -> None:
         self._history.pop(session_id, None)

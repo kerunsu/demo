@@ -318,6 +318,7 @@ def test_phase3_strict_prepare_reserves_without_formal_recording(monkeypatch, tm
     session = get_session_manager().get_session(prepared["session_id"])
     assert session.status.value == "created"
     assert media.starts == 0
+    assert not (tmp_path / "sessions" / prepared["human_dir_name"]).exists()
     assert not (tmp_path / "sessions" / prepared["human_dir_name"] / "timeline.csv").exists()
 
     # Full strict lifecycle: the CREATED reservation must be visible to the
