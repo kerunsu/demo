@@ -11,7 +11,7 @@ Copy-Item .env.example .env
 .\start_server.ps1
 ```
 
-启动脚本会安装缺失依赖、构建教师端，并在数据库不存在时创建只含模仿、配对、排序的标准数据。`.env`、`database/app.db`、录制、日志、`.runtime/`、`node_modules/` 和构建压缩包均为本机数据，不得提交。
+启动脚本会安装缺失依赖、构建教师端，并在数据库不存在时创建只含配对、排序的标准数据。`.env`、`database/app.db`、录制、日志、`.runtime/`、`node_modules/` 和构建压缩包均为本机数据，不得提交。
 
 ## 可配置项
 

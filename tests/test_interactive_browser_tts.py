@@ -13,6 +13,31 @@ from app.dialogue.phrase_library import effective_lines
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_browser_tts_is_locked_to_packaged_edge_xiaoyi_voice():
+    from app.dialogue.voice_config import (
+        FIXED_BROWSER_TTS_VOICE_NAME,
+        fixed_browser_tts_voice_config,
+    )
+
+    browser_tts = (ROOT / "static/js/browser_tts.js").read_text(encoding="utf-8")
+    child = (ROOT / "templates/child.html").read_text(encoding="utf-8")
+    server = (ROOT / "templates/server.html").read_text(encoding="utf-8")
+    monitor = (ROOT / "static/js/server_monitor.js").read_text(encoding="utf-8")
+
+    assert FIXED_BROWSER_TTS_VOICE_NAME.startswith("Microsoft Xiaoyi Online (Natural)")
+    assert fixed_browser_tts_voice_config()["name"] == FIXED_BROWSER_TTS_VOICE_NAME
+    assert "window.FIXED_BROWSER_TTS_VOICE" in child
+    assert "FIXED_VOICE_MATCH_PREFIX" in browser_tts
+    assert "isFixedBrowserSpeechVoice" in browser_tts
+    assert "availableVoices = preferredVoice ? [preferredVoice] : []" in browser_tts
+    assert "FIXED_BROWSER_VOICE_UNAVAILABLE" in browser_tts
+    assert "FIXED_VOICE_LOAD_TIMEOUT_MS = 2500" in browser_tts
+    assert "localStorage" not in browser_tts
+    assert "setPreferredBrowserSpeechVoice" not in browser_tts
+    assert "fixed_browser_tts_voice" in server
+    assert "Edge 未检测到固定的 Microsoft Xiaoyi" in monitor
+
+
 def test_browser_speech_rate_is_runtime_configurable_and_applies_next_utterance():
     browser_tts = (ROOT / "static/js/browser_tts.js").read_text(encoding="utf-8")
     child = (ROOT / "static/js/child.js").read_text(encoding="utf-8")
@@ -84,19 +109,9 @@ def test_pick_phrase_pairing_praise_from_course_pool(monkeypatch):
 
 
 def test_selected_question_ask_pools():
-    """Demo 部署会使用的提问话术池：模仿、配对、排序。"""
+    """Demo 部署会使用的提问话术池：配对、排序。"""
     bank = get_phrase_bank(force_reload=True)
     q = bank["question"]
-
-    mimic = [
-        "看一看屏幕上的动作图片，请你照着做。",
-        "仔细看看图片里的手和身体，学着做一做。",
-        "请照着这张图片，把动作做出来。",
-        "看清图片上的动作，轮到你来做了。",
-    ]
-    assert q["mimic"] == mimic
-    assert q["imitation"] == mimic
-    assert q["pose"] == mimic
 
     pairing = [
         "找出和这个一样的。",
@@ -111,10 +126,9 @@ def test_selected_question_ask_pools():
     assert q["matching"] == pairing
     assert all("上面" not in line for line in pairing)
 
-    # Demo 的三个课型均只能从对应池抽取。
+    # Demo 的两个课型均只能从对应池抽取。
     for _ in range(15):
         assert pick_phrase("question", "pairing") in pairing
-        assert pick_phrase("question", "mimic") in mimic
     assert "social" not in q
     assert q["ordering"] == ["选出对的那张。"]
 

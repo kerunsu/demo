@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 import math
 from typing import Any, Dict, List, Optional
 
@@ -16,6 +16,165 @@ from app.report.archive_sync import sync_student_archive_from_report
 from app.utils.logger import setup_logger
 
 logger = setup_logger("report_service")
+
+_COMPARABLE_DIMENSIONS = ("attention", "matching", "ordering")
+
+
+def _report_timestamp(value: Any) -> Optional[float]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def _student_identity(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return str(int(raw))
+    except (TypeError, ValueError):
+        return raw
+
+
+def _valid_dimension_scores(report: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    dimensions = report.get("dimensions") if isinstance(report.get("dimensions"), dict) else {}
+    scores: Dict[str, Dict[str, Any]] = {}
+    for key in _COMPARABLE_DIMENSIONS:
+        meta = dimensions.get(key)
+        if not isinstance(meta, dict) or meta.get("available") is False:
+            continue
+        try:
+            score = float(meta.get("score")) if meta.get("score") is not None else None
+        except (TypeError, ValueError):
+            score = None
+        if score is None or not math.isfinite(score):
+            continue
+        score_meta: Dict[str, Any] = {
+            "score": round(max(0.0, min(100.0, score)), 1)
+        }
+        if isinstance(meta.get("basis"), list):
+            score_meta["basis"] = [
+                str(item) for item in meta["basis"] if str(item).strip()
+            ]
+        scores[key] = score_meta
+    return scores
+
+
+def _session_mode(store: Any, training_session_id: str, report: Dict[str, Any]) -> Optional[str]:
+    raw = report.get("sessionMode") or report.get("mode")
+    if raw is None:
+        try:
+            training = store.get_training(training_session_id)
+            metadata = getattr(training, "metadata", None)
+            if isinstance(metadata, dict):
+                raw = metadata.get("mode")
+        except Exception:
+            raw = None
+    mode = str(raw or "").strip().lower()
+    if mode == "assessment":
+        return "assessment"
+    if mode in {"training", "intervention"}:
+        return "training"
+    return None
+
+
+def _find_previous_performance(
+    store: Any,
+    training_session_id: str,
+    current_report: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Return the closest earlier published report for the same student and mode."""
+    student_id = _student_identity(current_report.get("studentId"))
+    if student_id is None:
+        try:
+            training = get_behavior_service().get_training(training_session_id)
+            student_id = _student_identity(getattr(training, "student_id", None))
+        except Exception:
+            student_id = None
+    current_time = _report_timestamp(
+        current_report.get("generatedAt") or current_report.get("updatedAt")
+    )
+    if student_id is None or current_time is None:
+        return None
+    current_mode = _session_mode(store, training_session_id, current_report)
+
+    candidates = []
+    try:
+        candidate_ids = store.list_persisted_training_ids()
+    except Exception:
+        return None
+    for candidate_id in candidate_ids:
+        candidate_id = str(candidate_id)
+        if candidate_id == str(training_session_id):
+            continue
+        try:
+            if store.get_publication_status(candidate_id) != "published":
+                continue
+            candidate = store.get_published_report(candidate_id) or store.get_report(candidate_id)
+        except Exception:
+            continue
+        if not isinstance(candidate, dict):
+            continue
+        if _student_identity(candidate.get("studentId")) != student_id:
+            continue
+        candidate_mode = _session_mode(store, candidate_id, candidate)
+        if current_mode is not None and candidate_mode != current_mode:
+            continue
+        candidate_time = _report_timestamp(candidate.get("generatedAt") or candidate.get("updatedAt"))
+        if candidate_time is None or candidate_time >= current_time:
+            continue
+        dimensions = _valid_dimension_scores(candidate)
+        if dimensions:
+            candidates.append((candidate_time, candidate_id, candidate, dimensions))
+
+    if not candidates:
+        return None
+    _timestamp, candidate_id, candidate, dimensions = max(
+        candidates, key=lambda item: (item[0], item[1])
+    )
+    current_formula = str(current_report.get("formulaVersion") or "").strip()
+    previous_formula = str(candidate.get("formulaVersion") or "").strip()
+    current_fingerprint = str(current_report.get("formulaFingerprint") or "").strip()
+    previous_fingerprint = str(candidate.get("formulaFingerprint") or "").strip()
+    if current_formula and previous_formula and current_fingerprint and previous_fingerprint:
+        comparison_status = (
+            "comparable"
+            if current_formula == previous_formula and current_fingerprint == previous_fingerprint
+            else "formula_changed"
+        )
+    else:
+        comparison_status = "formula_unknown"
+    return {
+        "sourceTrainingSessionId": candidate_id,
+        "generatedAt": candidate.get("generatedAt") or candidate.get("updatedAt"),
+        "formulaVersion": previous_formula or None,
+        "formulaFingerprint": previous_fingerprint or None,
+        "comparisonStatus": comparison_status,
+        "sessionMode": _session_mode(store, candidate_id, candidate),
+        "courseGoalScore": candidate.get("courseGoalScore"),
+        "dimensions": dimensions,
+    }
+
+
+def _ensure_previous_performance(
+    report: Dict[str, Any], store: Any, training_session_id: str
+) -> Dict[str, Any]:
+    if "previousPerformance" not in report:
+        report["previousPerformance"] = _find_previous_performance(
+            store, training_session_id, report
+        )
+    return report
 
 
 def _emit(event: str, payload: Dict[str, Any]) -> None:
@@ -78,6 +237,12 @@ def _sync_course_evaluations(report: Dict[str, Any]) -> None:
             "gapToTarget": round(score - target, 1) if score is not None else None,
             "itemCount": observed,
             "teacherRatingCount": int(previous.get("teacherRatingCount") or 0),
+            "provisionalScore": previous.get("provisionalScore"),
+            "validSampleCount": int(previous.get("validSampleCount") or 0),
+            "requiredSampleCount": int(previous.get("requiredSampleCount") or 0),
+            "sampleUnit": previous.get("sampleUnit"),
+            "sampleAdequacy": previous.get("sampleAdequacy"),
+            "contributesToOverall": score is not None,
         })
     report["courseScores"] = normalized_scores
     report["courseEvaluations"] = evaluations
@@ -112,13 +277,14 @@ class ReportService:
             "status": emotion.get("status"),
         }
 
-        return {
+        report = {
             "schemaVersion": "professional-report-v2",
             "courseScope": {
                 "deployment": "demo-machine",
                 "enabledCourseTypes": list(enabled_course_types()),
             },
             "formulaVersion": scored.get("formulaVersion"),
+            "formulaFingerprint": scored.get("formulaFingerprint"),
             "scoreBoundary": scored.get("scoreBoundary"),
             "trainingSessionId": training_session_id,
             "studentId": summary_dict.get("student_id"),
@@ -159,6 +325,9 @@ class ReportService:
             },
             "windows": summary_dict.get("windows") or [],
         }
+        store = get_behavior_store()
+        report["sessionMode"] = _session_mode(store, training_session_id, report)
+        return _ensure_previous_performance(report, store, training_session_id)
 
     def generate(
         self,
@@ -272,13 +441,13 @@ class ReportService:
             out = deepcopy(data)
             out["publicationStatus"] = store.get_publication_status(training_session_id)
             out["hasManual"] = store.get_manual_report(training_session_id) is not None
-            return out
+            return _ensure_previous_performance(out, store, training_session_id)
 
         published = store.get_published_report(training_session_id)
         if published:
             out = deepcopy(published)
             out["publicationStatus"] = "published"
-            return out
+            return _ensure_previous_performance(out, store, training_session_id)
         status = store.get_publication_status(training_session_id)
         if status == "published":
             # 旧报告：无 published 快照但视为已发布
@@ -286,7 +455,7 @@ class ReportService:
             if algo:
                 out = deepcopy(algo)
                 out["publicationStatus"] = "published"
-                return out
+                return _ensure_previous_performance(out, store, training_session_id)
         raise ValueError("report_not_published" if status != "none" else "report_not_found")
 
     def review_status(self, training_session_id: str) -> Dict[str, Any]:

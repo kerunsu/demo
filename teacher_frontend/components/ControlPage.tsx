@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Lightbulb, Award, ArrowRight, ArrowLeft, ChevronDown, ChevronRight, Eye, Target, BarChart3, X, HelpCircle } from 'lucide-react';
-import { BookOpen, Puzzle, Palette, Music, Blocks, Brain, Users } from 'lucide-react';
+import { Puzzle, Blocks, Brain, Users } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { TeacherRatingDialog } from './TeacherRatingDialog';
 
@@ -77,12 +77,8 @@ interface ControlPageProps {
 
 // 课程类型映射（与CourseSelectionPage保持一致）
 const courseTypeMap: Record<string, { name: string; icon: typeof Brain }> = {
-  'mimic': { name: '模仿', icon: Brain },
-  'naming': { name: '命名', icon: BookOpen },
-  'onomatopoeia': { name: '拟声', icon: Music },
   'pairing': { name: '配对', icon: Puzzle },
   'ordering': { name: '排序', icon: Blocks },
-  'social': { name: '社交', icon: Users },
 };
 
 const DefaultIcon = Brain;
@@ -1586,10 +1582,10 @@ export function ControlPage({
         }
         if (data.action === 'wake') {
           setDialogueAwake(data.awake === true);
-          setDialogueControlNotice('智能体已唤醒，正在确认儿童端聆听状态…');
+          setDialogueControlNotice('智能体已静默唤醒，正在确认儿童端聆听状态…');
         } else if (data.action === 'sleep') {
           setDialogueAwake(false);
-          setDialogueControlNotice('智能体已关闭；课程语音识别仍可正常使用');
+          setDialogueControlNotice('智能体回复已停止；儿童端仍在持续聆听');
         }
       });
       socket.on('teacher_dialogue_control_state', (data: any) => {
@@ -1605,8 +1601,8 @@ export function ControlPage({
         if (!awake) {
           setDialogueControlNotice(
             data.reason === 'context_switch'
-              ? '题目已切换，智能体已自动关闭；需要时可再次唤醒'
-              : '智能体已关闭',
+              ? '题目已切换，智能体已自动停止；需要时可再次唤醒'
+              : '智能体已停止，儿童端仍在聆听',
           );
         } else if (data.listening === true) {
           setDialogueControlNotice('智能体已唤醒，儿童端正在聆听');
@@ -3400,7 +3396,7 @@ export function ControlPage({
     }
     dialogueControlRequestRef.current = requestId;
     setDialogueControlBusy(true);
-    setDialogueControlNotice(dialogueAwake ? '正在关闭智能体…' : '正在唤醒智能体…');
+    setDialogueControlNotice(dialogueAwake ? '正在停止智能体回复…' : '正在静默唤醒智能体…');
     activeSocket.emit(dialogueAwake ? 'teacher_dialogue_sleep' : 'teacher_dialogue_wake', {
       sessionId,
       trainingSessionId: trainingSessionIdRef.current || undefined,
@@ -4229,7 +4225,7 @@ export function ControlPage({
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-sky-900">儿童端智能体</span>
             <span className={`text-[11px] ${dialogueAwake ? 'text-green-700' : 'text-slate-500'}`}>
-              {dialogueAwake ? '已手动唤醒' : '等待教师唤醒'}
+              {dialogueAwake ? '已唤醒' : '持续聆听中'}
             </span>
           </div>
           <div className="grid grid-cols-2 gap-1.5">
@@ -4241,11 +4237,11 @@ export function ControlPage({
                 dialogueAwake ? 'bg-rose-600 hover:bg-rose-700' : 'bg-sky-600 hover:bg-sky-700'
               }`}
             >
-              {dialogueAwake ? '关闭智能体' : '唤醒智能体'}
+              {dialogueAwake ? '停止智能体' : '唤醒智能体'}
             </button>
           </div>
           <p className="mt-1.5 text-[11px] leading-4 text-sky-700">
-            {dialogueControlNotice || '手动唤醒不播放提示音；对话记录与控制已移至 Server 监控页。'}
+            {dialogueControlNotice || '点击唤醒会静默进入与唤醒词相同的对话状态；停止会中断回复，但儿童端继续聆听。'}
           </p>
           </div>
         </div>

@@ -159,7 +159,7 @@
           <div class="mon-panel-head">
             <span class="mon-panel-title"><i class="accent"></i>麦麦对话控制</span>
             <div class="mon-dialogue-head-actions">
-              <span id="mon-dialogue-state" class="mon-tag">课程未开始</span>
+              <span id="mon-dialogue-state" class="mon-tag">正在连接儿童端</span>
               <button type="button" class="cc-btn soft small" id="mon-dialogue-collapse" aria-expanded="true">收起</button>
             </div>
           </div>
@@ -168,19 +168,21 @@
               <button type="button" class="cc-btn soft small" id="mon-dialogue-unlock" disabled>启用儿童端声音</button>
               <button type="button" class="cc-btn soft small" id="mon-dialogue-listen" disabled>开始自动聆听</button>
               <button type="button" class="cc-btn primary small" id="mon-dialogue-wake" disabled>唤醒智能体</button>
-              <label class="mon-dialogue-voice">朗读音色
-                <select id="mon-dialogue-voice" disabled><option value="">等待儿童端上报</option></select>
+              <label class="mon-dialogue-voice">固定朗读音色
+                <select id="mon-dialogue-voice" disabled aria-disabled="true">
+                  <option value="{{ fixed_browser_tts_voice.name }}">{{ fixed_browser_tts_voice.label }}</option>
+                </select>
               </label>
             </div>
-            <p class="mon-dialogue-hint">教师点击开始课程后儿童端会自动聆听；这里显示运行状态，也可在当前精确会话内手动控制和发送测试文本。</p>
+            <p class="mon-dialogue-hint">儿童端在线即可查看对话、唤醒和发送文字；朗读固定使用 Microsoft Xiaoyi Online (Natural)，开课后会自动切换到当前课程的精确会话并开始聆听。</p>
             <div id="mon-dialogue-log" class="mon-dialogue-log" aria-live="polite">
-              <div class="mon-dialogue-empty">课程开始后显示儿童与麦麦的对话。</div>
+              <div class="mon-dialogue-empty">儿童端连接后显示儿童与麦麦的对话。</div>
             </div>
             <div class="mon-dialogue-compose">
               <input id="mon-dialogue-input" type="text" maxlength="2000" placeholder="输入文字（与儿童端原打字功能相同）" disabled />
               <button type="button" class="cc-btn primary" id="mon-dialogue-send" disabled>发送</button>
             </div>
-            <div id="mon-dialogue-feedback" class="mon-muted" role="status" aria-live="polite">等待课程开始</div>
+            <div id="mon-dialogue-feedback" class="mon-muted" role="status" aria-live="polite">正在查找在线儿童端</div>
           </div>
         </section>
 
@@ -245,6 +247,6 @@
   </div>
 
   <script src="/static/js/common.js"></script>
-  <script src="/static/js/server_monitor.js?v=20260826-dialogue-console-v1"></script>
+  <script src="/static/js/server_monitor.js?v=20260827-dialogue-console-v5"></script>
 </body>
 </html>

@@ -20,10 +20,10 @@ def test_course_preset_store_preserves_exact_items_and_mode_defaults(tmp_path):
     assessment = store.create(
         mode="assessment",
         name="Demo 评估",
-        description="三门课程",
+        description="两门课程",
         course_selections=[
-            {"courseType": "mimic", "itemIds": [1, 2, 1]},
-            {"courseType": "pairing", "itemIds": [79]},
+            {"courseType": "pairing", "itemIds": [79, 81, 79]},
+            {"courseType": "ordering", "itemIds": [80]},
         ],
     )
     intervention = store.create(
@@ -39,7 +39,7 @@ def test_course_preset_store_preserves_exact_items_and_mode_defaults(tmp_path):
         "assessment": assessment["id"],
         "intervention": intervention["id"],
     }
-    assert assessment["courseSelections"][0]["itemIds"] == [1, 2]
+    assert assessment["courseSelections"][0]["itemIds"] == [79, 81]
 
     updated = store.update(
         assessment["id"],
@@ -47,12 +47,12 @@ def test_course_preset_store_preserves_exact_items_and_mode_defaults(tmp_path):
         name="Demo 评估新版",
         description="顺序调整",
         course_selections=[
+            {"courseType": "ordering", "itemIds": [80]},
             {"courseType": "pairing", "itemIds": [79]},
-            {"courseType": "mimic", "itemIds": [2]},
         ],
     )
     assert updated["id"] == assessment["id"]
-    assert updated["courseSelections"][0]["courseType"] == "pairing"
+    assert updated["courseSelections"][0]["courseType"] == "ordering"
     assert json.loads(path.read_text(encoding="utf-8"))["schemaVersion"] == 3
 
 
@@ -66,7 +66,7 @@ def test_course_preset_store_fails_closed_on_corrupt_document(tmp_path):
             mode="assessment",
             name="不能覆盖",
             description="",
-            course_selections=[{"courseType": "mimic", "itemIds": [1]}],
+            course_selections=[{"courseType": "pairing", "itemIds": [79]}],
         )
     assert path.read_text(encoding="utf-8") == original
 
@@ -117,14 +117,13 @@ def course_preset_client(tmp_path, monkeypatch):
 def test_course_preset_api_accepts_demo_items_and_rejects_historical_type(course_preset_client):
     empty = course_preset_client.get("/api/config/course-presets").get_json()
     assert empty["defaultPresetIds"] == {"assessment": None, "intervention": None}
-    assert empty["enabledCourseTypes"] == ["mimic", "pairing", "ordering"]
-    assert [course["id"] for course in empty["courseCatalog"]] == [1, 9, 10]
+    assert empty["enabledCourseTypes"] == ["pairing", "ordering"]
+    assert [course["id"] for course in empty["courseCatalog"]] == [9, 10]
 
     response = course_preset_client.post("/api/config/course-presets", json={
         "mode": "assessment",
         "name": "课堂默认",
         "courseSelections": [
-            {"courseType": "mimic", "itemIds": [2]},
             {"courseType": "pairing", "itemIds": [79]},
             {"courseType": "ordering", "itemIds": [80]},
         ],
@@ -132,14 +131,14 @@ def test_course_preset_api_accepts_demo_items_and_rejects_historical_type(course
     })
     assert response.status_code == 201
     created = response.get_json()
-    assert created["preset"]["courseTypes"] == ["mimic", "pairing", "ordering"]
-    assert created["preset"]["courseIds"] == [1, 9, 10]
+    assert created["preset"]["courseTypes"] == ["pairing", "ordering"]
+    assert created["preset"]["courseIds"] == [9, 10]
     assert created["preset"]["available"] is True
 
     disabled = course_preset_client.post("/api/config/course-presets", json={
         "mode": "assessment",
         "name": "历史课程",
-        "courseSelections": [{"courseType": "naming", "itemIds": [90]}],
+        "courseSelections": [{"courseType": "mimic", "itemIds": [2]}],
     })
     assert disabled.status_code == 400
     assert "Demo" in disabled.get_json()["error"]

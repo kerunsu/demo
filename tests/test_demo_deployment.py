@@ -128,7 +128,7 @@ def test_demo_release_resources_and_behavior_map_have_no_hardware_expression_dat
     assert list((ROOT / "static/resources/Animations").glob("*.mp4"))
 
     behavior_map = json.loads((ROOT / "doll/data/course_map.json").read_text(encoding="utf-8"))
-    assert set(behavior_map["courses"]) == {"1", "9", "10"}
+    assert set(behavior_map["courses"]) == {"9", "10"}
 
     forbidden_keys = {"motion", "motions", "emotion", "expressionMediaId", "motionOffsetMs"}
 
@@ -169,7 +169,19 @@ def test_mechanical_socket_events_are_not_present_or_registered():
     assert not (ROOT / "app/sockets/robot_events.py").exists()
 
 
-def test_fresh_demo_database_seed_is_idempotent_and_has_only_three_courses(tmp_path):
+def test_dialogue_output_is_audio_only_without_full_product_behavior_selection():
+    source = (ROOT / "app/dialogue/sockets.py").read_text(encoding="utf-8")
+    emit_speak = source[source.index("def _emit_speak("):source.index("def _queue_pending_dialogue_speak(")]
+
+    assert "reserve_audio_only_behavior" in emit_speak
+    assert "select_dialogue_reply_motion" not in emit_speak
+    assert "select_dialogue_reply_emotion" not in emit_speak
+    assert "start_dialogue_reply_behavior" not in emit_speak
+    assert 'payload["expression"]' not in emit_speak
+    assert 'payload["directionAction"]' not in emit_speak
+
+
+def test_fresh_demo_database_seed_is_idempotent_and_has_only_two_courses(tmp_path):
     database_path = tmp_path / "fresh-demo.db"
     env = os.environ.copy()
     env["EIART_DATABASE_PATH"] = str(database_path)
@@ -190,5 +202,9 @@ def test_fresh_demo_database_seed_is_idempotent_and_has_only_three_courses(tmp_p
         courses = [row[0] for row in connection.execute(
             "SELECT title FROM course ORDER BY id"
         )]
-    assert course_types == ["模仿", "配对", "排序"]
-    assert courses == ["模仿", "配对", "排序"]
+        ability_types = [row[0] for row in connection.execute(
+            "SELECT name FROM ability_type ORDER BY id"
+        )]
+    assert course_types == ["配对", "排序"]
+    assert courses == ["配对", "排序"]
+    assert ability_types == ["注意力", "配对", "排序"]

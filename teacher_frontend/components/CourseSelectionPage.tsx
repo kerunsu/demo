@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, Puzzle, Palette, Music, Blocks, Brain, ArrowLeft, Users, Sparkles } from 'lucide-react';
+import { Puzzle, Blocks, Brain, ArrowLeft, Sparkles } from 'lucide-react';
 
 interface CourseSelectionPageProps {
   onStart: (payload: {
@@ -17,12 +17,8 @@ interface CourseSelectionPageProps {
 
 // 课程类型映射（英文 -> 中文名称和图标）
 const courseTypeMap: Record<string, { name: string; icon: typeof Brain }> = {
-  'mimic': { name: '模仿', icon: Brain },
-  'naming': { name: '命名', icon: BookOpen },
-  'onomatopoeia': { name: '拟声', icon: Music },
   'pairing': { name: '配对', icon: Puzzle },
   'ordering': { name: '排序', icon: Blocks },
-  'social': { name: '社交', icon: Users },
 };
 
 // 默认图标

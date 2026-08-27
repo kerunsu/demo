@@ -9,7 +9,7 @@ from typing import Any, Iterable, Mapping, Sequence
 COURSE_SCOPE_PATH = (
     Path(__file__).resolve().parents[1] / "config" / "demo_course_scope.json"
 )
-SAFE_DEFAULT_COURSE_TYPES = ("mimic", "pairing", "ordering")
+SAFE_DEFAULT_COURSE_TYPES = ("pairing", "ordering")
 COURSE_TYPE_ALIASES = {
     "matching": "pairing",
     "sequencing": "ordering",
@@ -69,11 +69,13 @@ def enabled_course_type_set(path: Path | None = None) -> frozenset[str]:
 
 
 def enabled_course_dimensions(path: Path | None = None) -> tuple[str, ...]:
-    return tuple(
+    course_dimensions = tuple(
         COURSE_DIMENSIONS[course_type]
         for course_type in enabled_course_types(path)
         if course_type in COURSE_DIMENSIONS
     )
+    # 注意力是跨课程采集维度，不是可选课程；两课程 Demo 仍保留该报告证据。
+    return tuple(dict.fromkeys(("attention", *course_dimensions)))
 
 
 def is_course_type_enabled(value: Any, path: Path | None = None) -> bool:

@@ -55,7 +55,7 @@ SYSTEM_PROMPT = """你是面向孤独症儿童课程训练的中文对话机器�
 位置规则（配对课必须遵守）：
 1. 「上面的图片」只指屏幕上方那一张，不等于下面任何一张。
 2. 「下面第一张 / 下面第1张 / 左边这张」指下面从左到右第1张。
-3. 「下面第二张 / 右边这张」指下面从左到右第2张；第三张及以后同理。
+3. 「右边这张」只指最右侧；只有两个选项时它才是第2张。三个选项时第2张是中间，第三张才是右边。
 4. 孩子问下面第N张是什么时，必须只根据【当前页】选项列表第N张作答；禁止用上面的图片回答；禁止沿用更早对话里旧题目的名称。
 5. 当上下文提供了选项顺序时，你必须按从左到右的顺序描述。
 6. 当上下文提供了“应该点”时，你必须使用它，不要猜。
@@ -180,8 +180,12 @@ def _load_asd_env_file() -> None:
             logger.warning("加载 ASD 环境失败 %s: %s", path, exc)
 
 
-def _extract_below_position(child_text: str) -> Optional[int]:
-    """解析「下面第一张 / 下面第1张 / 左边这张 / 右边这张」→ 1-based 下标。"""
+def _extract_below_position(
+    child_text: str,
+    *,
+    option_count: Optional[int] = None,
+) -> Optional[int]:
+    """解析儿童描述的位置为 1-based 下标；“右边”始终是最后一张。"""
     text = (child_text or "").strip()
     if not text:
         return None
@@ -198,7 +202,9 @@ def _extract_below_position(child_text: str) -> Optional[int]:
         if re.search(r"上面", text):
             return None
         return 1
-    if re.search(r"下面.*(第二|第2)|右边这张|右边那张|最右边", text):
+    if re.search(r"右边这张|右边那张|最右边", text):
+        return option_count if option_count and option_count > 0 else 2
+    if re.search(r"下面.*(第二|第2)", text):
         return 2
     if re.search(r"下面.*(第三|第3)", text):
         return 3
@@ -805,18 +811,14 @@ class DialogueService:
         child_text: str,
         page_context: Optional[Dict[str, Any]],
     ) -> Optional[Dict[str, Any]]:
-        """配对：问下面第N张 / 上面的图片是什么 → 确定性短答，避免 LLM 串位。"""
+        """配对/排序位置问答走当前页确定值，避免 LLM 猜测或串位。"""
         if not page_context:
             return None
         course_type = str(
             page_context.get("courseType") or page_context.get("course_type") or ""
         ).strip().lower()
-        if course_type not in ("pairing", "matching"):
+        if course_type not in ("pairing", "matching", "ordering", "sequencing"):
             return None
-        if not re.search(r"什么|啥|叫|哪个", child_text or ""):
-            # 仍允许纯位置问法「下面第一张呢」
-            if not re.search(r"下面|上面|左边|右边|第.+张", child_text or ""):
-                return None
 
         from .image_semantics import humanize_label, is_filename_like
 
@@ -828,7 +830,49 @@ class DialogueService:
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
 
-        if _asks_about_above(child_text or ""):
+        text = str(child_text or "").strip()
+        asks_answer_location = bool(re.search(
+            r"答案.*(哪|哪里|哪儿|位置)|"
+            r"(答案|正确的).*(在|是).*(哪|哪里|哪儿)|"
+            r"应该.*(点|选).*(哪|哪里|哪儿|几)|"
+            r"(点|选)哪|哪张.*(对|正确|一样)",
+            text,
+        ))
+        if asks_answer_location:
+            entries = self._option_entries(page_context)
+            raw_pos = page_context.get("correctPosition")
+            if raw_pos is None:
+                raw_pos = page_context.get("correctOptionPosition")
+            try:
+                correct_pos = int(raw_pos)
+            except (TypeError, ValueError):
+                correct_pos = 0
+            count = len(entries)
+            if 1 <= correct_pos <= count:
+                if count <= 1:
+                    location = "这张"
+                elif correct_pos == 1:
+                    location = "左边"
+                elif correct_pos == count:
+                    location = "右边"
+                elif count == 3 and correct_pos == 2:
+                    location = "中间"
+                else:
+                    location = f"从左数第{correct_pos}张"
+                ent = entries[correct_pos - 1]
+                clue = str(ent.get("visual") or ent.get("label") or "").strip()
+                if clue and clue not in {"左边", "右边", "中间", location}:
+                    return _pack(f"答案在{location}，点{clue}。")
+                return _pack(f"答案在{location}。")
+            return None
+
+        if course_type not in ("pairing", "matching"):
+            return None
+        if not re.search(r"什么|啥|叫|哪个", text):
+            if not re.search(r"下面|上面|左边|右边|第.+张", text):
+                return None
+
+        if _asks_about_above(text):
             raw_target = (
                 page_context.get("target")
                 or page_context.get("targetText")
@@ -850,10 +894,10 @@ class DialogueService:
                 return _pack(f"这是{visual or label}。")
             return None
 
-        pos = _extract_below_position(child_text or "")
+        entries = self._option_entries(page_context)
+        pos = _extract_below_position(text, option_count=len(entries))
         if not pos:
             return None
-        entries = self._option_entries(page_context)
         if pos < 1 or pos > len(entries):
             return None
         ent = entries[pos - 1]
@@ -878,9 +922,17 @@ class DialogueService:
         switched = prev is not None and prev != fp
         if switched:
             self._history[session_id] = []
-            self.clear_awake(session_id)
+            self._ensure_awake_store()
+            awake_fp = self._awake_fp.get(session_id)
+            preserve_current_manual_wake = (
+                awake_fp == _PENDING_MANUAL_WAKE_CONTEXT
+                or (bool(fp) and awake_fp == fp)
+            )
+            if not preserve_current_manual_wake:
+                self.clear_awake(session_id)
             logger.info(
-                "题目上下文切换，已清空对话历史并退出唤醒 sid=%s prev_fp=%s new_fp=%s",
+                "题目上下文切换，已清空对话历史%s sid=%s prev_fp=%s new_fp=%s",
+                "并保留当前教师唤醒" if preserve_current_manual_wake else "并退出旧题唤醒",
                 session_id,
                 (prev or "")[:80],
                 (fp or "")[:80],

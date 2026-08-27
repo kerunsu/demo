@@ -87,6 +87,7 @@ def put_report_scoring():
             "narrative_provider",
             "dimension_weights",
             "course_weights",
+            "sample_sufficiency",
             "teacher_rating",
             "grade_thresholds",
             "schema_version",
@@ -94,7 +95,15 @@ def put_report_scoring():
             "course_goal_score",
         ):
             if key in incoming:
-                if key in ("weights", "interactive_course", "dimension_weights", "course_weights", "teacher_rating", "grade_thresholds") and isinstance(incoming[key], dict):
+                if key == "sample_sufficiency" and isinstance(incoming[key], dict):
+                    base = dict(merged.get(key) or {})
+                    incoming_minimums = incoming[key].get("minimum_effective_samples")
+                    if isinstance(incoming_minimums, dict):
+                        minimums = dict(base.get("minimum_effective_samples") or {})
+                        minimums.update(incoming_minimums)
+                        base["minimum_effective_samples"] = minimums
+                    merged[key] = base
+                elif key in ("weights", "interactive_course", "dimension_weights", "course_weights", "teacher_rating", "grade_thresholds") and isinstance(incoming[key], dict):
                     base = dict(merged.get(key) or {})
                     base.update(incoming[key])
                     merged[key] = base

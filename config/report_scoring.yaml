@@ -1,12 +1,18 @@
 # 报告评分权重与公式（可随时修改，无需改代码）
 # 运营说明见 docs/REPORT_SCORING.md
 # Demo 三维权重之和应为 100；schema_version 会写入报告 formulaVersion
-schema_version: education-training-index-v2-teacher-rating
+schema_version: education-training-index-v3-sample-sufficiency-demo
 score_boundary: education_training_reference_only
 
 # 教师报告中的训练参考线。它只用于比较本次训练结果，
 # 不是年龄常模、百分位或临床标准。
 course_goal_score: 70
+
+# 配对/排序按有效作答题数计数；达到阈值后才进入综合表现。
+sample_sufficiency:
+  minimum_effective_samples:
+    pairing: 5
+    ordering: 5
 
 # --- Demo 三维综合权重（和=100）---
 weights:
@@ -33,12 +39,10 @@ interactive_course:
 # --- 能力维度内部权重；缺项时按已有数据重新归一化 ---
 dimension_weights:
   attention:
-    automatic: 0.70
-    mimic_teacher: 0.30
+    automatic: 1.00
 
 # --- 综合得分与任务表现按课程类型平衡，避免题量偏置 ---
 course_weights:
-  mimic: 1
   pairing: 1
   ordering: 1
 

@@ -1,16 +1,5 @@
 [
   {
-    "id": 1,
-    "title": "模仿",
-    "type": "mimic",
-    "question": "resources/audios/mimic/mimic_question.mp3",
-    "praise": "resources/audios/mimic/mimic_praise.mp3",
-    "items": [
-      {"id": 1, "name": "双手举起", "type": "image", "file": "resources/images/mimic/pose_1.png"},
-      {"id": 2, "name": "比小花", "type": "image", "file": "resources/images/mimic/pose_2.png"}
-    ]
-  },
-  {
     "id": 9,
     "title": "配对",
     "type": "pairing",

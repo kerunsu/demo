@@ -5,6 +5,7 @@ from flask import Flask
 from flask_socketio import SocketIO
 
 from app.config import Config
+from app.dialogue.voice_config import FIXED_BROWSER_TTS_VOICE_NAME
 import pytest
 
 from app.dialogue.sockets import (
@@ -72,7 +73,7 @@ def test_teacher_can_wake_without_sound_and_toggle_child_panel(monkeypatch):
     class Service:
         awake = False
 
-        def set_awake(self, *_args):
+        def set_awake(self, *_args, **_kwargs):
             self.awake = True
 
         def clear_awake(self, *_args):
@@ -90,6 +91,7 @@ def test_teacher_can_wake_without_sound_and_toggle_child_panel(monkeypatch):
             "sessionId": "runtime-1",
             "trainingSessionId": "training-1",
             "childSid": "child-1",
+            "childRoom": "child:runtime-1",
         },
     )
     identity = {"trainingSessionId": "training-1", "sessionId": "runtime-1"}
@@ -218,12 +220,14 @@ def test_teacher_agent_toggle_and_visibility_are_not_lease_gated_and_have_watchd
     assert "_authorize_teacher_control" not in wake_handler
     assert "_authorize_teacher_control" not in sleep_handler
     assert "_authorize_teacher_control" not in visibility_handler
-    assert "_resolve_manual_wake_target" in wake_handler
-    assert "_resolve_manual_wake_target" in sleep_handler
+    assert "_resolve_dialogue_target" in wake_handler
+    assert "allow_standby=True" in wake_handler
+    assert "_resolve_dialogue_target" in sleep_handler
+    assert "allow_standby=True" in sleep_handler
     assert "_resolve_manual_wake_target" in visibility_handler
     assert '"requestId": request_id' in wake_handler
     assert "teacher_dialogue_sleep" in teacher
-    assert "{dialogueAwake ? '关闭智能体' : '唤醒智能体'}" in teacher
+    assert "{dialogueAwake ? '停止智能体' : '唤醒智能体'}" in teacher
     assert "teacher_dialogue_runtime_state" in teacher
     assert "}, 4000);" in teacher
     assert "child_not_connected" in teacher
@@ -276,3 +280,284 @@ def test_awake_state_persists_across_multiple_dialogue_turns_on_same_question():
     assert first["reply"]
     assert second["reply"]
     assert svc.is_session_awake("manual-wake-session", context) is True
+
+
+def test_dialogue_turn_dedupe_rejects_request_replay_and_browser_double_final():
+    from app.dialogue.sockets import (
+        _claim_dialogue_turn,
+        _dialogue_recent_transcripts,
+        _dialogue_turn_requests,
+    )
+
+    _dialogue_turn_requests.clear()
+    _dialogue_recent_transcripts.clear()
+    context = {"courseType": "pairing", "courseId": 9, "questionId": "q-1"}
+    assert _claim_dialogue_turn(
+        "dedupe-session",
+        "request-1",
+        "答案在哪里",
+        context,
+        recognition_provider="browser-speech-recognition",
+    ) is None
+    assert _claim_dialogue_turn(
+        "dedupe-session",
+        "request-1",
+        "答案在哪里",
+        context,
+        recognition_provider="browser-speech-recognition",
+    ) == "duplicate_request"
+    assert _claim_dialogue_turn(
+        "dedupe-session",
+        "request-2",
+        "答案在哪里！",
+        context,
+        recognition_provider="browser-speech-recognition",
+    ) == "duplicate_transcript"
+
+
+def test_teacher_stop_invalidates_queued_and_active_dialogue_reply(monkeypatch):
+    from app.dialogue import sockets
+
+    session_id = "stop-reply-session"
+    aborted = []
+
+    class Robot:
+        def abort_behavior(self, behavior_id):
+            aborted.append(behavior_id)
+            return True
+
+    monkeypatch.setattr("app.robot.get_robot_service", lambda: Robot())
+    sockets._dialogue_reply_generations[session_id] = 3
+    sockets._active_dialogue_reply_behaviors[session_id] = "dialogue-active-1"
+    sockets._pending_dialogue_speak[session_id] = {
+        "text": "稍后播放的旧回复",
+        "dialogue_request_id": "turn-pending-1",
+        "queued_at": 0,
+    }
+
+    result = sockets._cancel_dialogue_replies(
+        session_id,
+        reason="teacher_manual_stop",
+    )
+
+    assert result == {
+        "generation": 4,
+        "pendingCancelled": True,
+        "activeCancelled": True,
+    }
+    assert aborted == ["dialogue-active-1"]
+    assert session_id not in sockets._pending_dialogue_speak
+    assert session_id not in sockets._active_dialogue_reply_behaviors
+
+
+def test_server_dialogue_watch_and_runtime_control_are_exact_session_scoped(monkeypatch):
+    app = Flask("server-dialogue-control")
+    app.config.update(SECRET_KEY="test", TESTING=True)
+    socketio = SocketIO(app, async_mode="threading")
+    register_dialogue_events(socketio)
+    monitor = socketio.test_client(app)
+    child = socketio.test_client(app)
+    unrelated = socketio.test_client(app)
+    child_sid = socketio.server.manager.sid_from_eio_sid(child.eio_sid, "/")
+    unrelated_sid = socketio.server.manager.sid_from_eio_sid(unrelated.eio_sid, "/")
+    socketio.server.enter_room(child_sid, "session_runtime-1_child", namespace="/")
+    socketio.server.enter_room(unrelated_sid, "session_other-child_child", namespace="/")
+
+    monkeypatch.setattr(
+        "app.dialogue.sockets._resolve_dialogue_target",
+        lambda _data, **_kwargs: {
+            "ok": True,
+            "sessionId": "runtime-1",
+            "trainingSessionId": "training-1",
+            "childSid": child_sid,
+            "childRoom": "session_runtime-1_child",
+            "standby": False,
+        },
+    )
+    monkeypatch.setattr(
+        "app.sockets.events.get_connected_child_sid",
+        lambda _session_id: child_sid,
+    )
+
+    class Service:
+        @staticmethod
+        def is_session_awake(*_args):
+            return False
+
+        @staticmethod
+        def bind_pending_awake_context(*_args):
+            return False
+
+    monkeypatch.setattr("app.dialogue.sockets.get_dialogue_service", lambda: Service())
+    from app.dialogue.sockets import _dialogue_visible_messages
+
+    _dialogue_visible_messages["runtime-1"] = [{
+        "type": "message",
+        "sessionId": "runtime-1",
+        "role": "child",
+        "text": "监控页打开前说的话",
+        "requestId": "before-watch",
+        "serverTimestamp": 1,
+    }]
+
+    monitor.emit("server_dialogue_watch", {
+        "sessionId": "runtime-1",
+        "trainingSessionId": "training-1",
+        "requestId": "watch-1",
+    })
+    watch = _events(monitor, "server_dialogue_control_ack")[-1]
+    assert watch["success"] is True
+    assert watch["messages"][0]["text"] == "监控页打开前说的话"
+    state_request = _events(child, "child_dialogue_runtime_control")[-1]
+    assert state_request["action"] == "state_request"
+    assert state_request["requestId"] == "watch-1"
+
+    monitor.emit("server_dialogue_runtime_control", {
+        "sessionId": "runtime-1",
+        "trainingSessionId": "training-1",
+        "requestId": "listen-1",
+        "action": "listen_start",
+    })
+    child_control = _events(child, "child_dialogue_runtime_control")[-1]
+    assert child_control["action"] == "listen_start"
+    assert child_control["requestId"] == "listen-1"
+    assert _events(unrelated, "child_dialogue_runtime_control") == []
+
+    child.emit("child_dialogue_runtime_state", {
+        "sessionId": "runtime-1",
+        "awake": False,
+        "listening": True,
+        "recognitionActive": True,
+        "microphoneBlocked": False,
+        "voices": [
+            {"name": "other-voice", "lang": "zh-CN", "label": "其他音色"},
+            {
+                "name": FIXED_BROWSER_TTS_VOICE_NAME,
+                "lang": "zh-CN",
+                "label": FIXED_BROWSER_TTS_VOICE_NAME,
+            },
+        ],
+        "selectedVoice": FIXED_BROWSER_TTS_VOICE_NAME,
+        "voiceAvailable": True,
+    })
+    mirrored = _events(monitor, "server_dialogue_event")[-1]
+    assert mirrored["type"] == "runtime"
+    assert mirrored["voices"] == [{
+        "name": FIXED_BROWSER_TTS_VOICE_NAME,
+        "lang": "zh-CN",
+        "label": FIXED_BROWSER_TTS_VOICE_NAME,
+    }]
+    assert mirrored["voiceAvailable"] is True
+    assert _events(unrelated, "server_dialogue_event") == []
+
+    monitor.disconnect()
+    child.disconnect()
+    unrelated.disconnect()
+    _dialogue_visible_messages.pop("runtime-1", None)
+
+
+def test_server_dialogue_standby_supports_voice_and_text_without_course(monkeypatch):
+    app = Flask("server-dialogue-standby")
+    app.config.update(SECRET_KEY="test", TESTING=True)
+    socketio = SocketIO(app, async_mode="threading")
+    register_dialogue_events(socketio)
+    monitor = socketio.test_client(app)
+    child = socketio.test_client(app)
+    unrelated = socketio.test_client(app)
+    child_sid = socketio.server.manager.sid_from_eio_sid(child.eio_sid, "/")
+
+    from app.sockets import events as socket_events
+
+    with socket_events._presence_lock:
+        socket_events._presence_state["child"].clear()
+        socket_events._presence_details["child"].clear()
+        socket_events._child_sid_bindings.clear()
+        socket_events._child_session_owners.clear()
+    socket_events._touch_presence("child", child_sid, details={"ip": "127.0.0.1"})
+
+    turns = []
+    monkeypatch.setattr(
+        "app.dialogue.sockets._handle_dialogue_utterance",
+        lambda **kwargs: turns.append(kwargs),
+    )
+
+    monitor.emit("server_dialogue_watch", {"requestId": "standby-watch"})
+    watch = _events(monitor, "server_dialogue_control_ack")[-1]
+    assert watch["success"] is True
+    assert watch["standby"] is True
+    standby_session = watch["sessionId"]
+    assert standby_session.startswith("dialogue-standby-")
+    assert socket_events.get_connected_child_sid(standby_session) == child_sid
+    state_request = _events(child, "child_dialogue_runtime_control")[-1]
+    assert state_request["action"] == "state_request"
+    assert _events(unrelated, "child_dialogue_runtime_control") == []
+
+    monitor.emit("server_dialogue_runtime_control", {
+        "sessionId": standby_session,
+        "requestId": "voice-change-rejected",
+        "action": "set_voice",
+        "voiceName": "Microsoft Xiaoxiao Online (Natural) - Chinese (Mainland)",
+    })
+    rejected = _events(monitor, "server_dialogue_control_ack")[-1]
+    assert rejected["success"] is False
+    assert rejected["error"] == "voice_locked"
+    assert rejected["fixedVoiceName"] == FIXED_BROWSER_TTS_VOICE_NAME
+    assert _events(child, "child_dialogue_runtime_control") == []
+
+    monitor.emit("server_dialogue_text", {
+        "sessionId": standby_session,
+        "requestId": "standby-text",
+        "text": "你好",
+    })
+    text_ack = _events(monitor, "server_dialogue_control_ack")[-1]
+    assert text_ack["success"] is True
+    assert text_ack["action"] == "text"
+    assert turns[-1]["session_id"] == standby_session
+    assert turns[-1]["room"] == f"session_{standby_session}_child"
+
+    monitor.disconnect()
+    child.disconnect()
+    unrelated.disconnect()
+    with socket_events._presence_lock:
+        socket_events._presence_state["child"].clear()
+        socket_events._presence_details["child"].clear()
+        socket_events._child_sid_bindings.clear()
+        socket_events._child_session_owners.clear()
+
+
+def test_server_dialogue_standby_refuses_ambiguous_children():
+    app = Flask("server-dialogue-standby-ambiguous")
+    app.config.update(SECRET_KEY="test", TESTING=True)
+    socketio = SocketIO(app, async_mode="threading")
+    register_dialogue_events(socketio)
+    monitor = socketio.test_client(app)
+    first_child = socketio.test_client(app)
+    second_child = socketio.test_client(app)
+    first_sid = socketio.server.manager.sid_from_eio_sid(first_child.eio_sid, "/")
+    second_sid = socketio.server.manager.sid_from_eio_sid(second_child.eio_sid, "/")
+
+    from app.sockets import events as socket_events
+
+    with socket_events._presence_lock:
+        socket_events._presence_state["child"].clear()
+        socket_events._presence_details["child"].clear()
+        socket_events._child_sid_bindings.clear()
+        socket_events._child_session_owners.clear()
+    socket_events._touch_presence("child", first_sid)
+    socket_events._touch_presence("child", second_sid)
+
+    monitor.emit("server_dialogue_watch", {"requestId": "ambiguous-watch"})
+    watch = _events(monitor, "server_dialogue_control_ack")[-1]
+    assert watch["success"] is False
+    assert watch["error"] == "ambiguous_children"
+    assert _events(first_child, "child_dialogue_runtime_control") == []
+    assert _events(second_child, "child_dialogue_runtime_control") == []
+
+    monitor.disconnect()
+    first_child.disconnect()
+    second_child.disconnect()
+    with socket_events._presence_lock:
+        socket_events._presence_state["child"].clear()
+        socket_events._presence_details["child"].clear()
+        socket_events._child_sid_bindings.clear()
+        socket_events._child_session_owners.clear()

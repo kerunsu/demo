@@ -40,7 +40,7 @@ def test_demo_course_map_contains_child_animation_only():
     keys = {key.casefold() for key in _walk_keys(mapping)}
     assert not {"motion", "motions", "emotion", "expression"} & keys
     assert "animation" in keys
-    assert set(mapping["courses"]) == {"1", "9", "10"}
+    assert set(mapping["courses"]) == {"9", "10"}
 
 
 def test_demo_has_no_robot_control_or_expression_frontend():

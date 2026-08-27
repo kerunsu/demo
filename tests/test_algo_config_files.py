@@ -165,6 +165,12 @@ def _patch_config_files(monkeypatch):
                     "ideal_response_sec": 3,
                     "slow_response_sec": 12,
                 },
+                "sample_sufficiency": {
+                    "minimum_effective_samples": {
+                        "pairing": 5,
+                        "ordering": 5,
+                    },
+                },
                 "grade_thresholds": {
                     "excellent": 85,
                     "good": 70,
@@ -249,6 +255,12 @@ def test_api_report_weights_reject_and_accept(monkeypatch):
                     "ordering": 30,
                 },
                 "narrative_provider": "mock",
+                "course_goal_score": 65,
+                "sample_sufficiency": {
+                    "minimum_effective_samples": {
+                        "pairing": 6,
+                    },
+                },
             }
         },
     )
@@ -256,6 +268,24 @@ def test_api_report_weights_reject_and_accept(monkeypatch):
     body = ok.get_json()
     assert body["config"]["weights"]["attention"] == 40
     assert body["config"]["narrative_provider"] == "mock"
+    assert body["config"]["course_goal_score"] == 65
+    assert body["config"]["sample_sufficiency"]["minimum_effective_samples"] == {
+        "pairing": 6,
+        "ordering": 5,
+    }
+
+    invalid_samples = client.put(
+        "/api/server/config/report-scoring",
+        json={
+            "config": {
+                "sample_sufficiency": {
+                    "minimum_effective_samples": {"ordering": 0},
+                },
+            },
+        },
+    )
+    assert invalid_samples.status_code == 400
+    assert "minimum_effective_samples.ordering" in invalid_samples.get_json()["error"]
 
 
 def test_config_shell_modules_render():

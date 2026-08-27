@@ -75,7 +75,7 @@ def _demo_phrase_scope(intent: str, course_type: str) -> str:
         and normalized_intent == 'question'
     ):
         return raw_type
-    raise ValueError('Demo 版仅允许全局、模仿、配对和排序话术')
+    raise ValueError('Demo 版仅允许全局、配对和排序话术')
 
 
 def ensure_speech_target_column() -> None:
@@ -396,7 +396,7 @@ def _validated_course_preset_payload(
     ]
     if disabled:
         raise ValueError(
-            f'Demo 机仅允许模仿、配对和排序课程: {", ".join(disabled)}'
+            f'Demo 机仅允许配对和排序课程: {", ".join(disabled)}'
         )
     courses = Course.query.join(CourseType).filter(CourseType.name.in_([
         TYPE_EN_TO_CN[course_type] for course_type in course_types
@@ -577,7 +577,7 @@ def create_course():
     if not is_course_type_enabled(resolved_type):
         return jsonify({
             'success': False,
-            'error': 'Demo 机仅允许创建模仿、配对和排序课程',
+            'error': 'Demo 机仅允许创建配对和排序课程',
         }), 400
     existing = Course.query.filter_by(course_type_id=int(type_id)).first()
     if existing is not None:
@@ -1004,7 +1004,7 @@ def get_audio_course_defaults(course_type: str):
     try:
         demo_course_type = canonical_course_type(course_type)
         if not is_course_type_enabled(demo_course_type):
-            raise ValueError('Demo 版仅允许模仿、配对和排序课程语音')
+            raise ValueError('Demo 版仅允许配对和排序课程语音')
         return jsonify({'success': True, 'defaults': get_course_type_defaults(demo_course_type)})
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -1023,7 +1023,7 @@ def put_audio_course_defaults(course_type: str):
     try:
         demo_course_type = canonical_course_type(course_type)
         if not is_course_type_enabled(demo_course_type):
-            raise ValueError('Demo 版仅允许模仿、配对和排序课程语音')
+            raise ValueError('Demo 版仅允许配对和排序课程语音')
         for key in keys:
             if key in data and data[key]:
                 updated.append(set_course_type_audio(demo_course_type, key, str(data[key])))

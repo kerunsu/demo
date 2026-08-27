@@ -73,14 +73,16 @@ def test_emit_speak_reserves_audio_only_and_sends_exactly_once(monkeypatch):
         assert robot.expected[0][0][0] == payload["behaviorId"]
 
 
-def test_emit_speak_can_attach_length_matched_expression(monkeypatch):
+def test_emit_speak_ignores_full_product_expression_hooks(monkeypatch):
     robot = _install_robot(monkeypatch)
     robot.select_dialogue_reply_emotion = lambda text: {
         "emotion": "happy.mp4",
         "charCount": len(text),
         "maxChars": 20,
     }
-    robot.reserve_behavior = robot.reserve_audio_only_behavior
+    robot.reserve_behavior = lambda **_kwargs: (_ for _ in ()).throw(
+        AssertionError("Demo must not reserve mechanical/expression behavior")
+    )
     robot.start_dialogue_reply_behavior = lambda **kwargs: {
         "behaviorId": kwargs["behavior_id"],
         "emotion": kwargs["emotion"],
@@ -95,9 +97,10 @@ def test_emit_speak_can_attach_length_matched_expression(monkeypatch):
             source="dialogue",
         )
     payload = emit.call_args.args[1]
-    assert payload["expression"] == "happy.mp4"
-    assert payload["expressionMatch"]["maxChars"] == 20
-    assert payload["delayMs"] == 700
+    assert "expression" not in payload
+    assert "expressionMatch" not in payload
+    assert payload["delayMs"] == 0
+    assert len(robot.reservations) == 1
 
 
 def test_emit_speak_busy_queues_dialogue_without_emitting(monkeypatch):

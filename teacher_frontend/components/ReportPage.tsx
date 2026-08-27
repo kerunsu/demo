@@ -19,6 +19,12 @@ type CourseEvaluation = {
   targetScore: number;
   gapToTarget?: number | null;
   itemCount?: number;
+  provisionalScore?: number | null;
+  validSampleCount?: number;
+  requiredSampleCount?: number;
+  sampleUnit?: 'rated_item' | 'answered_question' | string;
+  sampleAdequacy?: number;
+  contributesToOverall?: boolean;
 };
 
 type RecommendationView = {
@@ -34,13 +40,12 @@ type RecommendationView = {
 };
 
 const DIMENSIONS: Array<{ key: DimensionKey; label: string }> = [
-  { key: 'attention', label: '注意力与模仿参与' },
+  { key: 'attention', label: '注意力参与' },
   { key: 'matching', label: '配对能力' },
   { key: 'ordering', label: '排序能力' },
 ];
 
 const COURSE_TYPES = [
-  { key: 'mimic', label: '模仿' },
   { key: 'pairing', label: '配对' },
   { key: 'ordering', label: '排序' },
 ];
@@ -106,6 +111,14 @@ function courseStatusText(course: CourseEvaluation) {
   return '未评估';
 }
 
+function courseSampleText(course: CourseEvaluation) {
+  const valid = Number(course.validSampleCount);
+  const required = Number(course.requiredSampleCount);
+  if (!Number.isFinite(valid) || !Number.isFinite(required) || required <= 0) return '';
+  const unit = course.sampleUnit === 'answered_question' ? '有效作答' : '有效评分课点';
+  return `${unit} ${Math.max(0, valid)}/${required}`;
+}
+
 function teacherFriendlyLimitation(value: unknown) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -135,7 +148,7 @@ function normalizeRecommendation(item: any, index: number): RecommendationView {
   const body = String(item?.body || '').trim();
   const title = String(item?.title || `训练建议 ${index + 1}`);
   const parsed = body.match(
-    /练什么[：:]\s*([\s\S]*?)\s*为什么[：:]\s*([\s\S]*?)\s*(?:进步判断|如何判断进步)[：:]\s*([\s\S]*)/,
+    /(?:训练内容|练什么|做什么)[：:]\s*([\s\S]*?)\s*(?:建议依据|为什么练|为什么做|为什么)[：:]\s*([\s\S]*?)\s*(?:成效判据|进步标志|进步判断|如何判断进步)[：:]\s*([\s\S]*)/,
   );
   let practice = String(item?.practice || parsed?.[1] || '').trim();
   let why = percentageCopy(item?.why || parsed?.[2] || item?.evidence || '').trim();
@@ -617,7 +630,7 @@ export function ReportPage({ trainingSessionId, studentName, onBack }: ReportPag
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <div>
                     <h2 className="border-l-[3px] border-[#3489ca] pl-2.5 text-base font-black text-[#17283c]">本次课程得分</h2>
-                    <p className="mt-1 text-[10px] text-slate-500">仅展示 Demo 启用的模仿、配对和排序；未评估或数据不足不会按 0 分计入综合表现。</p>
+                    <p className="mt-1 text-[10px] text-slate-500">仅展示 Demo 启用的配对和排序；未评估或数据不足不会按 0 分计入综合表现。</p>
                   </div>
                   <span className="text-[9px] text-slate-400">训练参考线 {targetScore.toFixed(0)}%</span>
                 </div>
@@ -625,6 +638,11 @@ export function ReportPage({ trainingSessionId, studentName, onBack }: ReportPag
                   {courseEvaluations.map((course) => {
                     const evaluated = course.status === 'evaluated' && course.score != null;
                     const score = evaluated ? clampPercentage(course.score) : 0;
+                    const sampleText = courseSampleText(course);
+                    const provisionalScore = course.provisionalScore == null
+                      ? null
+                      : clampPercentage(course.provisionalScore);
+                    const sampleAdequacy = clampPercentage(Number(course.sampleAdequacy || 0) * 100);
                     const courseTarget = clampPercentage(course.targetScore ?? targetScore);
                     const gap = score - courseTarget;
                     return (
@@ -637,11 +655,15 @@ export function ReportPage({ trainingSessionId, studentName, onBack }: ReportPag
                         <div className="mt-1 text-[9px] leading-3 text-slate-400">
                           {evaluated
                             ? (gap >= 0 ? `高于参考线 ${gap.toFixed(1)} 个百分点` : `距离参考线 ${Math.abs(gap).toFixed(1)} 个百分点`)
-                            : (course.status === 'insufficient_data' ? '已有记录不足以形成得分' : '本次没有有效课程结果')}
+                            : (course.status === 'insufficient_data'
+                              ? `${sampleText || '有效样本不足'}；${provisionalScore == null ? '暂未形成分数' : `暂定 ${provisionalScore.toFixed(1)}%，不计入综合表现`}`
+                              : '本次没有有效课程结果')}
                         </div>
+                        {evaluated && sampleText && <div className="mt-1 text-[9px] text-slate-400">{sampleText}，已达到最低样本量</div>}
                         <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
                           {evaluated && <div className="absolute inset-y-0 left-0 rounded-full bg-[#3489ca]" style={{ width: `${score}%` }} />}
-                          <div className="absolute inset-y-0 z-[2] w-px bg-[#e5a13a]" style={{ left: `${courseTarget}%` }} />
+                          {!evaluated && course.status === 'insufficient_data' && <div className="absolute inset-y-0 left-0 rounded-full bg-slate-300" style={{ width: `${sampleAdequacy}%` }} />}
+                          {evaluated && <div className="absolute inset-y-0 z-[2] w-px bg-[#e5a13a]" style={{ left: `${courseTarget}%` }} />}
                         </div>
                       </div>
                     );
@@ -655,7 +677,7 @@ export function ReportPage({ trainingSessionId, studentName, onBack }: ReportPag
             <div className="mb-2 flex flex-wrap items-end justify-between gap-2 border-l-[3px] border-[#3489ca] pl-2.5">
               <div>
                 <h2 className="text-base font-black text-[#17283c]">后续训练建议</h2>
-                <p className="mt-0.5 text-[11px] text-slate-500">按优先顺序说明练什么、为什么练，以及如何判断已经进步。</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">依据本次评估结果，按优先顺序呈现训练内容、建议依据与成效判据。</p>
               </div>
             </div>
             {recommendations.length ? (
@@ -670,12 +692,12 @@ export function ReportPage({ trainingSessionId, studentName, onBack }: ReportPag
                       <div className="mt-2 rounded-xl bg-sky-50 p-3 text-xs leading-5 text-slate-700">{recommendation.body}</div>
                     ) : (
                       <div className="mt-2 space-y-2 text-xs">
-                        {recommendation.evidence && <div className="rounded-lg border border-sky-100 bg-sky-50 px-2.5 py-2 leading-5"><strong className="text-[#2b6f9f]">本次依据：</strong>{recommendation.evidence}</div>}
+                        {recommendation.evidence && <div className="rounded-lg border border-sky-100 bg-sky-50 px-2.5 py-2 leading-5"><strong className="text-[#2b6f9f]">评估依据：</strong>{recommendation.evidence}</div>}
                         <div className="grid gap-2 sm:grid-cols-2">
-                          <div className="rounded-lg bg-[#f7f9fb] p-2.5 leading-5"><strong className="block text-[11px] text-[#2b6f9f]">练什么</strong><span className="mt-0.5 block text-slate-700">{recommendation.practice || recommendation.body}</span></div>
-                          <div className="rounded-lg bg-[#fff9ef] p-2.5 leading-5"><strong className="block text-[11px] text-amber-700">为什么练</strong><span className="mt-0.5 block text-slate-700">{recommendation.why || '用于巩固本次相对薄弱的课程表现。'}</span></div>
+                          <div className="rounded-lg bg-[#f7f9fb] p-2.5 leading-5"><strong className="block text-[11px] text-[#2b6f9f]">训练内容</strong><span className="mt-0.5 block text-slate-700">{recommendation.practice || recommendation.body}</span></div>
+                          <div className="rounded-lg bg-[#fff9ef] p-2.5 leading-5"><strong className="block text-[11px] text-amber-700">建议依据</strong><span className="mt-0.5 block text-slate-700">{recommendation.why || '用于巩固本次相对薄弱的课程表现。'}</span></div>
                         </div>
-                        <div className="rounded-lg bg-emerald-50 px-2.5 py-2 leading-5"><strong className="text-emerald-700">进步标志：</strong>{recommendation.progressCheck || '连续多次训练达到当前训练参考目标。'}</div>
+                        <div className="rounded-lg bg-emerald-50 px-2.5 py-2 leading-5"><strong className="text-emerald-700">成效判据：</strong>{recommendation.progressCheck || '连续多次训练达到当前训练参考目标。'}</div>
                       </div>
                     )}
                   </article>

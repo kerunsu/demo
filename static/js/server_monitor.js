@@ -95,13 +95,18 @@
     mediaSessionId: null,
     trainingSessionId: null,
     active: false,
+    childConnectionCount: 0,
     previewEnabled: true,
     ambientCameras: [],
     pendingReviews: [],
     reviewDismissed: {},
     currentReviewId: null,
     dialogueSessionId: null,
+    dialogueStandby: false,
     dialogueWatching: false,
+    dialogueWatchPending: false,
+    dialogueWatchRequestId: null,
+    lastDialogueDiscoveryAt: 0,
     dialogueListening: false,
     dialogueAwake: false,
     dialogueRequestSequence: 0,
@@ -440,6 +445,7 @@
     const voice = data.voice || {};
     const emotion = data.emotion || {};
     const clients = health.socketClients || {};
+    state.childConnectionCount = Math.max(0, Number(clients.child || 0));
     renderConnectionSummary(health.connectionSummary || {});
     renderTeacherConnections(health.connections);
 
@@ -764,8 +770,10 @@
   }
 
   function updateDialogueControls() {
-    const available = Boolean(state.dialogueSessionId && state.active && state.socketOnline);
-    [els.dialogueUnlock, els.dialogueListen, els.dialogueWake, els.dialogueVoice,
+    const available = Boolean(
+      state.dialogueSessionId && state.dialogueWatching && state.socketOnline,
+    );
+    [els.dialogueUnlock, els.dialogueListen, els.dialogueWake,
       els.dialogueInput, els.dialogueSend].forEach((node) => {
       if (node) node.disabled = !available;
     });
@@ -776,17 +784,25 @@
       els.dialogueWake.textContent = state.dialogueAwake ? "退出唤醒" : "唤醒智能体";
     }
     if (els.dialogueState) {
-      els.dialogueState.textContent = !state.dialogueSessionId
-        ? "课程未开始"
+      els.dialogueState.textContent = !state.dialogueSessionId || !state.dialogueWatching
+        ? state.dialogueWatchPending
+          ? (state.childConnectionCount > 0
+            ? "儿童端在线 · 正在同步对话"
+            : "正在连接儿童端")
+          : state.childConnectionCount > 0
+            ? "儿童端在线 · 对话尚未同步"
+            : "儿童端未连接"
         : state.dialogueListening
           ? (state.dialogueAwake ? "已唤醒 · 正在聆听" : "正在聆听 · 等待唤醒")
-          : "聆听已停止";
+          : state.dialogueStandby
+            ? "儿童端在线 · 待机对话"
+            : "聆听已停止";
     }
   }
 
   function clearDialogueLog() {
     if (!els.dialogueLog) return;
-    els.dialogueLog.innerHTML = '<div class="mon-dialogue-empty">等待当前课程的对话。</div>';
+    els.dialogueLog.innerHTML = '<div class="mon-dialogue-empty">等待儿童与麦麦的对话。</div>';
   }
 
   function appendDialogueMessage(payload) {
@@ -817,54 +833,80 @@
     if (Object.prototype.hasOwnProperty.call(payload, "awake")) {
       state.dialogueAwake = payload.awake === true;
     }
-    const voices = Array.isArray(payload.voices) ? payload.voices : [];
-    if (els.dialogueVoice && voices.length) {
-      const selected = String(payload.selectedVoice || "");
-      els.dialogueVoice.innerHTML = "";
-      voices.forEach((voice) => {
-        const option = document.createElement("option");
-        option.value = String(voice.name || "");
-        option.textContent = String(voice.label || voice.name || "");
-        els.dialogueVoice.appendChild(option);
-      });
-      if (selected) els.dialogueVoice.value = selected;
-    }
     if (payload.microphoneBlocked) {
       setDialogueFeedback("儿童端麦克风不可用，请在儿童设备允许权限或检查安全访问地址。", "warn");
+    } else if (payload.voiceAvailable === false) {
+      setDialogueFeedback("儿童端 Edge 未检测到固定的 Microsoft Xiaoyi Online (Natural) 音色。", "warn");
     } else if (payload.reason) {
       setDialogueFeedback(`儿童端状态已更新：${payload.reason}`, "ok");
     }
     updateDialogueControls();
   }
 
-  function syncDialogueWatch(force) {
-    const next = state.active && state.mediaSessionId ? String(state.mediaSessionId) : null;
-    if (!force && next === state.dialogueSessionId) {
-      updateDialogueControls();
-      if (next && !state.dialogueWatching && typeof socket !== "undefined" && socket?.connected) {
-        socket.emit("server_dialogue_watch", dialoguePayload("server-dialogue-watch"));
-      }
-      return;
-    }
+  function requestDialogueWatch(sessionId, message) {
+    if (typeof socket === "undefined" || !socket?.connected) return;
+    const requestId = dialogueRequestId("server-dialogue-watch");
+    state.dialogueWatchPending = true;
+    state.dialogueWatchRequestId = requestId;
+    state.lastDialogueDiscoveryAt = Date.now();
+    socket.emit("server_dialogue_watch", {
+      sessionId: sessionId || null,
+      trainingSessionId: sessionId && !state.dialogueStandby
+        ? state.trainingSessionId
+        : null,
+      requestId,
+    });
+    setDialogueFeedback(message, "warn");
+    updateDialogueControls();
+  }
+
+  function resetDialogueTarget(next, standby) {
     const previous = state.dialogueSessionId;
-    if (previous && typeof socket !== "undefined" && socket) {
+    if (previous && previous !== next && typeof socket !== "undefined" && socket) {
       socket.emit("server_dialogue_unwatch", {
         sessionId: previous,
         requestId: dialogueRequestId("server-dialogue-unwatch"),
       });
     }
-    state.dialogueSessionId = next;
+    state.dialogueSessionId = next || null;
+    state.dialogueStandby = standby === true;
     state.dialogueWatching = false;
+    state.dialogueWatchPending = false;
+    state.dialogueWatchRequestId = dialogueRequestId("server-dialogue-invalidated");
     state.dialogueListening = false;
     state.dialogueAwake = false;
     clearDialogueLog();
-    updateDialogueControls();
-    if (next && typeof socket !== "undefined" && socket?.connected) {
-      socket.emit("server_dialogue_watch", dialoguePayload("server-dialogue-watch"));
-      setDialogueFeedback("正在连接当前课程的儿童端对话运行时…", "warn");
-    } else if (!next) {
-      setDialogueFeedback("等待课程开始", "");
+  }
+
+  function syncDialogueWatch(force) {
+    const activeSession = state.active && state.mediaSessionId
+      ? String(state.mediaSessionId)
+      : null;
+
+    if (activeSession) {
+      if (state.dialogueSessionId !== activeSession || state.dialogueStandby) {
+        resetDialogueTarget(activeSession, false);
+      }
+      if (!state.dialogueWatching && !state.dialogueWatchPending) {
+        requestDialogueWatch(activeSession, "正在连接当前课程的儿童端对话运行时…");
+      } else updateDialogueControls();
+      return;
     }
+
+    if (state.dialogueSessionId && !state.dialogueStandby) {
+      resetDialogueTarget(null, false);
+    }
+    if (state.dialogueSessionId && state.dialogueStandby) {
+      if (!state.dialogueWatching && !state.dialogueWatchPending) {
+        requestDialogueWatch(state.dialogueSessionId, "正在恢复儿童端待机对话…");
+      } else updateDialogueControls();
+      return;
+    }
+
+    const canRetry = Date.now() - state.lastDialogueDiscoveryAt >= 3000;
+    if (!state.dialogueWatchPending && (force || canRetry)) {
+      requestDialogueWatch(null, "正在查找在线儿童端并建立待机对话…");
+    } else updateDialogueControls();
   }
 
   function emitDialogueRuntimeControl(action, extra) {
@@ -907,9 +949,6 @@
         dialoguePayload(state.dialogueAwake ? "server-dialogue-sleep" : "server-dialogue-wake"),
       );
       setDialogueFeedback("唤醒状态命令已发送…", "warn");
-    });
-    els.dialogueVoice?.addEventListener("change", () => {
-      emitDialogueRuntimeControl("set_voice", { voiceName: els.dialogueVoice.value });
     });
     els.dialogueSend?.addEventListener("click", sendDialogueText);
     els.dialogueInput?.addEventListener("keydown", (event) => {
@@ -968,6 +1007,8 @@
     const markOffline = () => {
       state.socketOnline = false;
       state.dialogueWatching = false;
+      state.dialogueWatchPending = false;
+      state.dialogueWatchRequestId = null;
       updateBadges();
       updateDialogueControls();
     };
@@ -981,14 +1022,46 @@
     });
     socket.on("server_dialogue_control_ack", (payload) => {
       if (!payload) return;
+      if (
+        payload.action === "watch" &&
+        state.dialogueWatchRequestId &&
+        payload.requestId !== state.dialogueWatchRequestId
+      ) return;
+      if (payload.action === "watch") {
+        state.dialogueWatchPending = false;
+      }
       if (!payload.success) {
         if (payload.action === "watch") state.dialogueWatching = false;
-        setDialogueFeedback(`控制失败：${payload.error || "unknown"}`, "warn");
+        const watchErrors = {
+          child_not_connected: "儿童端未连接；打开儿童端后这里会自动重试",
+          ambiguous_children: "检测到多个儿童端，无法安全判断控制目标",
+          child_has_active_course: "儿童端已有课程会话，正在等待课程状态同步",
+          standby_session_unavailable: "无法建立儿童端待机对话，请检查 Socket 连接",
+        };
+        const message = payload.action === "watch"
+          ? (watchErrors[payload.error] || `连接儿童端失败：${payload.error || "unknown"}`)
+          : `控制失败：${payload.error || "unknown"}`;
+        setDialogueFeedback(message, "warn");
+        updateDialogueControls();
         return;
       }
       if (payload.action === "watch") {
+        const resolvedSessionId = String(payload.sessionId || "").trim();
+        if (!resolvedSessionId) {
+          state.dialogueWatching = false;
+          setDialogueFeedback("服务端没有返回可控制的儿童端会话", "warn");
+          updateDialogueControls();
+          return;
+        }
+        if (
+          state.dialogueSessionId !== resolvedSessionId ||
+          state.dialogueStandby !== (payload.standby === true)
+        ) {
+          resetDialogueTarget(resolvedSessionId, payload.standby === true);
+        }
         state.dialogueWatching = true;
         applyDialogueRuntime(payload);
+        (Array.isArray(payload.messages) ? payload.messages : []).forEach(appendDialogueMessage);
       }
       else setDialogueFeedback("控制命令已接受", "ok");
     });

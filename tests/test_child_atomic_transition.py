@@ -69,6 +69,22 @@ def test_prepare_behavior_animation_does_not_start_playback():
     assert "heldPraiseOverlay" in hold
     assert "holding frame" in hold
     assert "shouldHoldPraiseOverlay(" in hold
+    hold_policy = child[
+        child.index("function shouldHoldPraiseOverlay") :
+        child.index("async function loadChildRuntimeConfig")
+    ]
+    assert "if (!payload) return false;" in hold_policy
+    assert "return false;" in hold_policy
+    assert "restoreCommittedCourseAfterBehavior(playback, reason);" in hold
+    animation = child[child.index("function playBehaviorAnimation") :]
+    assert "playback.courseMediaSnapshot = freezeCommittedCourseFrame();" in animation
+    assert "courseMediaSnapshot: playback.courseMediaSnapshot" in hold
+    aux_handler = child[
+        child.index("if (isAuxOperation) {") :
+        child.index("// Stage the next course while the committed course remains visible.")
+    ]
+    assert 'clearHeldPraiseOverlay("return_without_animation")' in aux_handler
+    assert "payload.returnToCurrentQuestion === true" in aux_handler
     assert "interactiveAutoPraise" in child
     assert "clearHeldPraiseOverlay(" in child
     assert 'clearHeldPraiseOverlay("content_committed")' in child
@@ -80,7 +96,7 @@ def test_prepare_behavior_animation_does_not_start_playback():
         'clearHeldPraiseOverlay("content_committed")'
     )
     template = _read("templates/child.html")
-    assert 'child.js?v=20260826-child-surface-v2' in template
+    assert 'child.js?v=20260827-reward-return-v1' in template
     handle_play = child[
         child.index("function handlePlayResource") :
         child.index('socket.on("play_resource"')
@@ -409,7 +425,7 @@ def test_interactive_controls_use_authorized_parent_socket_bridge():
     assert "relayInteractiveControl(eventName" in child
     assert 'frame.dataset.pageContextActive !== "true"' in child
     assert "}, window.location.origin);" in child
-    assert 'child.js?v=20260826-child-surface-v2' in template
+    assert 'child.js?v=20260827-reward-return-v1' in template
 
     for page, prefix, apply_name in (
         (matching, "matching_", "applyMatchingControl"),

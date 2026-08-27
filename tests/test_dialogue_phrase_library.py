@@ -105,7 +105,7 @@ def test_phrase_config_api_lists_ordering_and_saves(monkeypatch, tmp_path):
     assert pairing["courseCount"] == 1
     assert pairing["courses"] == [{"id": 9, "title": "配对课程"}]
     assert {item["type"] for item in payload["courseTypes"]} == {
-        "global", "mimic", "pairing", "ordering"
+        "global", "pairing", "ordering"
     }
     selected = pairing["slots"][0]["library"][:1]
 
@@ -116,7 +116,7 @@ def test_phrase_config_api_lists_ordering_and_saves(monkeypatch, tmp_path):
     assert saved.get_json()["slot"]["selected"] == selected
 
     rejected = client.put(
-        "/api/config/phrases/question/naming", json={"selected": ["旧课程话术"]}
+        "/api/config/phrases/question/mimic", json={"selected": ["旧课程话术"]}
     )
     assert rejected.status_code == 400
     assert "Demo 版仅允许" in rejected.get_json()["error"]

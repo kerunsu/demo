@@ -2260,6 +2260,7 @@ _child_sid_bindings: Dict[str, Dict[str, Any]] = {}
 _child_sid_capabilities: Dict[str, Optional[bool]] = {}
 _child_sync_attempted_sids = set()
 _child_session_owners: Dict[str, str] = {}
+_DIALOGUE_STANDBY_SESSION_PREFIX = 'dialogue-standby-'
 
 
 def get_connected_child_sid(session_id: Any) -> Optional[str]:
@@ -2274,7 +2275,121 @@ def get_connected_child_sid(session_id: Any) -> Optional[str]:
         detail = _presence_details['child'].get(owner_sid) or {}
         if not detail.get('online', True):
             return None
+        last_seen = int(detail.get('lastSeenMs') or 0)
+        if _now_ms() - last_seen > _PRESENCE_STALE_MS:
+            return None
         return str(owner_sid)
+
+
+def _runtime_binding_has_active_course(
+    runtime: Any,
+    binding: Optional[Dict[str, Any]],
+) -> bool:
+    """Reconcile the runtime flag with the authoritative training lifecycle."""
+    if runtime is None or not runtime.is_active():
+        return False
+    data = binding if isinstance(binding, dict) else {}
+    binding_training_id = str(data.get('trainingSessionId') or '').strip()
+    runtime_training_id = str(
+        getattr(runtime, 'training_session_id', None) or ''
+    ).strip()
+    if (
+        binding_training_id
+        and runtime_training_id
+        and binding_training_id != runtime_training_id
+    ):
+        return True
+    training_id = runtime_training_id or binding_training_id
+    if not training_id:
+        return True
+    try:
+        from app.behavior import get_behavior_service
+
+        training = get_behavior_service().get_training(training_id)
+    except Exception:
+        training = None
+    if training is None:
+        return True
+    return str(getattr(training, 'status', '') or '').lower() == 'active'
+
+
+def bind_unique_child_to_dialogue_standby(socketio) -> Dict[str, Any]:
+    """Bind exactly one live idle child to a private standby dialogue room."""
+    fresh = _fresh_child_sids()
+    if not fresh:
+        return {'ok': False, 'error': 'child_not_connected'}
+    if len(fresh) != 1:
+        return {'ok': False, 'error': 'ambiguous_children'}
+
+    child_sid = str(fresh[0])
+    with _presence_lock:
+        current_binding = dict(_child_sid_bindings.get(child_sid) or {})
+    previous_session_id = str(current_binding.get('sessionId') or '').strip()
+    if previous_session_id.startswith(_DIALOGUE_STANDBY_SESSION_PREFIX):
+        if _child_owner_for_session(previous_session_id) == child_sid:
+            return {
+                'ok': True,
+                'sessionId': previous_session_id,
+                'trainingSessionId': None,
+                'childSid': child_sid,
+                'standby': True,
+            }
+
+    if previous_session_id:
+        try:
+            from app.session import get_session_manager
+
+            session_manager = get_session_manager()
+            runtime = session_manager.get_session(previous_session_id)
+        except Exception:
+            session_manager = None
+            runtime = None
+        if _runtime_binding_has_active_course(runtime, current_binding):
+            return {'ok': False, 'error': 'child_has_active_course'}
+        if runtime is not None and runtime.is_active() and session_manager is not None:
+            try:
+                session_manager.end_session(previous_session_id)
+                logger.info(
+                    '对话待机绑定修正已结束的遗留 Runtime: session=%s training=%s',
+                    previous_session_id,
+                    current_binding.get('trainingSessionId'),
+                )
+            except Exception as exc:
+                logger.warning(
+                    '结束已 finalize 的遗留 Runtime 失败 session=%s: %s',
+                    previous_session_id,
+                    exc,
+                )
+
+    standby_session_id = f'{_DIALOGUE_STANDBY_SESSION_PREFIX}{uuid.uuid4().hex[:16]}'
+    if not _claim_child_session_owner(standby_session_id, child_sid):
+        return {'ok': False, 'error': 'standby_session_claim_failed'}
+    if not _move_sid_to_child_session(
+        socketio,
+        child_sid,
+        standby_session_id,
+        previous_session_id=previous_session_id or None,
+    ):
+        _release_child_session_owner(standby_session_id, child_sid)
+        return {'ok': False, 'error': 'standby_room_join_failed'}
+    if previous_session_id:
+        _release_child_session_owner(previous_session_id, child_sid)
+    _store_child_binding(
+        child_sid,
+        {
+            'studentId': current_binding.get('studentId'),
+            'trainingSessionId': None,
+            'sessionId': standby_session_id,
+        },
+        source='server_dialogue_standby',
+    )
+    return {
+        'ok': True,
+        'sessionId': standby_session_id,
+        'trainingSessionId': None,
+        'childSid': child_sid,
+        'standby': True,
+    }
 
 
 def _now_ms() -> int:
@@ -3215,6 +3330,36 @@ def get_online_presence_snapshot() -> dict:
     }
 
 
+def _apply_aux_overlay_policy(
+    payload: Dict[str, Any],
+    normalized_course_type: str,
+) -> Dict[str, bool]:
+    """Attach the post-animation policy owned by each teacher aux action."""
+    aux = payload.get('aux') if isinstance(payload.get('aux'), dict) else {}
+    is_teacher_praise = bool(aux.get('praise'))
+    interactive_teacher_praise = bool(
+        is_teacher_praise
+        and normalized_course_type in {
+            'pairing', 'matching', 'ordering', 'sequencing'
+        }
+    )
+    is_engagement_feedback = bool(aux.get('attention') or aux.get('reward'))
+
+    if is_teacher_praise:
+        payload['teacherRatingRequired'] = not interactive_teacher_praise
+        payload['returnToCurrentQuestion'] = interactive_teacher_praise
+        payload['holdLastFrame'] = not interactive_teacher_praise
+    elif is_engagement_feedback:
+        payload['returnToCurrentQuestion'] = True
+        payload['holdLastFrame'] = False
+
+    return {
+        'isTeacherPraise': is_teacher_praise,
+        'interactiveTeacherPraise': interactive_teacher_praise,
+        'isEngagementFeedback': is_engagement_feedback,
+    }
+
+
 def register_socket_events(socketio):
     """
     注册所有WebSocket事件处理函数
@@ -3716,6 +3861,8 @@ def register_socket_events(socketio):
                 aux.get('question')
                 or aux.get('praise')
                 or aux.get('hint')
+                or aux.get('attention')
+                or aux.get('reward')
                 or aux.get('socialGreetingIntro')
                 or aux.get('socialGreetingPlay')
                 or aux.get('socialFarewellBye')
@@ -3982,19 +4129,18 @@ def register_socket_events(socketio):
             normalized_course_type = str(
                 payload.get('courseType') or payload.get('course_type') or ''
             ).strip().lower()
-            interactive_teacher_praise = bool(
-                is_teacher_praise
-                and normalized_course_type in {
-                    'pairing', 'matching', 'ordering', 'sequencing'
-                }
+            overlay_policy = _apply_aux_overlay_policy(
+                payload,
+                normalized_course_type,
             )
+            is_teacher_praise = overlay_policy['isTeacherPraise']
+            interactive_teacher_praise = overlay_policy[
+                'interactiveTeacherPraise'
+            ]
             if is_teacher_praise:
                 # Pairing/ordering praise uses the same multimodal behavior plan
                 # as every other course. Only its post-animation workflow differs:
                 # remove the overlay and reveal the already committed question.
-                payload['teacherRatingRequired'] = not interactive_teacher_praise
-                payload['returnToCurrentQuestion'] = interactive_teacher_praise
-                payload['holdLastFrame'] = not interactive_teacher_praise
                 _update_play_request(
                     request_id,
                     teacher_rating_required=not interactive_teacher_praise,
@@ -4466,11 +4612,13 @@ def register_socket_events(socketio):
                 'resourceReadySupported': resource_ready_supported,
             }
             if is_teacher_praise:
-                success_ack.update({
-                    'teacherRatingRequired': not interactive_teacher_praise,
-                    'returnToCurrentQuestion': interactive_teacher_praise,
-                    'holdLastFrame': not interactive_teacher_praise,
-                })
+                success_ack['teacherRatingRequired'] = not interactive_teacher_praise
+            if 'returnToCurrentQuestion' in payload:
+                success_ack['returnToCurrentQuestion'] = bool(
+                    payload.get('returnToCurrentQuestion')
+                )
+            if 'holdLastFrame' in payload:
+                success_ack['holdLastFrame'] = bool(payload.get('holdLastFrame'))
             if robot_result.get('shadowReport'):
                 success_ack['shadowReport'] = robot_result.get('shadowReport')
             _update_play_request(

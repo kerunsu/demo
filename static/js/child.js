@@ -590,7 +590,7 @@ function notifyInteractiveFrame(type, payload) {
 }
 
 function shouldHoldPraiseOverlay(payload) {
-  if (!payload) return true;
+  if (!payload) return false;
   if (payload.holdLastFrame === true || payload.hold_last_frame === true) return true;
   if (payload.holdLastFrame === false || payload.hold_last_frame === false) return false;
   if (payload.interactiveAutoPraise === true || payload.interactive_auto_praise === true) {
@@ -1166,7 +1166,7 @@ function layoutCourseImageFrame(image) {
   image.style.setProperty("--course-image-content-height", `${renderedHeight}px`);
   image.style.setProperty("--course-image-frame-width", `${frameWidth}px`);
   image.style.setProperty("--course-image-frame-radius", `${radius}px`);
-  return true;
+  return false;
 }
 
 function applyCourseImagePresentation(image, presentation) {
@@ -1348,19 +1348,52 @@ function restoreCommittedMedia() {
 }
 
 function freezeCommittedCourseFrame() {
+  if (!currentVisibleCourseMedia || !currentVisibleCourseMedia.el) return null;
+  const snapshot = {
+    el: currentVisibleCourseMedia.el,
+    type: currentVisibleCourseMedia.type,
+    transitionId: currentVisibleCourseMedia.transitionId || null,
+    wasPlaying: false,
+  };
   if (
-    !currentVisibleCourseMedia ||
-    currentVisibleCourseMedia.type !== "video" ||
-    !currentVisibleCourseMedia.el ||
-    typeof currentVisibleCourseMedia.el.pause !== "function"
+    currentVisibleCourseMedia.type === "video" &&
+    typeof currentVisibleCourseMedia.el.pause === "function"
+  ) {
+    snapshot.wasPlaying = !currentVisibleCourseMedia.el.paused && !currentVisibleCourseMedia.el.ended;
+    try {
+      currentVisibleCourseMedia.el.pause();
+    } catch (error) {
+      console.warn("暂停课程视频以保留评分帧失败:", error);
+    }
+  }
+  return snapshot;
+}
+
+function restoreCommittedCourseAfterBehavior(playback, reason = "") {
+  if (reason === "teacher_leave") return;
+  const snapshot = playback?.courseMediaSnapshot || null;
+  if (
+    snapshot &&
+    (!currentVisibleCourseMedia || currentVisibleCourseMedia.el !== snapshot.el)
   ) {
     return;
   }
-  try {
-    // pause() preserves the browser's currently decoded frame.
-    currentVisibleCourseMedia.el.pause();
-  } catch (error) {
-    console.warn("暂停课程视频以保留评分帧失败:", error);
+  restoreCommittedMedia();
+  if (
+    snapshot?.type === "video" &&
+    snapshot.wasPlaying &&
+    snapshot.el &&
+    !snapshot.el.ended &&
+    typeof snapshot.el.play === "function"
+  ) {
+    try {
+      const resume = snapshot.el.play();
+      if (resume && typeof resume.catch === "function") {
+        resume.catch(error => console.warn("恢复课程视频播放失败:", error));
+      }
+    } catch (error) {
+      console.warn("恢复课程视频播放失败:", error);
+    }
   }
 }
 
@@ -1996,6 +2029,10 @@ function handlePlayResource(payload) {
   // 如果是纯 aux 操作，只播放音频/视频，不重新加载内容
   if (isAuxOperation) {
     console.log("收到aux操作，只播放音频，不重新加载内容", aux);
+    if (payload.returnToCurrentQuestion === true && !payload.behaviorAnimation) {
+      clearHeldPraiseOverlay("return_without_animation");
+      restoreCommittedMedia();
+    }
     // browser TTS：提问/表扬/提示/社交打招呼再见由 robot_speak_text 朗读，跳过预录直链
     const isBrowserSpokenAux = aux.question || aux.praise || aux.hint
       || aux.attention || aux.reward
@@ -3073,6 +3110,7 @@ function clearHeldPraiseOverlay(reason = "") {
     return;
   }
   cleanupBehaviorAnimationElement(held.video);
+  restoreCommittedCourseAfterBehavior(held, reason);
   console.log("🧹 [child.js] cleared held praise overlay:", reason || "unspecified");
 }
 
@@ -3124,6 +3162,7 @@ function finishBehaviorAnimationPlayback(playback, status, reason = "") {
       video: playback.video,
       playbackId: playback.playbackId,
       payload: playback.payload,
+      courseMediaSnapshot: playback.courseMediaSnapshot,
     };
     notifyInteractiveFrame("behavior_animation_ended", {
       ...terminal,
@@ -3140,6 +3179,7 @@ function finishBehaviorAnimationPlayback(playback, status, reason = "") {
       activeBehaviorAnimationPlayback = null;
       cleanupBehaviorAnimationElement(playback.video);
     }
+    restoreCommittedCourseAfterBehavior(playback, reason);
     notifyInteractiveFrame("behavior_animation_ended", {
       ...terminal,
       ...(playback.payload || {}),
@@ -3262,6 +3302,7 @@ function playBehaviorAnimation(videoPath, payload = {}) {
     loadTimer: null,
     finishTimer: null,
     watchdogTimer: null,
+    courseMediaSnapshot: null,
     readyEmitted: Boolean(reusePrepared && behaviorAnimationEl.readyState >= 2),
   };
   activeBehaviorAnimationPlayback = playback;
@@ -3297,7 +3338,7 @@ function playBehaviorAnimation(videoPath, payload = {}) {
     behaviorAnimationEl.oncanplay = null;
     // Preloading must not pause the course. Freeze only at the shared start
     // anchor when the encouragement overlay actually becomes visible.
-    freezeCommittedCourseFrame();
+    playback.courseMediaSnapshot = freezeCommittedCourseFrame();
     behaviorAnimationEl.play().then(() => {
       if (activeBehaviorAnimationPlayback !== playback || playback.finished) return;
       behaviorAnimationEl.style.opacity = "1";

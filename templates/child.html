@@ -8,20 +8,10 @@
   <link rel="stylesheet" href="/static/css/child.css?v=20260826-child-surface-v2">
   <script src="/static/js/child_kiosk_guard.js?v=20260826-child-surface-v2"></script>
   <script src="/static/js/vendor/socket.io.min.js"></script>
-  <!-- 姿态分析相关脚本已注释，待迁移到后端 -->
-  <!-- <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script> -->
-  <!-- <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script> -->
-  <!-- <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script> -->
-  <!-- <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest"></script> -->
-
 </head>
 <body>
   <h1>儿童端页面</h1>
   <p id="status">等待中...</p>
-  <!-- 姿态模仿的测试 - 已注释，待迁移到后端 -->
-  <!-- <div id="poseProgressContainer" style="display: none;">
-    <div id="poseProgressBar">0%</div>
-  </div> -->
   <video id="childCam" autoplay playsinline muted></video>
 
   <!-- 待机图片（3秒后显示） -->
@@ -62,10 +52,13 @@
       if (status && status.innerText.indexOf("连接失败") >= 0) status.innerText = "等待中...";
     });
   </script>
-  <script src="/static/js/browser_tts.js?v=20260824-speech-warm-v1"></script>
+  <script>
+    window.FIXED_BROWSER_TTS_VOICE = {{ fixed_browser_tts_voice | tojson }};
+  </script>
+  <script src="/static/js/browser_tts.js?v=20260827-fixed-xiaoyi-v2"></script>
   <script src="/static/js/audio_player.js?v=20260730-behavior-lock"></script>
-  <script src="/static/js/child_dialogue.js?v=20260826-dialogue-runtime-v3"></script>
-  <script type="module" src="/static/js/child.js?v=20260826-child-surface-v2"></script>
+  <script src="/static/js/child_dialogue.js?v=20260827-dialogue-runtime-v7"></script>
+  <script type="module" src="/static/js/child.js?v=20260827-reward-return-v1"></script>
 
 </body>
 </html>

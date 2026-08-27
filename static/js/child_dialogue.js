@@ -16,10 +16,18 @@
   /** 连续 ASR 关键词命中与对话 STT 可能同句双发，短窗去重 */
   let lastChildTranscriptKey = "";
   let lastChildTranscriptAt = 0;
+  /** 防止浏览器连续识别在重启边界把同一最终句再次提交给 LLM。 */
+  let lastSubmittedTranscriptKey = "";
+  let lastSubmittedTranscriptAt = 0;
+  let lastSubmittedFingerprint = "";
+  const SUBMITTED_TRANSCRIPT_DEDUPE_MS = 8000;
+  let recognitionMinConfidence = 0.55;
   /** 本地唤醒状态（与服务端 session+题目指纹绑定；题目切换后清除） */
   let dialogueAwake = false;
   let wakeWordEnabled = false;
   let activeCourseSessionId = null;
+  // Server 对话台在未开课时分配的精确待机会话。开课后立即让位给正式会话。
+  let standbyDialogueSessionId = null;
   let lastPageFingerprint = "";
   let lastFingerprintCheckAt = 0;
 
@@ -40,7 +48,7 @@
   }
 
   function getSessionId() {
-    return activeCourseSessionId || global.currentSessionId || null;
+    return activeCourseSessionId || global.currentSessionId || standbyDialogueSessionId || null;
   }
 
   function makeDialogueRequestId() {
@@ -165,6 +173,7 @@
       microphoneBlocked: micBlocked,
       voices,
       selectedVoice: global.BrowserTts?.getPreferredBrowserSpeechVoiceName?.() || "",
+      voiceAvailable: global.BrowserTts?.isFixedBrowserSpeechVoiceAvailable?.() === true,
       clientTimestamp: Date.now(),
       ...(extra || {}),
     });
@@ -386,6 +395,24 @@
       return false;
     }
     syncAwakeForPageContext();
+    const transcriptKey = normalizeTranscriptKey(trimmed);
+    const fingerprint = pageContextFingerprint(buildPageContext());
+    const now = Date.now();
+    if (
+      recognitionProvider &&
+      transcriptKey &&
+      transcriptKey === lastSubmittedTranscriptKey &&
+      fingerprint === lastSubmittedFingerprint &&
+      now - lastSubmittedTranscriptAt < SUBMITTED_TRANSCRIPT_DEDUPE_MS
+    ) {
+      console.warn("[child_dialogue] 忽略浏览器重复最终识别：", trimmed);
+      setStatus("已过滤重复识别，继续聆听…");
+      maybeResumeListening();
+      return false;
+    }
+    lastSubmittedTranscriptKey = transcriptKey;
+    lastSubmittedTranscriptAt = now;
+    lastSubmittedFingerprint = fingerprint;
     dialogueBusy = true;
     childBubbleLoggedForPending = true;
     appendChildTranscript(trimmed);
@@ -489,22 +516,48 @@
       recognition.interimResults = true;
       recognition.continuous = true;
       let finalText = "";
+      let finalConfidenceSum = 0;
+      let finalConfidenceCount = 0;
       recognition.onresult = (event) => {
         if (speechRec !== recognition) return;
         if (!autoListenEnabled || dialogueBusy) return;
+        const browserSpeechBusy = Boolean(
+          global.BrowserTts?.isBrowserSpeechBusy?.(),
+        );
+        const ttsIsActive = asrPausedForTts || browserSpeechBusy;
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; i += 1) {
           const piece = event.results[i][0].transcript || "";
-          if (event.results[i].isFinal) finalText += piece;
-          else interim += piece;
+          if (event.results[i].isFinal) {
+            finalText += piece;
+            const confidence = Number(event.results[i][0].confidence);
+            if (Number.isFinite(confidence) && confidence > 0) {
+              finalConfidenceSum += confidence;
+              finalConfidenceCount += 1;
+            }
+          } else interim += piece;
         }
-        setStatus(asrPausedForTts
+        setStatus(ttsIsActive
           ? `朗读中，仍在听：${finalText || interim || "…"}`
           : `正在听：${finalText || interim || "…"}`);
         if (finalText.trim().length >= 2) {
           const text = finalText.trim();
+          const confidence = finalConfidenceCount > 0
+            ? finalConfidenceSum / finalConfidenceCount
+            : null;
           finalText = "";
-          if (asrPausedForTts) {
+          finalConfidenceSum = 0;
+          finalConfidenceCount = 0;
+          if (confidence != null && confidence < recognitionMinConfidence) {
+            console.warn("[child_dialogue] 过滤低置信度浏览器识别", confidence, text);
+            setStatus("环境声音较杂，没有作为回答提交…");
+            emitDialogueRuntimeState({
+              reason: "low_confidence_ignored",
+              recognitionConfidence: confidence,
+            });
+            return;
+          }
+          if (ttsIsActive) {
             if (!pendingTtsTranscript) {
               pendingTtsTranscript = text;
               pendingTtsTranscriptReference = activeTtsReferenceText;
@@ -704,7 +757,15 @@
           maybeResumeListening();
           return;
         }
-        if (/tts_echo/i.test(err)) {
+        if (err === "agent_stopped") {
+          setDialogueAwake(false, { updateStatus: false });
+          setStatus("智能体已停止，仍在聆听…");
+          maybeResumeListening();
+          return;
+        }
+        if (/duplicate_utterance/i.test(err)) {
+          setStatus("已过滤重复识别，继续说…");
+        } else if (/tts_echo/i.test(err)) {
           setStatus("已过滤扬声器回声，继续说…");
         } else if (/EMPTY|empty|no_speech|audio_too_short|implausible_transcript/i.test(err)) {
           setStatus("没听清，继续说…");
@@ -739,23 +800,8 @@
       } else {
         setStatus(`你说：${transcript}${provider}`);
       }
-      // 兜底：若 robot_speak_text 未到（未 pauseAsr），本地补读，避免「有字无声」
-      if (replyText) {
-        const speakFallback = replyText;
-        window.setTimeout(() => {
-          if (asrPausedForTts) return;
-          if (global.BrowserTts?.isBrowserSpeechBusy?.()) return;
-          if (!global.BrowserTts?.isBrowserSpeechSynthesisSupported?.()) return;
-          console.warn("[child_dialogue] robot_speak_text 未触发，本地补读");
-          pauseAsrForTts(speakFallback);
-          global.BrowserTts.unlockBrowserSpeechOutput?.();
-          global.BrowserTts.speakBrowserText(speakFallback, {
-            onEnd: () => resumeAsrAfterTts(),
-            onError: () => resumeAsrAfterTts(),
-          });
-        }, 1800);
-      }
-      // 若即将朗读，由 pauseAsrForTts 接管；否则恢复聆听
+      // 朗读只接受带 behavior/request 身份的 robot_speak_text。旧的本地
+      // 补读会与行为锁释放后的排队命令重复播放，不能保留第二条通路。
       if (!asrPausedForTts) {
         maybeResumeListening();
       }
@@ -766,6 +812,11 @@
       if (awake) {
         ensureListeningAfterTeacherWake(data && data.requestId);
       } else {
+        // “停止智能体”只关闭回复门，不关闭课程期内的连续识别。
+        dialogueBusy = false;
+        childBubbleLoggedForPending = false;
+        setListenButtonState();
+        maybeResumeListening();
         emitDialogueRuntimeState({
           requestId: data && data.requestId,
           reason: (data && data.reason) || "agent_closed",
@@ -810,7 +861,10 @@
 
   function beginCourseListening(payload, reason) {
     const sessionId = String(payload?.sessionId || payload?.session_id || "").trim();
-    if (sessionId) activeCourseSessionId = sessionId;
+    if (sessionId) {
+      activeCourseSessionId = sessionId;
+      standbyDialogueSessionId = null;
+    }
     requestDialogueControlState(sessionId || getSessionId());
     startAutoListen(reason || "course_started");
     window.setTimeout(() => emitDialogueRuntimeState({ reason: reason || "course_started" }), 0);
@@ -822,6 +876,7 @@
     stopAutoListen(reason || "course_ended");
     if (dialogueAwake) emitDialogueSleep(reason || "course_ended");
     activeCourseSessionId = null;
+    standbyDialogueSessionId = null;
   }
 
   function bindDialogueRuntime() {
@@ -857,7 +912,11 @@
       });
       socket.on("child_dialogue_runtime_control", (payload) => {
         const sessionId = String(payload?.sessionId || "").trim();
-        if (sessionId && getSessionId() && sessionId !== String(getSessionId())) return;
+        const courseSessionId = String(
+          activeCourseSessionId || global.currentSessionId || "",
+        ).trim();
+        if (sessionId && courseSessionId && sessionId !== courseSessionId) return;
+        if (sessionId && !courseSessionId) standbyDialogueSessionId = sessionId;
         const action = String(payload?.action || "");
         if (action === "listen_start") startAutoListen("server_listen_start");
         else if (action === "listen_stop") stopAutoListen("server_listen_stop");
@@ -865,19 +924,48 @@
           global.BrowserTts?.unlockBrowserSpeechOutput?.();
           emitDialogueRuntimeState({ requestId: payload?.requestId, reason: "server_audio_unlock" });
         } else if (action === "set_voice") {
-          global.BrowserTts?.setPreferredBrowserSpeechVoice?.(payload?.voiceName || "");
-          emitDialogueRuntimeState({ requestId: payload?.requestId, reason: "server_voice_changed" });
+          // 一版兼容：旧 Server 可能仍发送该动作。音色已锁定，只回报状态。
+          emitDialogueRuntimeState({ requestId: payload?.requestId, reason: "voice_locked" });
+        } else if (action === "state_request") {
+          emitDialogueRuntimeState({
+            requestId: payload?.requestId,
+            reason: "server_state_requested",
+          });
         }
+      });
+      // 第一次状态上报可能早于 join_session；房间确认后必须补报一次。
+      socket.on("joined_session", (payload) => {
+        if (payload?.role && payload.role !== "child") return;
+        const sessionId = String(payload?.sessionId || payload?.session_id || "").trim();
+        if (sessionId && getSessionId() && sessionId !== String(getSessionId())) return;
+        emitDialogueRuntimeState({ reason: "child_session_joined" });
+      });
+      socket.on("child_session_sync", (payload) => {
+        const sessionId = String(payload?.sessionId || payload?.session_id || "").trim();
+        if (sessionId && getSessionId() && sessionId !== String(getSessionId())) return;
+        emitDialogueRuntimeState({ reason: "child_session_synced" });
       });
       socket.on("connect", () => {
         if (activeCourseSessionId) startAutoListen("socket_reconnected");
+        else standbyDialogueSessionId = null;
         emitDialogueRuntimeState({ reason: "socket_connected" });
       });
     }
 
     global.BrowserTts?.subscribeBrowserSpeechVoiceChanges?.(() => {
+      global.BrowserTts?.warmBrowserSpeechOutput?.();
       emitDialogueRuntimeState({ reason: "voices_changed" });
     });
+
+    fetch("/api/child/runtime-config", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((config) => {
+        const value = Number(config?.dialogueAsrMinConfidence);
+        if (Number.isFinite(value) && value >= 0 && value <= 1) {
+          recognitionMinConfidence = value;
+        }
+      })
+      .catch(() => undefined);
 
     waitForSocketAndBind(50);
     console.log("[child_dialogue] 运行时已绑定：课程生命周期 → 浏览器语音识别 → 唤醒词/课程关键词 → LLM");

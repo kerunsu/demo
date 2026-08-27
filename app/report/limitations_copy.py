@@ -6,6 +6,7 @@ from typing import Iterable, List, Optional
 
 LIMITATION_LABELS = {
     "TEACHER_RATING_MISSING": "部分课点缺少教师评分，相关结果仅依据已有有效记录呈现",
+    "COURSE_SAMPLE_INSUFFICIENT": "部分课程未达到最低有效样本量，暂定分未计入综合表现和能力结论",
     "LANGUAGE_DATA_MISSING": "语言过程样本不足，相关结果仅依据有效课程作答形成",
     "EXPRESSIVE_DATA_MISSING": "表达性语言有效结果不足，本次未作推断",
     "RECEPTIVE_DATA_MISSING": "接受性语言有效结果不足，本次未作推断",

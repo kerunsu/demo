@@ -39,5 +39,5 @@ later release proves a complete application factory.
 `prepare_training` reserves a session and verifies browser permission/device
 readiness. A successful path starts one continuous recording, verifies required
 first samples and rolls back partial resources on failure. Course changes append
-timeline segments and never restart the session recording. Only mimic, pairing
-and ordering can enter this flow; reports project the same fixed scope.
+timeline segments and never restart the session recording. Only pairing and
+ordering can enter this flow; reports project the same fixed course scope.

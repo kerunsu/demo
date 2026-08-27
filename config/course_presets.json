@@ -7,13 +7,6 @@
     {
       "courseSelections": [
         {
-          "courseType": "mimic",
-          "itemIds": [
-            1,
-            2
-          ]
-        },
-        {
           "courseType": "pairing",
           "itemIds": [
             79
@@ -26,7 +19,7 @@
           ]
         }
       ],
-      "description": "仅评估模仿识别、配对和排序的指定课点",
+      "description": "仅评估配对和排序的指定课点",
       "id": "demo-assessment",
       "mode": "assessment",
       "name": "Demo 评估方案"
@@ -34,13 +27,6 @@
     {
       "courseSelections": [
         {
-          "courseType": "mimic",
-          "itemIds": [
-            1,
-            2
-          ]
-        },
-        {
           "courseType": "pairing",
           "itemIds": [
             79
@@ -53,7 +39,7 @@
           ]
         }
       ],
-      "description": "仅训练模仿识别、配对和排序的指定课点",
+      "description": "仅训练配对和排序的指定课点",
       "id": "demo-intervention",
       "mode": "intervention",
       "name": "Demo 干预方案"

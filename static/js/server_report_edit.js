@@ -1,12 +1,11 @@
 (function () {
   const tid = window.__REPORT_EDIT_ID__;
   const DIM_KEYS = [
-    ["attention", "注意力与模仿参与"],
+    ["attention", "注意力参与"],
     ["matching", "配对"],
     ["ordering", "排序"],
   ];
   const COURSE_KEYS = [
-    ["mimic", "模仿"],
     ["pairing", "配对"],
     ["ordering", "排序"],
   ];
@@ -41,7 +40,7 @@
   function parseRecommendationBody(body) {
     const text = String(body || "").trim();
     const match = text.match(
-      /练什么[：:]\s*([\s\S]*?)\s*为什么[：:]\s*([\s\S]*?)\s*(?:进步判断|如何判断进步)[：:]\s*([\s\S]*)/
+      /(?:训练内容|练什么|做什么)[：:]\s*([\s\S]*?)\s*(?:建议依据|为什么练|为什么做|为什么)[：:]\s*([\s\S]*?)\s*(?:成效判据|进步标志|进步判断|如何判断进步)[：:]\s*([\s\S]*)/
     );
     return match
       ? { practice: match[1].trim(), why: match[2].trim(), progressCheck: match[3].trim() }

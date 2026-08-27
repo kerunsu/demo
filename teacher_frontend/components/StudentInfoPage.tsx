@@ -141,7 +141,6 @@ interface Student {
   trainingData: Array<{ date: string; count: number }>;
   has_training?: boolean;
   latest_behavior_session_id?: string | null;
-  imitation_placeholder?: boolean;
 }
 
 interface TrainingSession {
@@ -166,25 +165,19 @@ interface InterventionData {
   overall_score?: number | null;
 }
 
-const COURSE_SERIES = ['命名', '拟声', '模仿', '配对', '排序'] as const;
+const COURSE_SERIES = ['配对', '排序'] as const;
 
 const API_BASE_URL = '';
 
 // 能力类型颜色配置
 const ABILITY_COLORS = [
   '#4f46e5', // 注意力 - indigo
-  '#10b981', // 模仿 - green
   '#f59e0b', // 配对 - amber
   '#ef4444', // 排序 - red
-  '#8b5cf6', // 表达性语言 - purple
-  '#06b6d4', // 接收性语言 - cyan
 ];
 
 // 课程类型颜色配置
 const COURSE_COLORS = [
-  '#4f46e5', // 命名 - indigo
-  '#10b981', // 拟声 - green
-  '#f59e0b', // 模仿 - amber
   '#ef4444', // 配对 - red
   '#8b5cf6', // 排序 - purple
 ];
@@ -841,11 +834,6 @@ export function StudentInfoPage({
                           />
                         </RadarChart>
                       </ResponsiveContainer>
-                      {currentStudent.imitation_placeholder !== false && (
-                        <p className="text-xs text-gray-400 text-center mt-1">
-                          「模仿」暂为占位参考分（60）
-                        </p>
-                      )}
                     </div>
                   ) : (
                     <div className="h-[280px] flex items-center justify-center text-gray-500">

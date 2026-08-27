@@ -113,7 +113,7 @@ def _recommendation(course: Dict[str, Any], index: int, *, consolidation: bool) 
         "practice": practice["practice"],
         "why": why,
         "progressCheck": practice["progress"],
-        "body": f"练什么：{practice['practice']} 为什么：{why} 进步判断：{practice['progress']}",
+        "body": f"训练内容：{practice['practice']} 建议依据：{why} 成效判据：{practice['progress']}",
     }
 
 

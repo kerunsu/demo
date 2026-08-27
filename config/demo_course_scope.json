@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "deployment": "demo-machine",
   "enabledCourseTypes": [
-    "mimic",
     "pairing",
     "ordering"
   ]

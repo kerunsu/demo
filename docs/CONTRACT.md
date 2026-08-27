@@ -1,6 +1,6 @@
 # Demo 接口与行为契约
 
-本文是独立 Demo 仓库的现行外部契约。课程只有 `mimic`、`pairing`、`ordering`；机械动作、Robot Runtime 和完整版本表情固定禁用。历史字段名只作兼容，不扩大产品能力。
+本文是独立 Demo 仓库的现行外部契约。课程只有 `pairing`、`ordering`；机械动作、Robot Runtime 和完整版本表情固定禁用。历史字段名只作兼容，不扩大产品能力。
 
 ## 稳定身份字段
 
@@ -44,13 +44,12 @@ Socket 只投递到明确房间：
 
 唯一有效课型来自 `config/demo_course_scope.json`：
 
-- `mimic`：图片动作模仿与姿态识别。
 - `pairing`：相同/配对互动。
 - `ordering`：大小、长短、高矮、多少等规则排序。
 
 课程目录、预设、配置 API、首次数据库、教师端选择、分析投影和新报告都必须按同一范围过滤。旧数据库其他课程行可保留用于历史数据，不得进入新训练或报告。
 
-非法、缺失或尝试扩大的范围配置安全回退到上述三类。
+非法、缺失或尝试扩大的范围配置安全回退到上述两类。
 
 ## 课程资源与原子切换
 
@@ -62,12 +61,6 @@ Socket 只投递到明确房间：
 4. 过期 token、旧会话或旧 request 不得覆盖已提交内容。
 
 视频、图片、互动 iframe 和儿童屏动画遵守同一身份相关规则。互动 iframe 只能通过授权父页面桥接发送题目/点击事件。
-
-## 模仿识别
-
-模仿课展示动作图片，由真实姿态分析器和 matcher 比对。当前部署默认阈值为 0.50，允许镜像。问题开始、稳定命中、自动表扬和教师评分必须绑定同一 training/question/item 身份。
-
-模仿话术只能引导儿童观察图片并完成身体动作，不得退化为命名、跟读或拟声，也不得声称机器人会示范动作。
 
 ## 配对与排序
 
@@ -87,6 +80,8 @@ Socket 只投递到明确房间：
 `robot_speak_text` 与 `robot_speak_ended` 是历史事件名，Demo 中含义是浏览器朗读，不代表机器人或硬件输出。语音命令携带 session/request/behavior/speech 身份；重复语音返回 duplicate/busy，不能覆盖活动语音。
 
 教师可在当前精确会话中唤醒、关闭或查询儿童对话状态。命令不得改变录制状态，不得影响其他房间。儿童端持续回报浏览器麦克风、识别和 voice 状态。
+
+Server 监控页通过 `server_dialogue_watch` / `server_dialogue_unwatch` 订阅单一儿童私有对话房间；无活动课程时只允许绑定唯一在线儿童的待机会话。`server_dialogue_text` 注入的文字和 `server_dialogue_runtime_control` 的监听/音频解锁命令都必须携带 `requestId`，服务端以 `server_dialogue_control_ack` 精确应答，并以 `server_dialogue_event` 推送该房间的对话记录。下发儿童端的 `child_dialogue_runtime_control` 只能进入解析出的精确 child room，不能全局广播。
 
 ## 儿童屏动画
 
@@ -140,7 +135,7 @@ Socket 只投递到明确房间：
 
 ## 报告
 
-报告只按三课型计算并显示：
+报告课程投影只按两课型计算；跨课程注意力证据继续显示：
 
 - 注意力 `attention`
 - 配对 `matching`
@@ -148,7 +143,7 @@ Socket 只投递到明确房间：
 
 默认权重 34/33/33。缺失数据保持 null/数据不足，不把缺失当 0。报告生成是幂等读取准备；教师提交审核后状态稳定，不因轮询重复生成。
 
-配对/排序的完成反馈进入评分；模仿使用姿态识别和教师评分证据。旧课程历史数据可以读，但不进入 Demo 新报告维度或课程列表。
+配对/排序的完成反馈进入评分。旧课程历史数据可以读，但不进入 Demo 新报告课程投影或课程列表。
 
 ## 现行 HTTP 面
 
@@ -159,14 +154,14 @@ Socket 只投递到明确房间：
 - `/api/media/*`：连续媒体上行和状态。
 - `/api/monitor/*`：连接、采集、分析和录制监控。
 - `/api/server/status`：包含 `deployment=demo-machine` 与固定 Demo 能力集合，供启动脚本防止误复用完整版进程。
-- `/api/config/*`：三课程、课点、预设、话术和内容配置；旧课型话术写入返回 400，旧文件音频条目配置返回 410。
+- `/api/config/*`：两课程、课点、预设、话术和内容配置；旧课型话术写入返回 400，旧文件音频条目配置返回 410。
 - `/api/server/config/*`：分析器与报告配置文件。
 - `/api/v2/capture/*`：额外 Server 设备配置。
 - `/api/v2/control/*`：浏览器设备提示、录制目录和安全运维动作。
 - `/api/v2/interaction/*`：InteractionProfileV2 草稿、发布和解析预览；未发布/非法/未命中回退 legacy。
 - `/api/v2/config/sync/*`：不含敏感/禁用内容的可审查配置清单和导出。
 - `/api/v2/timeline/*`：交互时间线和延迟诊断。
-- `/api/report/*`：三课程报告与审核。
+- `/api/report/*`：两课程报告与审核；跨课程注意力证据继续保留。
 
 机器可读快照位于 `tests/fixtures/contracts/`，与运行时 URL/Socket 注册交叉验证。
 

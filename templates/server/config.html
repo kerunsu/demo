@@ -93,7 +93,7 @@
       <div class="cc-grid cols-3" id="workbench-issues" style="margin-top:14px;"></div>
       <div class="cc-card" id="cc-sync-card" style="margin-top:14px;">
         <h3 class="cc-card-title">配置中心协作同步</h3>
-        <p class="cc-tiny">导出可审查的 Demo 配置包，包含 YAML/CSV/JSON、三类课程目录、儿童屏动画和课程媒体；不包含机械动作、机器人 Runtime、完整版表情、录音、报告、数据库或学生个人数据。</p>
+        <p class="cc-tiny">导出可审查的 Demo 配置包，包含 YAML/CSV/JSON、两类课程目录、儿童屏动画和课程媒体；不包含机械动作、机器人 Runtime、完整版表情、录音、报告、数据库或学生个人数据。</p>
         <div class="cc-toolbar" style="margin-top:10px;">
           <button type="button" class="cc-btn soft" id="btn-sync-refresh">检查同步内容</button>
           <a class="cc-btn primary" id="btn-sync-export" href="/api/v2/config/sync/export" download>下载同步包</a>
@@ -102,7 +102,7 @@
         <pre id="cc-sync-preview" class="cc-tiny" style="white-space:pre-wrap;max-height:140px;overflow:auto;margin-top:8px;"></pre>
       </div>
       <div class="cc-notice info" style="margin-top:16px;">
-        Demo 固定课程范围：模仿、配对、排序。儿童屏鼓励动画不属于机器人表情。
+        Demo 固定课程范围：配对、排序。儿童屏鼓励动画不属于机器人表情。
       </div>
     </section>
 
@@ -339,7 +339,7 @@
           <p class="cc-tiny">用于检查课程事件最终会匹配哪条台词或儿童屏内容；机械动作和完整版表情始终禁用。</p>
           <div class="cc-form-row">
             <input id="phase5-profile-course" class="cc-inp" placeholder="courseId" />
-            <input id="phase5-profile-event" class="cc-inp" value="question.mimic" placeholder="eventKey" />
+            <input id="phase5-profile-event" class="cc-inp" value="question.pairing" placeholder="eventKey" />
             <input id="phase5-profile-scene" class="cc-inp" placeholder="sceneKey（可选）" />
             <button type="button" class="cc-btn primary small" id="phase5-profile-resolve">解析</button>
           </div>

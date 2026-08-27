@@ -9,7 +9,7 @@
   "runtimeImplicitRoutes": [
     "GET /static/<path:filename>"
   ],
-  "socketDecoratorCount": 63,
+  "socketDecoratorCount": 67,
   "blueprintPrefixes": {
     "robot_bp": "/api/robot",
     "media_bp": "/api/media",
@@ -233,6 +233,10 @@
     "sequencing_set_config",
     "sequencing_start",
     "sequencing_status_update",
+    "server_dialogue_runtime_control",
+    "server_dialogue_text",
+    "server_dialogue_unwatch",
+    "server_dialogue_watch",
     "show_image",
     "stop_audio",
     "stop_recording",
@@ -259,6 +263,7 @@
     "cancel_prepare_training_ack",
     "child_dialogue_control_state",
     "child_dialogue_result",
+    "child_dialogue_runtime_control",
     "child_dialogue_visibility",
     "child_dialogue_wake_state",
     "child_session_sync",
@@ -301,6 +306,8 @@
     "sequencing_set_config",
     "sequencing_start",
     "sequencing_status_update",
+    "server_dialogue_control_ack",
+    "server_dialogue_event",
     "session_summary",
     "show_image",
     "stop_audio",

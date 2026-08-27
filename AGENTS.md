@@ -6,7 +6,7 @@
 
 本仓库是与完整版本目录、Git 工作树和部署包相互独立的 Demo 产品。同步完整版本更新前必须阅读 `docs/DEMO_SYNC.md`，不得整目录覆盖。
 
-- 唯一启用课型为 `mimic`、`pairing`、`ordering`；课程选择、配置、预设、采集分析和新报告都只能投影这三类。
+- 唯一启用课型为 `pairing`、`ordering`；课程选择、配置、预设、采集分析和新报告都只能投影这两类。
 - `config/demo_course_scope.json` 是课程范围事实源，`config/demo_deployment.json` 是部署能力事实源；二者非法或缺失时必须安全收紧，不能扩大权限。
 - Demo 没有机械结构，不注册机械 Socket 事件，不启动 Robot Runtime，不提供动作接口/页面/资产，也不消费完整版本的表情协议或表情素材。
 - `static/resources/Animations/` 是儿童屏幕鼓励动画，不属于机器人表情，必须保留。浏览器语音、儿童页面、采集、分析、教师评分和报告流程保持正常。

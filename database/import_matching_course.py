@@ -8,6 +8,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.models import db, Course, CourseItem, CourseType
+from app.config import Config
 from flask import Flask
 
 def import_matching_course(force: bool = False):
@@ -15,9 +16,7 @@ def import_matching_course(force: bool = False):
     
     # 创建临时 Flask 应用以使用数据库
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), 'app.db'
-    )
+    app.config['SQLALCHEMY_DATABASE_URI'] = Config.SQLALCHEMY_DATABASE_URI
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     db.init_app(app)

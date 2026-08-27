@@ -1,14 +1,18 @@
 /**
  * 浏览器 SpeechSynthesis TTS（对齐 DemoRobot audioPlayback.ts）
- * - 音色列表 / localStorage 记忆
+ * - 仅允许部署约定的 Microsoft Xiaoyi Online (Natural) 音色
  * - unlock 手势
  * - speakText / stop
  * - Chrome/Edge：cancel()+speak() 可能静默失败；canceled 事件会清掉回调 —— 需 watchdog 重试
  * - unlock 不得 cancel 正在播的正式朗读（切课提问常见竞态）
  */
 (function (global) {
-  const VOICE_STORAGE_KEY = "asd-agent-voice-name";
   const DEFAULT_SPEECH_RATE = 0.88;
+  const fixedVoiceConfig = global.FIXED_BROWSER_TTS_VOICE || {};
+  const FIXED_VOICE_NAME = String(fixedVoiceConfig.name || "");
+  const FIXED_VOICE_MATCH_PREFIX = String(fixedVoiceConfig.matchPrefix || "");
+  const FIXED_VOICE_LOCALIZED_TOKEN = String(fixedVoiceConfig.localizedToken || "");
+  const FIXED_VOICE_LANG = String(fixedVoiceConfig.lang || "zh-CN");
 
   let availableVoices = [];
   let preferredVoice = null;
@@ -22,6 +26,7 @@
   const COMPLETED_SPEECH_TTL_MS = 2 * 60 * 1000;
   const COMPLETED_SPEECH_MAX = 256;
   const SPEECH_ENGINE_STARTUP_COMPENSATION_MS = 350;
+  const FIXED_VOICE_LOAD_TIMEOUT_MS = 2500;
   const COLD_START_WATCHDOG_MS = 6500;
   const WARM_START_WATCHDOG_MS = 2200;
 
@@ -88,20 +93,15 @@
     return window.speechSynthesis;
   }
 
-  function getSavedVoiceName() {
-    try {
-      return window.localStorage.getItem(VOICE_STORAGE_KEY);
-    } catch {
-      return null;
-    }
-  }
-
-  function saveVoiceName(name) {
-    try {
-      window.localStorage.setItem(VOICE_STORAGE_KEY, name);
-    } catch {
-      // ignore
-    }
+  function isFixedBrowserSpeechVoice(voice) {
+    const name = String(voice?.name || "").trim().toLocaleLowerCase();
+    const lang = String(voice?.lang || "").trim().toLocaleLowerCase();
+    const prefix = FIXED_VOICE_MATCH_PREFIX.toLocaleLowerCase();
+    const localized = FIXED_VOICE_LOCALIZED_TOKEN.toLocaleLowerCase();
+    return Boolean(
+      name && lang === FIXED_VOICE_LANG.toLocaleLowerCase() &&
+      ((prefix && name.startsWith(prefix)) || (localized && name.includes(localized)))
+    );
   }
 
   function loadBrowserSpeechVoices() {
@@ -111,21 +111,12 @@
       preferredVoice = null;
       return [];
     }
-    const voices = synth.getVoices() || [];
-    const chinese = voices.filter((v) => (v.lang || "").toLowerCase().startsWith("zh"));
-    const other = voices.filter((v) => !(v.lang || "").toLowerCase().startsWith("zh"));
-    availableVoices = [...chinese, ...other];
-    const saved = getSavedVoiceName();
-    preferredVoice =
-      availableVoices.find((v) => v.name === saved) ||
-      availableVoices.find((v) => v.lang === "zh-CN") ||
-      availableVoices.find((v) => (v.lang || "").toLowerCase().startsWith("zh")) ||
-      availableVoices[0] ||
-      null;
+    preferredVoice = (synth.getVoices() || []).find(isFixedBrowserSpeechVoice) || null;
+    availableVoices = preferredVoice ? [preferredVoice] : [];
     return availableVoices.map((v) => ({
       name: v.name,
       lang: v.lang,
-      label: `${v.name} (${v.lang})`,
+      label: String(fixedVoiceConfig.label || FIXED_VOICE_NAME),
     }));
   }
 
@@ -141,10 +132,9 @@
     return preferredVoice ? preferredVoice.name : "";
   }
 
-  function setPreferredBrowserSpeechVoice(name) {
+  function isFixedBrowserSpeechVoiceAvailable() {
     loadBrowserSpeechVoices();
-    preferredVoice = availableVoices.find((v) => v.name === name) || preferredVoice;
-    if (preferredVoice) saveVoiceName(preferredVoice.name);
+    return Boolean(preferredVoice);
   }
 
   function normalizeSpeechRate(value, fallback = DEFAULT_SPEECH_RATE) {
@@ -183,6 +173,7 @@
       return;
     }
     loadBrowserSpeechVoices();
+    if (!preferredVoice) return;
     // 正式朗读已经占用引擎时绝不 cancel；它自己的 onstart 会完成预热。
     if (synth.speaking || synth.pending) {
       return;
@@ -192,7 +183,7 @@
     utterance.lang = "zh-CN";
     utterance.volume = 0.01;
     utterance.rate = 10;
-    if (preferredVoice) utterance.voice = preferredVoice;
+    utterance.voice = preferredVoice;
     const finishWarmup = () => {
       if (warmWatchdog != null) {
         clearTimeout(warmWatchdog);
@@ -323,6 +314,8 @@
       speakCalledAtMs: null,
       attemptToken: 0,
       retryTimer: null,
+      voiceWaitTimer: null,
+      removeVoiceWaitListener: null,
       cancelAttempt: null,
     };
     activeSpeech = operation;
@@ -350,8 +343,24 @@
       };
     })();
 
+    const clearVoiceWait = () => {
+      if (operation.voiceWaitTimer != null) {
+        clearTimeout(operation.voiceWaitTimer);
+        operation.voiceWaitTimer = null;
+      }
+      if (typeof operation.removeVoiceWaitListener === "function") {
+        operation.removeVoiceWaitListener();
+        operation.removeVoiceWaitListener = null;
+      }
+    };
+
     const attemptSpeak = (attempt) => {
       if (myGen !== speakGeneration || activeSpeech !== operation) return;
+      loadBrowserSpeechVoices();
+      if (!preferredVoice) {
+        finishOnce("error", "FIXED_BROWSER_VOICE_UNAVAILABLE");
+        return;
+      }
       const attemptToken = ++operation.attemptToken;
       const synth = getSpeechSynthesis();
       if (!synth) {
@@ -360,12 +369,12 @@
       }
 
       const utterance = new SpeechSynthesisUtterance(content);
-      utterance.lang = (preferredVoice && preferredVoice.lang) || "zh-CN";
+      utterance.lang = FIXED_VOICE_LANG;
       const speechRate = normalizeSpeechRate(options.rate, currentSpeechRate);
       utterance.rate = speechRate;
       utterance.pitch = 1.05;
       utterance.volume = 1;
-      if (preferredVoice) utterance.voice = preferredVoice;
+      utterance.voice = preferredVoice;
 
       let started = false;
       let startWatchdog = null;
@@ -511,7 +520,28 @@
       }, kickDelay);
     };
 
-    attemptSpeak(0);
+    if (preferredVoice) {
+      attemptSpeak(0);
+    } else {
+      // Edge may expose online voices shortly after page load. Wait only for
+      // the locked Xiaoyi voice; never fall through to another voice.
+      const onVoicesChanged = () => {
+        if (myGen !== speakGeneration || activeSpeech !== operation) return;
+        loadBrowserSpeechVoices();
+        if (!preferredVoice) return;
+        clearVoiceWait();
+        attemptSpeak(0);
+      };
+      synth0.addEventListener("voiceschanged", onVoicesChanged);
+      operation.removeVoiceWaitListener = () =>
+        synth0.removeEventListener("voiceschanged", onVoicesChanged);
+      operation.voiceWaitTimer = window.setTimeout(() => {
+        clearVoiceWait();
+        finishOnce("error", "FIXED_BROWSER_VOICE_UNAVAILABLE");
+      }, FIXED_VOICE_LOAD_TIMEOUT_MS);
+      operation.cancelAttempt = clearVoiceWait;
+      onVoicesChanged();
+    }
     return true;
   }
 
@@ -519,7 +549,7 @@
     loadBrowserSpeechVoices,
     subscribeBrowserSpeechVoiceChanges,
     getPreferredBrowserSpeechVoiceName,
-    setPreferredBrowserSpeechVoice,
+    isFixedBrowserSpeechVoiceAvailable,
     setBrowserSpeechRate,
     getBrowserSpeechRate,
     isBrowserSpeechSynthesisSupported,

@@ -166,6 +166,7 @@ class Config:
             'dialogueTtsMode': cls.DIALOGUE_TTS_MODE,
             'dialogueEnabled': cls.DIALOGUE_ENABLED,
             'dialogueWakeWordEnabled': bool(cls.DIALOGUE_WAKE_WORD_ENABLED),
+            'dialogueAsrMinConfidence': float(cls.DIALOGUE_ASR_MIN_CONFIDENCE),
             'browserSpeechRate': float(cls.BROWSER_SPEECH_RATE),
             'chatProvider': cls.AI_CHAT_PROVIDER,
         }
@@ -174,6 +175,12 @@ class Config:
     # 课程语音统一由儿童端浏览器实时生成；旧 MP3 字段仅保留数据兼容。
     DIALOGUE_TTS_MODE = 'browser'
     BROWSER_SPEECH_RATE = 0.88
+    # Edge SpeechRecognition reports 0 when confidence is unavailable. Only a
+    # real positive estimate below this threshold is rejected by the child.
+    DIALOGUE_ASR_MIN_CONFIDENCE = min(
+        1.0,
+        max(0.0, float(os.environ.get('DIALOGUE_ASR_MIN_CONFIDENCE', '0.55'))),
+    )
     DIALOGUE_ENABLED = os.environ.get('DIALOGUE_ENABLED', 'true').lower() == 'true'
     # Teacher-triggered wake is the production default.  Voice wake remains an
     # explicit Server-console option for environments that need it.

@@ -4,10 +4,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_global_engagement_states_share_three_level_contract():
+def test_engagement_feedback_returns_to_current_question_after_animation():
+    from app.sockets.events import _apply_aux_overlay_policy
+
+    payload = {"aux": {"reward": True}}
+    policy = _apply_aux_overlay_policy(payload, "pairing")
+
+    assert policy["isEngagementFeedback"] is True
+    assert payload["returnToCurrentQuestion"] is True
+    assert payload["holdLastFrame"] is False
+
+
+def test_global_engagement_states_share_two_course_contract():
     from app.robot.behavior_events import is_aux_allowed
 
-    for course_type in ("mimic", "pairing", "ordering"):
+    for course_type in ("pairing", "ordering"):
         assert is_aux_allowed(course_type, "attention")
         assert is_aux_allowed(course_type, "reward")
 
@@ -70,8 +81,8 @@ def test_browser_only_speech_and_child_cache_version_are_deployed_together():
     assert 'recognitionProvider ? { recognitionProvider }' in dialogue
     assert "child_dialogue_audio" not in dialogue
     assert 'child.css?v=20260826-child-surface-v2' in child_html
-    assert 'child_dialogue.js?v=20260826-dialogue-runtime-v3' in child_html
-    assert 'child.js?v=20260826-child-surface-v2' in child_html
+    assert 'child_dialogue.js?v=20260827-dialogue-runtime-v7' in child_html
+    assert 'child.js?v=20260827-reward-return-v1' in child_html
 
 
 def test_tts_defers_browser_transcript_until_reading_ends():

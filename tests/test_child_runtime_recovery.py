@@ -7,7 +7,7 @@ def test_child_template_registers_presence_before_course_module():
     template = Path("templates/child.html").read_text(encoding="utf-8")
 
     bootstrap = 'window.startClientPresenceHeartbeat?.("child", 10000);'
-    module = 'src="/static/js/child.js?v=20260826-child-surface-v2"'
+    module = 'src="/static/js/child.js?v=20260827-reward-return-v1"'
     assert bootstrap in template
     assert module in template
     assert template.index(bootstrap) < template.index(module)

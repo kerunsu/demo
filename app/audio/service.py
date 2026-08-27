@@ -120,6 +120,24 @@ class AudioService:
                 )
                 return False
             self.emitter.socketio.emit("robot_speak_text", payload, room=room)
+            # The Server transcript is the operator's view of everything the
+            # child actually hears, not only open-domain LLM turns.
+            try:
+                from app.dialogue.sockets import record_visible_dialogue_message
+
+                if session_id:
+                    record_visible_dialogue_message(
+                        session_id=str(session_id),
+                        role="maimai",
+                        text=spoken,
+                        request_id=str(request_id) if request_id else None,
+                    )
+            except Exception as transcript_exc:
+                logger.warning(
+                    "[AudioService] 固定课程话术写入对话监控失败 session=%s: %s",
+                    session_id,
+                    transcript_exc,
+                )
             logger.info(
                 "[AudioService] robot_speak_text intent=%s course=%s variant=%s text=%s room=%s",
                 intent,

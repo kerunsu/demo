@@ -1,6 +1,6 @@
 # Data schema and session dataset
 
-> Demo 数据事实：`config/demo_course_scope.json` 固定三课型；`config/demo_deployment.json` 固定禁用机械动作、Robot Runtime 和完整版表情。全新数据库仅播种模仿、配对和排序；旧数据库原地升级并保留历史行，但活动目录、预设、分析投影和新报告不会暴露其他课型。
+> Demo 数据事实：`config/demo_course_scope.json` 固定两课型；`config/demo_deployment.json` 固定禁用机械动作、Robot Runtime 和完整版表情。全新数据库仅播种配对和排序；旧数据库原地升级并保留历史行，但活动目录、预设、分析投影和新报告不会暴露其他课型。
 
 ## Persistent stores
 
@@ -16,7 +16,7 @@
   Invalid or missing data fails closed; checked-in configuration cannot enable
   `robotMotion`, `robotExpression` or `robotRuntime`.
 - Demo course scope: `config/demo_course_scope.json` schema v1. The current
-  deployment enables `mimic`, `pairing` and `ordering`; database rows and assets for
+  deployment enables `pairing` and `ordering`; database rows and assets for
   disabled historical courses remain in place but are excluded from active
   catalogs, presets, sync catalog exports and newly generated report projections.
 - Session directory: `static/recordings/sessions/<human-dir>/` when the
@@ -37,7 +37,7 @@
   `label`, `status`, nullable `score`/`gapToTarget`, `targetScore`, `itemCount`
   and `teacherRatingCount`; an unassessed enabled course stores null scores,
   never zero. On the demo machine the array and course-score maps contain only
-  mimic, pairing and ordering.
+  pairing and ordering.
   Rule-generated recommendations are structured as `priority`, `title`,
   `evidence`, `practice`, `why` and `progressCheck`. These fields explain the
   observed session and do not represent population norms. New narratives add
@@ -128,8 +128,9 @@ Stable events include `question_presented`, `question_audio_ended`,
 `praise`, `attention_intervention`, `attention_reward`, `rating` and
 `next_question`; modality events use the same timeline.
 
-A correct mimic action appends one `child_response` for the current question.
-Its metadata uses `courseType=mimic`, `modality=pose`, `isCorrect=true`, the
+Historical mimic actions may append one `child_response` for compatibility, but
+`mimic` is outside the active Demo course scope. Its legacy metadata uses
+`courseType=mimic`, `modality=pose`, `isCorrect=true`, the
 0..1 `score` and `threshold`, `algorithmVersion`, visible-joint `coverage`,
 `mirrored`, `stableFrames` and `holdMs`. These are recognition evidence, not a
 teacher-visible diagnosis. Repeated successful frames for the same

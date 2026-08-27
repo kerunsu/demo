@@ -1604,15 +1604,43 @@
         "runtimeRegistered": true,
         "behaviorFixture": "partial; see contract tests"
       },
-      {
-        "event": "sequencing_status_update",
-        "owner": "facade adapter + legacy handler",
-        "sourceSnapshot": true,
-        "runtimeRegistered": true,
-        "behaviorFixture": "partial; see contract tests"
-      },
-      {
-        "event": "show_image",
+    {
+      "event": "sequencing_status_update",
+      "owner": "facade adapter + legacy handler",
+      "sourceSnapshot": true,
+      "runtimeRegistered": true,
+      "behaviorFixture": "partial; see contract tests"
+    },
+    {
+      "event": "server_dialogue_runtime_control",
+      "owner": "dialogue + server monitor",
+      "sourceSnapshot": true,
+      "runtimeRegistered": true,
+      "behaviorFixture": "server dialogue room/control tests"
+    },
+    {
+      "event": "server_dialogue_text",
+      "owner": "dialogue + server monitor",
+      "sourceSnapshot": true,
+      "runtimeRegistered": true,
+      "behaviorFixture": "server dialogue room/control tests"
+    },
+    {
+      "event": "server_dialogue_unwatch",
+      "owner": "dialogue + server monitor",
+      "sourceSnapshot": true,
+      "runtimeRegistered": true,
+      "behaviorFixture": "server dialogue room/control tests"
+    },
+    {
+      "event": "server_dialogue_watch",
+      "owner": "dialogue + server monitor",
+      "sourceSnapshot": true,
+      "runtimeRegistered": true,
+      "behaviorFixture": "server dialogue room/control tests"
+    },
+    {
+      "event": "show_image",
         "owner": "facade adapter + legacy handler",
         "sourceSnapshot": true,
         "runtimeRegistered": true,

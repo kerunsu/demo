@@ -657,8 +657,6 @@
   // ---------- Report ----------
   const WEIGHT_KEYS = [
     'attention',
-    'expressiveLanguage',
-    'receptiveLanguage',
     'matching',
     'ordering',
   ];
@@ -686,6 +684,7 @@
     if (!el) return;
     const w = cfg.weights || {};
     const ic = cfg.interactive_course || {};
+    const minimums = cfg.sample_sufficiency?.minimum_effective_samples || {};
     const weightFields = WEIGHT_KEYS.map((k) =>
       field(
         `weights.${k}`,
@@ -728,6 +727,14 @@
       field(
         'slow_response_sec',
         `<input class="cc-inp" type="number" id="ic-slow" value="${ic.slow_response_sec ?? 12}" step="0.5" />`
+      ) +
+      field(
+        '配对最低有效作答题数',
+        `<input class="cc-inp" type="number" id="sample-pairing" min="1" max="100" value="${minimums.pairing ?? 5}" step="1" />`
+      ) +
+      field(
+        '排序最低有效作答题数',
+        `<input class="cc-inp" type="number" id="sample-ordering" min="1" max="100" value="${minimums.ordering ?? 5}" step="1" />`
       );
     el.querySelectorAll('input,select').forEach((n) => {
       n.addEventListener('input', () => {
@@ -758,6 +765,12 @@
         teacher_weight: Number(document.getElementById('ic-tea').value),
         ideal_response_sec: Number(document.getElementById('ic-ideal').value),
         slow_response_sec: Number(document.getElementById('ic-slow').value),
+      },
+      sample_sufficiency: {
+        minimum_effective_samples: {
+          pairing: Number(document.getElementById('sample-pairing').value),
+          ordering: Number(document.getElementById('sample-ordering').value),
+        },
       },
     };
   }

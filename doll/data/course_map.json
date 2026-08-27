@@ -1,15 +1,5 @@
 {
   "courses": {
-    "1": {
-      "praise": {
-        "animation": "勾勾.mp4",
-        "sequence": {
-          "audio": {
-            "offsetMs": 0
-          }
-        }
-      }
-    },
     "10": {},
     "9": {}
   },

@@ -78,7 +78,12 @@ mimetypes.add_type('application/wasm', '.wasm')
 
 # 导入新架构模块
 from app.config import BASE_DIR, Config
-from app.course_scope import filter_course_payloads
+from app.course_scope import (
+    COURSE_TYPE_LABELS,
+    enabled_course_dimensions,
+    enabled_course_types,
+    filter_course_payloads,
+)
 from app.robot.config import COURSE_MAP_FILE
 from app.deployment_capabilities import load_demo_capabilities
 from app.session import get_session_manager
@@ -91,6 +96,7 @@ from app.core.auto_register import auto_register  # 新框架：自动注册分�
 from app.core.config_manager import get_config_manager
 from app.dialogue import init_dialogue_service
 from app.dialogue.sockets import register_dialogue_events
+from app.dialogue.voice_config import fixed_browser_tts_voice_config
 from app.facade import create_application_container
 from app.facade.routes.server_status import execute_server_status
 from app.facade.sockets import register_legacy_socket_events
@@ -112,6 +118,28 @@ from app.routes.interaction_timeline import interaction_timeline_bp
 # 导入语音系统模块
 from app.audio import init_audio_emitter, init_audio_controller
 from app.sockets.audio_events import register_audio_events
+
+DEMO_ABILITY_LABELS = {
+    "attention": "注意力",
+    "matching": "配对",
+    "ordering": "排序",
+}
+
+
+def _enabled_demo_course_labels():
+    return {
+        COURSE_TYPE_LABELS[course_type]
+        for course_type in enabled_course_types()
+        if course_type in COURSE_TYPE_LABELS
+    }
+
+
+def _enabled_demo_ability_labels():
+    return {
+        DEMO_ABILITY_LABELS[dimension]
+        for dimension in enabled_course_dimensions()
+        if dimension in DEMO_ABILITY_LABELS
+    }
 
 # 初始化日志
 logger = setup_logger('app')
@@ -392,7 +420,10 @@ def teacher_frontend(asset_path: str):
 
 @app.route('/child')
 def child():
-    return render_template('child.html')
+    return render_template(
+        'child.html',
+        fixed_browser_tts_voice=fixed_browser_tts_voice_config(),
+    )
 
 
 @app.route("/server")
@@ -401,7 +432,10 @@ def server_page():
     view = request.args.get("view", "")
     if view == "config":
         return redirect("/server/config/overview")
-    return render_template("server.html")
+    return render_template(
+        "server.html",
+        fixed_browser_tts_voice=fixed_browser_tts_voice_config(),
+    )
 
 
 @app.route("/server/report-review/<training_session_id>")
@@ -1560,14 +1594,17 @@ def get_student_detail(student_id):
                    desc(TrainingSession.created_at)).first()
 
         abilities = []
+        allowed_ability_labels = _enabled_demo_ability_labels()
         if latest_session:
             ability_items = AbilityItem.query.filter_by(
                 training_session_id=latest_session.id
             ).all()
             for item in ability_items:
+                ability_name = item.ability_type.name if item.ability_type else None
+                if ability_name not in allowed_ability_labels:
+                    continue
                 abilities.append({
-                    'subject': item.ability_type.name
-                    if item.ability_type else None,
+                    'subject': ability_name,
                     'score': item.score
                 })
         # 无训练记录时返回空数组，避免全 0 伪装成已评估
@@ -1577,8 +1614,6 @@ def get_student_detail(student_id):
         student_data['latest_behavior_session_id'] = (
             latest_session.behavior_session_id if latest_session else None
         )
-        student_data['imitation_placeholder'] = True
-
         # 获取训练数据（最近30天的训练次数统计）
         training_sessions = TrainingSession.query.filter_by(
             student_id=student_id
@@ -1586,6 +1621,7 @@ def get_student_detail(student_id):
 
         # 统计每天的训练次数
         training_data = {}
+        allowed_course_labels = _enabled_demo_course_labels()
         for session in training_sessions:
             date_str = session.date.strftime('%m/%d') if session.date else None
             if date_str:
@@ -1595,7 +1631,12 @@ def get_student_detail(student_id):
                 details = TrainingDetail.query.filter_by(
                     training_session_id=session.id
                 ).all()
-                total_count = sum(detail.count for detail in details)
+                total_count = sum(
+                    detail.count
+                    for detail in details
+                    if detail.course_type
+                    and detail.course_type.name in allowed_course_labels
+                )
                 training_data[date_str] += total_count
 
         # 转换为前端需要的格式（最近7天）
@@ -1632,6 +1673,7 @@ def get_student_abilities(student_id):
         ).all()
 
         abilities_history = []
+        allowed_ability_labels = _enabled_demo_ability_labels()
         for session in sessions:
             ability_items = AbilityItem.query.filter_by(
                 training_session_id=session.id
@@ -1644,9 +1686,11 @@ def get_student_abilities(student_id):
             }
 
             for item in ability_items:
+                ability_name = item.ability_type.name if item.ability_type else None
+                if ability_name not in allowed_ability_labels:
+                    continue
                 session_abilities['abilities'].append({
-                    'subject': item.ability_type.name
-                    if item.ability_type else None,
+                    'subject': ability_name,
                     'score': item.score
                 })
 
@@ -1683,6 +1727,8 @@ def get_student_training_sessions(student_id):
         )
 
         sessions_data = []
+        allowed_course_labels = _enabled_demo_course_labels()
+        allowed_ability_labels = _enabled_demo_ability_labels()
         for session in sessions.items:
             session_dict = session.to_dict()
 
@@ -1691,7 +1737,10 @@ def get_student_training_sessions(student_id):
                 training_session_id=session.id
             ).all()
             session_dict['training_details'] = [
-                detail.to_dict() for detail in details
+                detail.to_dict()
+                for detail in details
+                if detail.course_type
+                and detail.course_type.name in allowed_course_labels
             ]
 
             # 获取能力项
@@ -1699,7 +1748,10 @@ def get_student_training_sessions(student_id):
                 training_session_id=session.id
             ).all()
             session_dict['ability_items'] = [
-                item.to_dict() for item in ability_items
+                item.to_dict()
+                for item in ability_items
+                if item.ability_type
+                and item.ability_type.name in allowed_ability_labels
             ]
 
             sessions_data.append(session_dict)

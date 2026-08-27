@@ -3,7 +3,7 @@
 
 顺序：
 1. init_db（表 / 课型 / 能力 / 默认 admin）
-2. migrate_courses ← static/courses.json（仅模仿/配对/排序）
+2. migrate_courses ← static/courses.json（仅配对/排序）
 3. import_matching / import_sequencing（交互课入口与媒体路径对齐）
 
 用法:

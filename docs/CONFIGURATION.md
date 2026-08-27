@@ -8,14 +8,14 @@
 
 | 文件 | 作用 |
 |---|---|
-| `config/demo_course_scope.json` | 唯一允许课型：`mimic`、`pairing`、`ordering` |
+| `config/demo_course_scope.json` | 唯一允许课型：`pairing`、`ordering` |
 | `config/demo_deployment.json` | 机械动作、完整版本表情、Robot Runtime 固定关闭；儿童动画和浏览器语音开启 |
 | `config/runtime_modes.yaml` | 儿童媒体固定 `browser`、机器人控制固定 `disabled`，以及浏览器语速/唤醒词 |
-| `config/course_presets.json` | 评估与干预两套独立三课程预设 |
+| `config/course_presets.json` | 评估与干预两套独立两课程预设 |
 | `config/report_scoring.yaml` | 注意力、配对、排序三个报告维度及权重 |
-| `config/analyzers.yaml` | 模仿姿态、注意力和分析器参数 |
+| `config/analyzers.yaml` | 注意力和分析器参数；旧姿态项仅作历史兼容 |
 | `doll/data/course_map.json` | 儿童屏动画与音频时间偏移；不得出现 motion/emotion/expression |
-| `static/courses.json`、`doll/data/courses.json` | 随仓库发布的三课程目录 |
+| `static/courses.json`、`doll/data/courses.json` | 随仓库发布的两课程目录 |
 
 课程范围或能力文件缺失、格式错误、尝试扩大范围时，代码必须安全收紧到 Demo 边界，不得启用上游能力。
 
@@ -25,7 +25,6 @@
 
 课程目录只发布：
 
-- `mimic`：模仿识别
 - `pairing`：配对
 - `ordering`：排序
 
@@ -49,11 +48,11 @@
 - `config/dialogue_phrases.yaml`
 - `config/dialogue_phrase_selection.yaml`
 
-Demo 运行时只消费模仿、配对、排序以及全局注意力/奖励话术。话术写接口会拒绝命名、拟声、社交等旧课型；旧文件音频条目接口固定返回 410。配对、排序的规则句与反馈池变更时要同步互动页面和自动化测试。
+Demo 运行时只消费配对、排序以及全局注意力/奖励话术。话术写接口会拒绝模仿、命名、拟声、社交等旧课型；旧文件音频条目接口固定返回 410。配对、排序的规则句与反馈池变更时要同步互动页面和自动化测试。
 
-## 模仿识别与分析
+## 注意力分析
 
-`config/analyzers.yaml` 和示例文件共同记录可审查默认值。当前模仿姿态匹配阈值为 `0.50`，允许镜像动作。Windows 模型路径通过字节路径兼容处理，仓库内 `models/pose_landmarker_lite.task` 必须随发布存在。
+`config/analyzers.yaml` 和示例文件共同记录可审查默认值。配对、排序训练期间继续采集注意力证据；历史模仿配置只作旧数据兼容，不属于活动课程范围。
 
 配置中心算法页可编辑允许的分析器和报告参数。保存采用同目录临时文件、`fsync` 和原子替换；非法权重、阈值或 schema 返回明确错误，不部分写入。
 
@@ -67,7 +66,7 @@ Demo 运行时只消费模仿、配对、排序以及全局注意力/奖励话�
 - `matching`
 - `ordering`
 
-默认权重为 34/33/33，总和必须为 100。课程权重只含 `mimic`、`pairing`、`ordering`。报告计算、叙事、教师端展示和 Server 报告编辑器必须保持同一范围。
+跨课程注意力、配对、排序维度默认权重为 34/33/33，总和必须为 100。课程权重只含 `pairing`、`ordering`。报告计算、叙事、教师端展示和 Server 报告编辑器必须保持同一范围。
 
 配置更新不能改变已冻结历史报告；新计算使用新配置，并记录版本/来源。教师报告审核仍是幂等流程。
 
@@ -93,7 +92,7 @@ Demo 运行时只消费模仿、配对、排序以及全局注意力/奖励话�
 `GET /api/v2/config/sync/manifest` 和 `GET /api/v2/config/sync/export` 生成可审查配置清单/ZIP。Demo 导出包含：
 
 - YAML/JSON/CSV 配置
-- 三课程目录和课程预设
+- 两课程目录和课程预设
 - 过滤后的 `course_map.json`
 - 允许的课程媒体
 - 儿童屏动画
@@ -102,6 +101,6 @@ Demo 运行时只消费模仿、配对、排序以及全局注意力/奖励话�
 
 ## 数据库与环境变量
 
-`database/app.db`、`.env`、录制和日志是部署数据，不是源码。首次没有数据库时标准播种创建三课程；已有数据库只原地迁移，不重置、不删除历史行。
+`database/app.db`、`.env`、录制和日志是部署数据，不是源码。首次没有数据库时标准播种创建两课程；已有数据库只原地迁移，不重置、不删除历史行。
 
 常用环境变量（例如端口、对话 provider、是否自动构建教师端）继续按主项目兼容。以下变量在 Demo 不应作为部署配置使用：Robot Runtime 地址/密钥、DollSer/OSC 端口、机械动作模式或完整版本表情目录。即使遗留环境中存在，Demo 能力层仍固定关闭。
