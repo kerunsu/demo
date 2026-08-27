@@ -5,16 +5,12 @@
   async function refreshWorkbenchSummary() {
     const issues = document.getElementById('workbench-issues');
     const elCourses = document.getElementById('stat-courses');
-    const elEmo = document.getElementById('stat-emotions');
-    const elMot = document.getElementById('stat-motions');
     try {
       const res = await fetch('/api/config/content/summary');
       const data = await res.json();
       if (!data.success) return;
       const s = data.summary || {};
       if (elCourses) elCourses.textContent = String(s.courseCount ?? '—');
-      if (elEmo) elEmo.textContent = String(s.emotionCount ?? '—');
-      if (elMot) elMot.textContent = String(s.motionCount ?? '—');
       if (!issues) return;
       issues.innerHTML = `
         <a class="cc-card cc-metric-link" href="?view=courses&filter=missingQuestion">
@@ -27,11 +23,11 @@
           <div class="cc-metric-value">${s.missingItemMedia ?? 0}</div>
           <div class="cc-metric-note">课点数</div>
         </a>
-        <a class="cc-card cc-metric-link" href="?view=binding">
-          <div class="cc-metric-label">无行为映射课程</div>
-          <div class="cc-metric-value">${s.unmappedCourses ?? 0}</div>
-          <div class="cc-metric-note">去行为绑定</div>
-        </a>
+        <div class="cc-card">
+          <div class="cc-metric-label">Demo 输出能力</div>
+          <div class="cc-metric-value">纯屏幕</div>
+          <div class="cc-metric-note">动作 / 完整版表情关闭</div>
+        </div>
         <div class="cc-card">
           <div class="cc-metric-label">课点总数</div>
           <div class="cc-metric-value">${s.itemCount ?? 0}</div>

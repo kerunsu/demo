@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_global_engagement_states_share_three_level_contract():
     from app.robot.behavior_events import is_aux_allowed
 
-    for course_type in ("naming", "pairing", "ordering", "social"):
+    for course_type in ("mimic", "pairing", "ordering"):
         assert is_aux_allowed(course_type, "attention")
         assert is_aux_allowed(course_type, "reward")
 
@@ -24,23 +24,33 @@ def test_teacher_and_server_expose_attention_reward_configuration():
     assert "全局注意力支持" in teacher
     assert "maimai.reward-animation.${selectedStudent}" in teacher
     assert "behaviorAnimationOverride" in teacher
-    assert 'id="slot-attention"' in server
-    assert 'id="slot-reward"' in server
-    assert 'id="animation-reward"' in server
+    assert 'id="page-animations"' in server
+    assert 'id="animation-grid"' in server
+    assert 'id="slot-attention"' not in server
+    assert 'id="slot-reward"' not in server
     assert "attention:" in phrases and "reward:" in phrases
 
 
-def test_interactive_prompts_focus_in_viewport_and_respect_reduced_motion():
+def test_interactive_prompts_alternate_sides_and_respect_reduced_motion():
     shared = (ROOT / "static" / "js" / "interactive_question_state.js").read_text(encoding="utf-8")
     matching = (ROOT / "static" / "resources" / "interactive" / "matching.html").read_text(encoding="utf-8")
     ordering = (ROOT / "static" / "resources" / "interactive" / "sequencing.html").read_text(encoding="utf-8")
 
     assert "getBoundingClientRect" in shared
-    assert "global.innerWidth / 2" in shared
+    assert 'index % 2 === 1 ? "left" : "right"' in shared
+    assert 'direction === "left"' in shared
+    assert "sideMargin + scaledHalfWidth" in shared
+    assert "question-focus-entering" in shared
     assert "scale(1.58)" in matching
     assert "focusElement: '#targetFrame'" in matching
+    assert "focusScale: 1.58" in matching
+    assert "pairing-question-enter" in matching
+    assert "presentationDirection: pageContext.presentationDirection" in matching
     assert "scale(1.52)" in ordering
     assert "focusElement: '.rule-text-wrapper'" in ordering
+    assert "focusScale: 1.52" in ordering
+    assert "ordering-question-enter" in ordering
+    assert "presentationDirection: pageContext.presentationDirection" in ordering
     assert "prefers-reduced-motion: reduce" in matching
     assert "prefers-reduced-motion: reduce" in ordering
 
@@ -59,7 +69,9 @@ def test_browser_only_speech_and_child_cache_version_are_deployed_together():
     assert "startBrowserSpeechRecognition" in dialogue
     assert 'recognitionProvider ? { recognitionProvider }' in dialogue
     assert "child_dialogue_audio" not in dialogue
-    assert child_html.count("20260824-dialogue-controls-v2") == 2
+    assert 'child.css?v=20260826-child-surface-v2' in child_html
+    assert 'child_dialogue.js?v=20260826-dialogue-runtime-v3' in child_html
+    assert 'child.js?v=20260826-child-surface-v2' in child_html
 
 
 def test_tts_defers_browser_transcript_until_reading_ends():

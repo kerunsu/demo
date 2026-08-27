@@ -191,18 +191,14 @@ def test_manual_wake_target_reports_child_offline(monkeypatch):
     }
 
 
-def test_child_dialogue_visibility_uses_a_real_hidden_state():
-    """回归：强制 display:block 不能再次压过教师端隐藏指令。"""
+def test_child_dialogue_surface_is_server_only_without_legacy_panel():
     root = Path(__file__).resolve().parents[1]
     script = (root / "static/js/child_dialogue.js").read_text(encoding="utf-8")
-    style = (root / "static/css/child.css").read_text(encoding="utf-8")
+    template = (root / "templates/child.html").read_text(encoding="utf-8")
 
-    assert 'panel.hidden = !dialoguePanelVisible' in script
-    assert 'classList.toggle("is-hidden", !dialoguePanelVisible)' in script
-    assert "#dialoguePanel.dialogue-panel.is-hidden" in style
-    assert "display: none !important" in style
-    base_rule = style.split("#dialoguePanel.dialogue-panel {", 1)[1].split("}", 1)[0]
-    assert "display: block !important" not in base_rule
+    assert 'document.getElementById("dialoguePanel")' not in script
+    assert 'id="dialoguePanel"' not in template
+    assert "可见对话日志已经迁移到 Server 房间" in script
 
 
 def test_teacher_agent_toggle_and_visibility_are_not_lease_gated_and_have_watchdogs():

@@ -28,6 +28,13 @@ def test_demo_course_scope_includes_mimic_pairing_ordering_and_fails_closed(tmp_
     unknown.write_text('{"schemaVersion": 1, "enabledCourseTypes": ["future-course"]}', encoding="utf-8")
     assert enabled_course_types(unknown) == ("mimic", "pairing", "ordering")
 
+    expanded = tmp_path / "expanded.json"
+    expanded.write_text(
+        '{"schemaVersion": 1, "enabledCourseTypes": ["mimic", "pairing", "ordering", "naming"]}',
+        encoding="utf-8",
+    )
+    assert enabled_course_types(expanded) == ("mimic", "pairing", "ordering")
+
 
 def test_demo_course_filter_accepts_mimic_and_interactive_aliases_only():
     filtered = filter_course_payloads([
@@ -107,8 +114,15 @@ def test_runtime_scoring_config_projects_only_demo_courses_and_dimensions():
 
 def test_seeded_demo_preset_contains_mimic_pairing_and_ordering_courses():
     document = json.loads((ROOT / "config" / "course_presets.json").read_text(encoding="utf-8"))
-    default = next(item for item in document["presets"] if item["id"] == document["defaultPresetId"])
-    assert default["courseIds"] == [1, 9, 10]
+    assert document["schemaVersion"] == 3
+    for mode, preset_id in document["defaultPresetIds"].items():
+        default = next(item for item in document["presets"] if item["id"] == preset_id)
+        assert default["mode"] == mode
+        assert default["courseSelections"] == [
+            {"courseType": "mimic", "itemIds": [1, 2]},
+            {"courseType": "pairing", "itemIds": [79]},
+            {"courseType": "ordering", "itemIds": [80]},
+        ]
 
 
 def test_teacher_and_server_report_sources_expose_only_demo_course_fields():

@@ -90,16 +90,16 @@ def _recommendation(course: Dict[str, Any], index: int, *, consolidation: bool) 
     score = float(course.get("score"))
     target = float(course.get("targetScore") or 70)
     practice = COURSE_PRACTICE.get(course_type, {
-        "practice": "围绕本次课程目标进行短时、重复且可成功的练习。",
+        "practice": "围绕本次训练目标进行短时、重复且可成功的练习。",
         "why": "本次结果提示该课程仍值得继续观察和巩固。",
-        "progress": "连续 3 次训练均达到本次设定的课程目标。",
+        "progress": "连续 3 次训练均达到本次设定的训练目标。",
     })
     reached = score >= target
     priority = f"巩固 {index}" if consolidation or reached else f"优先 {index}"
     evidence = (
-        f"本次{label}表现为 {score:.1f}%，已达到 {target:.1f}% 的课程参考目标。"
+        f"本次{label}表现为 {score:.1f}%，已达到 {target:.1f}% 的训练参考目标。"
         if reached else
-        f"本次{label}表现为 {score:.1f}%，距离 {target:.1f}% 的课程参考目标还有 {target - score:.1f} 个百分点。"
+        f"本次{label}表现为 {score:.1f}%，距离 {target:.1f}% 的训练参考目标还有 {target - score:.1f} 个百分点。"
     )
     why = (
         f"{evidence}{practice['why']}"
@@ -177,7 +177,7 @@ def _rule_narrative(report_core: Dict[str, Any]) -> Dict[str, Any]:
     lowest = min(evaluated, key=lambda item: float(item.get("score")), default=None)
 
     strengths = (
-        "、".join(strong_dims) + "达到本次课程参考目标。"
+        "、".join(strong_dims) + "达到本次训练参考目标。"
         if strong_dims else
         f"{strongest.get('label')}是本次相对表现最稳定的课程。" if strongest else
         "本次暂无足够结果判断优势能力。"
@@ -217,11 +217,11 @@ def _rule_narrative(report_core: Dict[str, Any]) -> Dict[str, Any]:
         attention_target = float(attention_course.get("targetScore") or target)
         attention_text = (
             f"{attention_course.get('label')}为 {attention_score:.1f}%，"
-            f"距离课程参考目标还有 {attention_target - attention_score:.1f} 个百分点，是下一步优先巩固项。"
+            f"距离训练参考目标还有 {attention_target - attention_score:.1f} 个百分点，是下一步优先巩固项。"
         )
     elif lowest:
         attention_text = (
-            f"各已评估课程均达到参考目标；{lowest.get('label')}是本次相对较低项，"
+            f"各已评估课程均达到训练参考目标；{lowest.get('label')}是本次相对较低项，"
             "建议更换材料继续巩固。"
         )
     else:

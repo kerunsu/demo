@@ -77,8 +77,10 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/wasm', '.wasm')
 
 # 导入新架构模块
-from app.config import Config
+from app.config import BASE_DIR, Config
 from app.course_scope import filter_course_payloads
+from app.robot.config import COURSE_MAP_FILE
+from app.deployment_capabilities import load_demo_capabilities
 from app.session import get_session_manager
 from app.utils.logger import setup_logger
 from app.sockets import register_socket_events
@@ -94,15 +96,13 @@ from app.facade.routes.server_status import execute_server_status
 from app.facade.sockets import register_legacy_socket_events
 from app.facade.use_cases.server_status import ServerStatusInputs
 
-# 导入机械臂控制模块
+# 导入 Demo 课程输出协调模块（机械动作和完整版表情已禁用）
 from app.robot.routes import robot_bp
 from app.robot import robot_service
-from app.robot.runtime_registry import get_runtime_status
 
-# 儿童端 Media Agent 上行 / 补传
+# 媒体上行与断线补传
 from app.routes.media_upload import media_bp, get_media_session_meta
 from app.routes.capture_devices import capture_devices_bp
-from app.routes.asset_library import asset_library_bp
 from app.routes.interaction_profiles import interaction_profiles_bp
 from app.routes.control_overview import control_overview_bp
 from app.routes.config_sync import config_sync_bp
@@ -127,7 +127,7 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.jinja_env.auto_reload = True
 # Course media is immutable during a teaching day. Keep it on each classroom
 # device so switching students/sessions reuses the local browser disk cache.
-# Expression URLs carry a file version, so changed videos get a fresh URL.
+# Child-animation URLs carry a file version, so changed videos get a fresh URL.
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 24 * 60 * 60
 
 # 配置CORS，允许前端跨域请求
@@ -146,9 +146,10 @@ db.init_app(app)
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# 注册机械臂控制模块 Blueprint
+# 注册行为协调与儿童屏动画 Blueprint；机械动作/表情/Runtime 路由由
+# Demo 能力闸门返回 410，不属于本部署的可用接口。
 app.register_blueprint(robot_bp)
-logger.info("机械臂控制模块已注册 (Blueprint: /api/robot)")
+logger.info("Demo 行为协调模块已注册 (Blueprint: /api/robot)")
 
 # 运行时模式：yaml > env > 默认 agent / robot_runtime
 try:
@@ -169,8 +170,6 @@ logger.info("媒体上行模块已注册 (Blueprint: /api/media)")
 # 第三阶段：0..N 采集设备控制面；旧 ambient API 保持兼容
 app.register_blueprint(capture_devices_bp)
 logger.info("采集设备注册表 API 已注册 (Blueprint: /api/v2/capture)")
-app.register_blueprint(asset_library_bp)
-logger.info("动作/表情批量素材 API 已注册 (Blueprint: /api/v2/assets)")
 app.register_blueprint(interaction_profiles_bp)
 logger.info("InteractionProfileV2 API 已注册 (Blueprint: /api/v2/interaction)")
 app.register_blueprint(control_overview_bp)
@@ -191,6 +190,7 @@ logger.info("监控模块已注册 (Blueprint: /api/monitor)")
 
 # 注册配置中心 · 交互内容 API
 from app.routes.config_content import config_content_bp, ensure_speech_target_column
+from app.storage.course_catalog import ensure_canonical_course_catalog
 app.register_blueprint(config_content_bp)
 logger.info("交互内容配置模块已注册 (Blueprint: /api/config)")
 
@@ -205,6 +205,16 @@ with app.app_context():
         ensure_speech_target_column()
     except Exception as e:
         logger.warning("speech_target 列迁移跳过: %s", e)
+    try:
+        catalog_migration = ensure_canonical_course_catalog(
+            preset_path=Path(BASE_DIR) / "config" / "course_presets.json",
+            course_map_path=Path(COURSE_MAP_FILE),
+        )
+        if catalog_migration["removedCourseIds"]:
+            logger.info("课程大类已规范化: %s", catalog_migration)
+    except Exception as e:
+        logger.error("课程大类规范化失败，保留迁移前数据: %s", e)
+        raise RuntimeError("课程大类规范化失败，服务拒绝以重复课程目录启动") from e
     try:
         ensure_training_archive_schema()
     except Exception as e:
@@ -328,9 +338,9 @@ register_dialogue_events(socketio)
 init_dialogue_service()
 logger.info("WebSocket事件处理器已注册")
 
-# 绑定SocketIO到机械臂服务（用于表情事件）
+# 绑定 SocketIO 到 Demo 行为协调器（语音与儿童屏动画事务）
 robot_service.set_socketio(socketio)
-logger.info("SocketIO已绑定到机械臂服务")
+logger.info("SocketIO已绑定到 Demo 行为协调器")
 
 # 初始化语音系统
 audio_emitter = init_audio_emitter(socketio)
@@ -374,7 +384,10 @@ def teacher_frontend(asset_path: str):
             'error': 'teacher_frontend_not_built',
             'message': '教师端尚未构建，请重新执行一键启动。',
         }), 503
-    return send_from_directory(dist, 'index.html')
+    response = send_from_directory(dist, 'index.html')
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    return response
 
 
 @app.route('/child')
@@ -446,20 +459,17 @@ def server_config_latency():
 
 @app.route("/robot")
 def robot_page():
-    """机械臂控制面板页面"""
-    return render_template("robot/control.html")
+    return jsonify({"success": False, "error": "demo_robot_motion_disabled"}), 410
 
 
 @app.route("/robot/emotion")
 def robot_emotion_page():
-    """机器人表情显示页面"""
-    return render_template("robot/emotion.html")
+    return jsonify({"success": False, "error": "demo_robot_expression_disabled"}), 410
 
 
 @app.route("/robot/download")
 def robot_download_page():
-    """机器人端安装包下载页（局域网自助获取 exe+DollSer zip）"""
-    return render_template("robot_download.html")
+    return jsonify({"success": False, "error": "demo_robot_runtime_disabled"}), 410
 
 
 # ==================== Server 配置控制台 API ====================
@@ -931,42 +941,21 @@ def get_server_diagnostics():
 
 @app.route("/api/server/robot/control-mode", methods=["GET"])
 def get_robot_control_mode():
-    """获取机械臂控制模式。"""
-    try:
-        service = robot_service.get_robot_service()
-        return jsonify({
-            "success": True,
-            "mode": service.get_control_mode(),
-            "options": ["server_osc", "child_agent", "robot_runtime"],
-        }), 200
-    except Exception as e:
-        logger.error(f"获取机械臂控制模式失败: {e}")
-        return jsonify({"success": False, "error": f"获取控制模式失败: {str(e)}"}), 500
+    return jsonify({
+        "success": True,
+        "mode": "disabled",
+        "options": ["disabled"],
+        "capability": load_demo_capabilities(),
+    }), 200
 
 
 @app.route("/api/server/robot/control-mode", methods=["PUT"])
 def set_robot_control_mode():
-    """设置机械臂控制模式（写盘 + 立即生效）。"""
-    try:
-        payload = request.get_json(silent=True) or {}
-        mode = payload.get("mode")
-        if mode not in ("server_osc", "child_agent", "robot_runtime"):
-            return jsonify({
-                "success": False,
-                "error": "mode 必须是 server_osc / child_agent / robot_runtime"
-            }), 400
-
-        service = robot_service.get_robot_service()
-        service.set_control_mode(mode, persist=True)
-        return jsonify({
-            "success": True,
-            "mode": mode,
-            "persisted": True,
-            "message": f"机械臂控制模式已切换为 {mode}（已写入 runtime_modes.yaml）",
-        }), 200
-    except Exception as e:
-        logger.error(f"设置机械臂控制模式失败: {e}")
-        return jsonify({"success": False, "error": f"设置控制模式失败: {str(e)}"}), 500
+    return jsonify({
+        "success": False,
+        "error": "demo_robot_motion_disabled",
+        "mode": "disabled",
+    }), 410
 
 
 @app.route("/api/server/runtime-modes", methods=["GET"])
@@ -997,6 +986,16 @@ def put_runtime_modes():
         payload = request.get_json(silent=True) or {}
         child = payload.get("childMediaMode") or payload.get("child_media_mode")
         robot = payload.get("robotControlMode") or payload.get("robot_control_mode")
+        if robot not in (None, "disabled"):
+            return jsonify({
+                "success": False,
+                "error": "Demo 机固定禁用机械动作、机器人 Runtime 和完整版表情",
+            }), 400
+        if child not in (None, "browser"):
+            return jsonify({
+                "success": False,
+                "error": "Demo 机儿童媒体模式固定为 browser，不启动 Robot Runtime",
+            }), 400
         wake_word = (
             payload.get("dialogueWakeWordEnabled")
             if "dialogueWakeWordEnabled" in payload
@@ -1038,7 +1037,7 @@ def put_runtime_modes():
 
 @app.route("/api/child/runtime-config", methods=["GET"])
 def get_child_runtime_config():
-    """儿童端页面启动时拉取媒体模式与 Agent 地址等。"""
+    """儿童端页面启动时拉取固定浏览器媒体与语音配置。"""
     try:
         return jsonify({
             "success": True,
@@ -1056,8 +1055,7 @@ def get_child_media_mode():
         return jsonify({
             "success": True,
             "mode": Config.get_child_media_mode(),
-            "options": ["browser", "agent"],
-            "agentPort": Config.CHILD_MEDIA_AGENT_PORT,
+            "options": ["browser"],
         }), 200
     except Exception as e:
         logger.error(f"获取儿童媒体模式失败: {e}")
@@ -1099,9 +1097,16 @@ def get_server_status():
                 robot_control_mode=lambda: robot_service.get_robot_service().get_control_mode(),
                 child_media_mode=Config.get_child_media_mode,
                 media_session_meta=get_media_session_meta,
-                runtime_status=get_runtime_status,
+                runtime_status=lambda: {
+                    "enabled": False,
+                    "online": False,
+                    "reason": "demo_capability_disabled",
+                },
             )
         )
+        deployment = load_demo_capabilities()
+        payload["deployment"] = deployment["deployment"]
+        payload["capabilities"] = deployment["capabilities"]
         return jsonify(payload), 200
     except Exception as e:
         logger.error(f"获取 server 状态失败: {e}")

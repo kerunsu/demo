@@ -32,7 +32,6 @@ from app.sockets.handlers import (
 )
 from app.config import Config
 from app.utils.logger import setup_logger
-from app.sockets.robot_events import register_robot_events
 from app.services.readiness_service import get_readiness_service
 from app.services.teacher_control import get_teacher_control_registry
 from collections import OrderedDict
@@ -64,9 +63,38 @@ _pending_interactive_questions: Dict[str, Dict[str, Any]] = {}
 _pending_interactive_question_timers: Dict[str, threading.Timer] = {}
 # Latest-wins praise/encourage while a question is still speaking.
 _pending_interactive_feedback: Dict[str, Dict[str, Any]] = {}
+_interactive_completion_praise_at: Dict[str, float] = {}
 _interactive_input_state: Dict[str, Dict[str, Any]] = {}
 _last_interactive_defer_log_at: Dict[str, float] = {}
 _INTERACTIVE_DEFER_LOG_INTERVAL_SEC = 1.0
+
+
+def _mark_interactive_completion_praise(session_id: Optional[str]) -> None:
+    sid = str(session_id or '').strip()
+    if not sid:
+        return
+    now = time.monotonic()
+    with _deferred_question_lock:
+        _interactive_completion_praise_at[sid] = now
+        expired = [
+            key for key, marked_at in _interactive_completion_praise_at.items()
+            if now - float(marked_at or 0) > _PENDING_INTERACTIVE_FEEDBACK_TTL_SECONDS
+        ]
+        for key in expired:
+            _interactive_completion_praise_at.pop(key, None)
+
+
+def _consume_interactive_completion_praise(session_id: Optional[str]) -> bool:
+    sid = str(session_id or '').strip()
+    if not sid:
+        return False
+    with _deferred_question_lock:
+        marked_at = _interactive_completion_praise_at.pop(sid, None)
+    return bool(
+        marked_at is not None
+        and time.monotonic() - float(marked_at)
+        <= _PENDING_INTERACTIVE_FEEDBACK_TTL_SECONDS
+    )
 
 
 def _log_interactive_defer(session_id: Optional[str], message: str, *args) -> None:
@@ -1127,6 +1155,7 @@ def _remember_pending_interactive_feedback(
     category: str = None,
     rule: str = None,
     text: str = None,
+    course_completion: bool = False,
 ) -> None:
     """Hold praise/encourage until the current question utterance ends."""
     sid = str(session_id or '').strip()
@@ -1140,6 +1169,7 @@ def _remember_pending_interactive_feedback(
             'category': category,
             'rule': rule,
             'text': text,
+            'course_completion': bool(course_completion),
             'expiresAt': time.monotonic() + _PENDING_INTERACTIVE_FEEDBACK_TTL_SECONDS,
         }
 
@@ -1192,6 +1222,7 @@ def _flush_pending_interactive_feedback(session_id: Optional[str]) -> bool:
         category=payload.get('category'),
         rule=payload.get('rule'),
         text=payload.get('text'),
+        course_completion=bool(payload.get('course_completion')),
         _retry_count=0,
     )
     if played:
@@ -1353,6 +1384,24 @@ def _event_socketio():
         return None
 
 
+def _interactive_presentation_direction(
+    data: Optional[Dict[str, Any]],
+) -> Optional[str]:
+    """Read the visible prompt side from the authoritative question envelope."""
+    if not isinstance(data, dict):
+        return None
+    page_context = data.get('pageContext') or data.get('page_context')
+    nested = page_context if isinstance(page_context, dict) else {}
+    direction = str(
+        data.get('presentationDirection')
+        or data.get('presentation_direction')
+        or nested.get('presentationDirection')
+        or nested.get('presentation_direction')
+        or ''
+    ).strip().lower()
+    return direction if direction in ('left', 'right') else None
+
+
 def _play_interactive_course_audio(
     session_id: str,
     course_type: str,
@@ -1367,6 +1416,7 @@ def _play_interactive_course_audio(
     audio_service=None,
     _retry_count: int = 0,
     question_data: Optional[Dict[str, Any]] = None,
+    course_completion: bool = False,
 ) -> bool:
     """Play one interactive utterance inside the global behavior mutex."""
     if not session_id or not course_type or not audio_type:
@@ -1409,6 +1459,7 @@ def _play_interactive_course_audio(
                 category=category,
                 rule=rule,
                 text=text,
+                course_completion=course_completion,
             )
             _schedule_pending_item_question_flush(session_id)
             return False
@@ -1438,6 +1489,9 @@ def _play_interactive_course_audio(
             'requestId': resolved_request_id,
             'request_id': resolved_request_id,
         }
+        presentation_direction = _interactive_presentation_direction(question_data)
+        if aux_key == 'question' and presentation_direction:
+            behavior_payload['presentationDirection'] = presentation_direction
         if runtime_session is not None:
             behavior_payload.update({
                 'studentId': getattr(runtime_session, 'student_id', None),
@@ -1508,7 +1562,7 @@ def _play_interactive_course_audio(
 
         child_sid = _child_owner_for_session(session_id)
         child_room = f'session_{session_id}_child'
-        sio = _event_socketio() if behavior_animation else None
+        sio = _event_socketio() if (behavior_animation or course_completion) else None
         animation_payload = None
         if behavior_animation:
             animation_payload = dict(behavior_payload)
@@ -1520,10 +1574,13 @@ def _play_interactive_course_audio(
                 'praiseVideo': behavior_animation,
                 'holdLastFrame': False,
                 'interactiveAutoPraise': True,
+                'interactiveCourseCompletePraise': bool(course_completion),
                 'behaviorStartDelayMs': _remaining_behavior_start_delay_ms(
                     robot_result
                 ),
             })
+            if course_completion:
+                animation_payload['holdLastFrame'] = True
             if robot_result.get('startAtEpochMs') is not None:
                 animation_payload['behaviorStartAtMs'] = int(
                     robot_result.get('startAtEpochMs')
@@ -1623,6 +1680,26 @@ def _play_interactive_course_audio(
                 sio.emit('play_resource', animation_payload, to=child_sid)
             else:
                 sio.emit('play_resource', animation_payload, room=child_room)
+        if course_completion and sio is not None:
+            busy_getter = getattr(robot_service, 'get_behavior_busy_state', None)
+            busy_state = busy_getter() if callable(busy_getter) else {}
+            remaining_ms = (
+                int(busy_state.get('remainingMs') or 0)
+                if busy_state.get('eventId') == resolved_behavior_id
+                else 0
+            )
+            sio.emit(
+                'interactive_course_completion_praise_started',
+                {
+                    'sessionId': str(session_id),
+                    'courseType': str(course_type),
+                    'requestId': resolved_request_id,
+                    'behaviorId': resolved_behavior_id,
+                    'remainingMs': remaining_ms,
+                    'animationExpected': bool(animation_payload),
+                },
+                room=str(session_id),
+            )
         if audio_type == 'question':
             generation = None
             if isinstance(question_data, dict):
@@ -1639,6 +1716,8 @@ def _play_interactive_course_audio(
             rule,
             (text or '')[:24],
         )
+        if course_completion:
+            _mark_interactive_completion_praise(session_id)
         return True
     except Exception as exc:
         try:
@@ -2075,6 +2154,9 @@ def _play_atomic_ordering_question(
         'requestId': request_id,
         'request_id': request_id,
     })
+    presentation_direction = _interactive_presentation_direction(source)
+    if presentation_direction:
+        robot_payload['presentationDirection'] = presentation_direction
     if runtime_session is not None:
         robot_payload.setdefault(
             'studentId',
@@ -2149,7 +2231,7 @@ def _store_interactive_page_context(session_id, data, *, course_type: str) -> No
             'questionIndex', 'totalQuestions', 'correctPosition',
             'correctLabel', 'correctOptionPosition', 'correctOptionLabel',
             'questionId', 'courseId', 'itemId', 'studentId',
-            'trainingSessionId',
+            'trainingSessionId', 'presentationDirection',
         ):
             if data.get(key) is not None and key not in ctx:
                 ctx[key] = data.get(key)
@@ -3141,8 +3223,7 @@ def register_socket_events(socketio):
         socketio: Flask-SocketIO实例
     """
     
-    # 注册机械臂相关事件
-    register_robot_events(socketio)
+    # Demo 不注册机械动作或完整版表情事件。课程输出只保留语音和儿童屏幕动画。
 
     # 开课就绪门：向指定教师 emit，或广播（teacher_sid=None）
     readiness = get_readiness_service()
@@ -5118,8 +5199,16 @@ def register_socket_events(socketio):
                 },
             )
 
-        # 点对自动播表扬包（口播 + 与教师表扬同一套随机动画）；点错播鼓励后由 iframe 切题
-        if data.get('triggerPraise') or (
+        # 最后一题无论本题得分如何，都进入与单题正确相同的完整表扬包；
+        # 普通题仍按正确/错误选择表扬或鼓励。
+        course_completion = bool(
+            data.get('courseComplete') or data.get('isFinished')
+        )
+        if course_completion:
+            _play_interactive_course_audio(
+                session_id, 'pairing', 'praise', course_completion=True
+            )
+        elif data.get('triggerPraise') or (
             'triggerPraise' not in data and data.get('isCorrect')
         ):
             _play_interactive_course_audio(session_id, 'pairing', 'praise')
@@ -5166,6 +5255,10 @@ def register_socket_events(socketio):
         if not session_id:
             logger.warning('drop matching_game_end: session_id_missing')
             return
+        if not _consume_interactive_completion_praise(session_id):
+            _play_interactive_course_audio(
+                session_id, 'pairing', 'praise', course_completion=True
+            )
         emit('matching_game_end', data, room=session_id)
     
     # ==================== 排序游戏事件 ====================
@@ -5448,7 +5541,14 @@ def register_socket_events(socketio):
                 },
             )
 
-        if data.get('isCorrect'):
+        course_completion = bool(
+            data.get('courseComplete') or data.get('isFinished')
+        )
+        if course_completion:
+            _play_interactive_course_audio(
+                session_id, 'ordering', 'praise', course_completion=True
+            )
+        elif data.get('isCorrect'):
             _play_interactive_course_audio(session_id, 'ordering', 'praise')
         elif data.get('isCorrect') is False:
             _play_interactive_course_audio(session_id, 'ordering', 'encourage')
@@ -5591,10 +5691,10 @@ def register_socket_events(socketio):
             or data.get('interactionId')
             or data.get('sequenceId')
         )
+        resolved_behavior_id = None
         try:
             from app.robot import get_robot_service
 
-            resolved_behavior_id = None
             if behavior_id:
                 resolved_behavior_id = (
                     get_robot_service().mark_behavior_audio_complete(
@@ -5632,6 +5732,15 @@ def register_socket_events(socketio):
                 flush_error,
             )
         intent = str(data.get('intent') or '').strip().lower()
+        if intent == 'dialogue' and resolved_behavior_id:
+            socketio.emit('dialogue_reply_speech_ended', {
+                'protocolVersion': data.get('protocolVersion') or '1',
+                'sessionId': str(session_id),
+                'requestId': data.get('requestId') or data.get('request_id'),
+                'behaviorId': str(resolved_behavior_id),
+                'status': data.get('status') or 'ended',
+                'reason': data.get('reason') or 'browser_tts_ended',
+            })
         # browser TTS ↔ 连续 ASR 门控（对齐预录 audio_status）
         if session_id and intent:
             gate_entry = {
@@ -5740,6 +5849,10 @@ def register_socket_events(socketio):
         if not session_id:
             logger.warning('drop sequencing_game_end: session_id_missing')
             return
+        if not _consume_interactive_completion_praise(session_id):
+            _play_interactive_course_audio(
+                session_id, 'ordering', 'praise', course_completion=True
+            )
         emit('sequencing_game_end', data, room=session_id)
     
     # ==================== 分析结果事件（由后端发送） ====================

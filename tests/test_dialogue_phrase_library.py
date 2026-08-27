@@ -115,6 +115,38 @@ def test_phrase_config_api_lists_ordering_and_saves(monkeypatch, tmp_path):
     assert saved.status_code == 200
     assert saved.get_json()["slot"]["selected"] == selected
 
+    rejected = client.put(
+        "/api/config/phrases/question/naming", json={"selected": ["旧课程话术"]}
+    )
+    assert rejected.status_code == 400
+    assert "Demo 版仅允许" in rejected.get_json()["error"]
+
+    rejected_custom = client.post(
+        "/api/config/phrases/social_greeting_intro/social/custom",
+        json={"text": "旧社交话术"},
+    )
+    assert rejected_custom.status_code == 400
+    assert "Demo 版仅允许" in rejected_custom.get_json()["error"]
+
+
+def test_demo_disables_legacy_audio_entry_configuration():
+    from flask import Flask
+
+    from app.routes import config_content
+
+    app = Flask(__name__)
+    app.register_blueprint(config_content.config_content_bp)
+    client = app.test_client()
+
+    for method in (client.get, client.put):
+        response = method("/api/config/audio/entries/social_greeting_intro")
+        assert response.status_code == 410
+        assert response.get_json()["code"] == "demo_capability_disabled"
+
+    response = client.get("/api/config/audio/course-defaults/naming")
+    assert response.status_code == 400
+    assert "Demo 版仅允许" in response.get_json()["error"]
+
 
 def test_audio_service_is_always_browser_tts(monkeypatch):
     from app.audio.service import AudioService

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "deployment": "demo-machine",
+  "capabilities": {
+    "robotMotion": false,
+    "robotExpression": false,
+    "robotRuntime": false,
+    "childAnimation": true,
+    "browserSpeech": true
+  }
+}

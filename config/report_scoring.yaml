@@ -1,20 +1,18 @@
 # 报告评分权重与公式（可随时修改，无需改代码）
 # 运营说明见 docs/REPORT_SCORING.md
-# 五维权重之和应为 100；schema_version 会写入报告 formulaVersion
+# Demo 三维权重之和应为 100；schema_version 会写入报告 formulaVersion
 schema_version: education-training-index-v2-teacher-rating
 score_boundary: education_training_reference_only
 
-# 教师报告中的课程表现参考目标线。它只用于比较本次训练结果，
+# 教师报告中的训练参考线。它只用于比较本次训练结果，
 # 不是年龄常模、百分位或临床标准。
 course_goal_score: 70
 
-# --- 五维综合权重（和=100）---
+# --- Demo 三维综合权重（和=100）---
 weights:
-  attention: 20
-  expressiveLanguage: 20
-  receptiveLanguage: 20
-  matching: 20
-  ordering: 20
+  attention: 34
+  matching: 33
+  ordering: 33
 
 # --- 逐课点教师五级评分（1–5 → 映射到维度）---
 teacher_rating:
@@ -34,14 +32,6 @@ interactive_course:
 
 # --- 能力维度内部权重；缺项时按已有数据重新归一化 ---
 dimension_weights:
-  receptive:
-    pairing: 1
-    ordering: 1
-    naming: 1
-    onomatopoeia: 1
-  expressive:
-    naming: 1
-    onomatopoeia: 1
   attention:
     automatic: 0.70
     mimic_teacher: 0.30
@@ -49,25 +39,8 @@ dimension_weights:
 # --- 综合得分与任务表现按课程类型平衡，避免题量偏置 ---
 course_weights:
   mimic: 1
-  naming: 1
-  onomatopoeia: 1
   pairing: 1
   ordering: 1
-
-# --- 表达性语言子权重（文本/声学代理）---
-expressive:
-  speech_ratio_weight: 0.5
-  word_activity_weight: 0.3
-  clarity_weight: 0.2
-  # word_count 映射到 0-100 的参考上限
-  word_count_cap: 40
-
-# --- 接受性语言（过渡）：配对/排序正确率 + 反应时 ---
-receptive:
-  accuracy_weight: 0.7
-  response_weight: 0.3
-  ideal_response_sec: 3.0
-  slow_response_sec: 12.0
 
 # --- 综合评定阈值 ---
 grade_thresholds:

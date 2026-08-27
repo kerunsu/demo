@@ -3,17 +3,17 @@
 # Why: getUserMedia needs a "secure context". http://127.0.0.1 is secure;
 # http://LAN-IP is not. This launches Edge (prefer) or Chrome with
 # --unsafely-treat-insecure-origin-as-secure so the child page can use the mic
-# while Runtime stays on plain HTTP (ENABLE_HTTPS=false).
+# while the Demo Server stays on plain HTTP (ENABLE_HTTPS=false).
 #
-# -LanHost must be the BACKEND / Flask host (server machine), NOT the robot's
-# own IP when app.py runs on another PC. Runtime「打开 /child」passes this.
+# -LanHost must be the backend/Flask host. When the child device is separate
+# from the server, always pass the server's LAN address explicitly.
 #
 # Usage:
 #   .\scripts\Open-ChildLanMic.ps1
 #   .\scripts\Open-ChildLanMic.ps1 -LanHost 192.168.1.113
 #   .\scripts\Open-ChildLanMic.ps1 -Port 8080
 #
-# Runtime / teacher on backend PC: http://127.0.0.1:8080 (no flag needed).
+# Server/teacher on backend PC: http://127.0.0.1:8080 (no flag needed).
 # Child tablet/PC on LAN: run this script (or copy the URL + flags) → http://IP:8080/child
 
 [CmdletBinding()]
@@ -44,52 +44,19 @@ function Get-LanIpv4 {
     return $null
 }
 
-function Get-BackendHostFromRuntimeConfig {
-    # Robot Runtime persists backend URL after /ui register.
-    $cfgPath = Join-Path $env:LOCALAPPDATA "EIArt\robot_runtime\config.json"
-    if (-not (Test-Path -LiteralPath $cfgPath)) { return $null }
-    try {
-        $cfg = Get-Content -LiteralPath $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        $url = [string]$cfg.backendUrl
-        if (-not $url) { return $null }
-        if ($url -notmatch '://') { $url = "http://$url" }
-        $uri = [Uri]$url
-        if (-not $uri.Host) { return $null }
-        return @{
-            Host = $uri.Host
-            Port = if ($uri.IsDefaultPort) { 0 } else { $uri.Port }
-        }
-    } catch {
-        return $null
-    }
-}
-
-$portExplicit = $PSBoundParameters.ContainsKey("Port")
-
-if (-not $LanHost) {
-    $fromCfg = Get-BackendHostFromRuntimeConfig
-    if ($fromCfg -and $fromCfg.Host -and $fromCfg.Host -notmatch '^(localhost|127\.0\.0\.1)$') {
-        $LanHost = $fromCfg.Host
-        if (-not $portExplicit -and $fromCfg.Port -gt 0) {
-            $Port = [int]$fromCfg.Port
-        }
-        Write-Host "Using backend host from Runtime config: ${LanHost}:${Port}"
-    }
-}
-
 if (-not $LanHost) {
     $LanHost = Get-LanIpv4
     if (-not $LanHost) {
         $LanHost = "192.168.1.113"
         Write-Warning "Could not detect LAN IP; using default $LanHost. Pass -LanHost <后端IP> if wrong."
     } else {
-        Write-Warning "No Runtime backendUrl; using this machine's LAN IP $LanHost. Cross-machine: pass -LanHost <后端服务器IP>."
+        Write-Warning "Using this machine's LAN IP $LanHost. Cross-machine: pass -LanHost <后端服务器IP>."
     }
 }
 
 $origin = "http://${LanHost}:${Port}"
 $url = "$origin/child"
-$userDataDir = Join-Path $env:TEMP "eiart-child-lan"
+$userDataDir = Join-Path $env:TEMP "eiart-child-kiosk"
 New-Item -ItemType Directory -Force -Path $userDataDir | Out-Null
 
 $browserCandidates = @(
@@ -115,7 +82,15 @@ if (-not $browser) {
 # Do not use $args — automatic/read-only in PowerShell 7+.
 $browserArgs = @(
     "--new-window",
-    "--start-fullscreen",
+    # Kiosk removes tabs/address bar and is the browser-level boundary that
+    # page JavaScript cannot provide on a touch screen.
+    "--kiosk",
+    "--edge-kiosk-type=fullscreen",
+    "--disable-pinch",
+    "--overscroll-history-navigation=0",
+    "--disable-features=OverscrollHistoryNavigation,TouchpadOverscrollHistoryNavigation,TouchscreenOverscrollHistoryNavigation",
+    "--disable-session-crashed-bubble",
+    "--noerrdialogs",
     "--unsafely-treat-insecure-origin-as-secure=$origin",
     "--user-data-dir=$userDataDir",
     "--no-first-run",
@@ -123,7 +98,7 @@ $browserArgs = @(
     $url
 )
 
-Write-Host "Launching: $browser"
+Write-Host "Launching child touch kiosk: $browser"
 Write-Host "  origin flag: $origin"
 Write-Host "  user-data:   $userDataDir"
 Write-Host "  open:        $url"

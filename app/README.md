@@ -184,7 +184,7 @@ matchers
 ### `app/sockets/events.py`
 
 - **register_socket_events(socketio)**
-  - **用途**：注册所有核心 Socket.IO 事件；并调用 `register_robot_events` 追加机械臂事件。
+  - **用途**：注册教师端、儿童端、采集、分析和课程输出核心 Socket.IO 事件。Demo 不注册机械动作或完整版表情事件。
   - **事件处理器（内部 def）**
     - `connect/disconnect`: 连接管理；回 `connected`
     - `join_session/leave_session`: 加入/离开房间（sessionId 通用房间 + 角色房间）
@@ -215,10 +215,7 @@ matchers
   - `audio_status`: Child → Server 的播放状态回传；更新 controller，并 emit `audio_status_update` 给 teacher_room
   - `stop_audio`: Teacher → Server 停止请求；调用 `AudioController.stop_audio`
 
-### `app/sockets/robot_events.py`
-
-- **register_robot_events(socketio)**
-  - 注册机械臂姿态数据、录制、播放、表情事件（详见 `docs/CONTRACT.md` robot 部分）。
+Demo 版不包含 `app/sockets/robot_events.py`；机械动作、Robot Runtime 和完整版表情事件均不属于部署契约。
 
 ---
 

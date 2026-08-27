@@ -120,7 +120,7 @@ class VisionPipeline(BasePipeline):
                 )
             
             matcher_config = config_mgr.get_matcher_config('pose')
-            threshold = matcher_config.get('threshold', 0.85)
+            threshold = matcher_config.get('threshold', 0.70)
             
             try:
                 self._pose_matcher = AnalyzerRegistry.create_matcher(

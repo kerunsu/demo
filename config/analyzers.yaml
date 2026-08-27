@@ -1,62 +1,61 @@
+global:
+  mode: real
+  enable_sampling: true
+  enable_metrics: false
 analyzers:
-  attention:
+  pose:
+    mode: real
     enabled: true
+    sample_rate: 1
+    model_path: models/pose_landmarker_lite.task
+    min_detection_confidence: 0.5
+    num_poses: 1
+  face:
+    mode: null
+    enabled: true
+    sample_rate: 1
+    model_path: models/face_model.onnx
+    confidence_threshold: 0.6
+  attention:
+    mode: null
+    enabled: true
+    window_size: 10
     min_detection_confidence: 0.5
     min_tracking_confidence: 0.5
-    mode: null
     pose_threshold: 20
-    window_size: 10
-  face:
-    confidence_threshold: 0.6
-    enabled: true
-    mode: null
-    model_path: models/face_model.onnx
-    sample_rate: 1
-  pose:
-    enabled: true
-    min_detection_confidence: 0.5
-    mode: real
-    model_path: models/pose_landmarker_lite.task
-    num_poses: 1
-    sample_rate: 1
   speech:
+    mode: null
+    enabled: false
+    sample_rate: 1
+    model_path: models/whisper_tiny.bin
+    language: zh
     accumulation_duration: 2
     device: cuda
-    enabled: false
     frame_rms_threshold: 0.014
-    language: zh
     max_input_gain: 3.0
     min_voiced_ratio: 0.12
-    mode: null
     model_name: paraformer-zh
-    model_path: models/whisper_tiny.bin
     peak_threshold: 0.02
     rms_threshold: 0.006
-    sample_rate: 1
     sample_rate_audio: 16000
-global:
-  enable_metrics: false
-  enable_sampling: true
-  # 生产默认 Real；无模型/创建失败时 Registry 回退 Mock
-  mode: real
+matchers:
+  pose:
+    mode: real
+    enabled: true
+    threshold: 0.5
+    min_keypoint_visibility: 0.35
+    action_sigma: 0.55
+    allow_mirror: true
+    stable_frames: 4
+    stable_hold_seconds: 0.6
+    max_frame_gap_seconds: 0.55
+  speech:
+    mode: real
+    enabled: false
+    threshold: 60
 logging:
   level: INFO
   log_metrics: true
-matchers:
-  pose:
-    action_sigma: 0.55
-    allow_mirror: true
-    enabled: true
-    max_frame_gap_seconds: 0.55
-    min_keypoint_visibility: 0.35
-    mode: real
-    stable_frames: 4
-    stable_hold_seconds: 0.6
-    threshold: 0.72
-  speech:
-    enabled: false
-    mode: real
-    threshold: 60
 performance:
   analysis_timeout: 5
   max_concurrent_analyzers: 4

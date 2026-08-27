@@ -1,4 +1,4 @@
-"""运行时模式：儿童媒体 + 机械臂控制。落盘 config/runtime_modes.yaml，重启可恢复。"""
+"""运行时模式：儿童媒体 + Demo 固定禁用的机械输出。"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,14 +12,14 @@ from app.config import BASE_DIR
 
 _RUNTIME_PATH = BASE_DIR / "config" / "runtime_modes.yaml"
 
-DEFAULT_CHILD_MEDIA_MODE = "agent"
-DEFAULT_ROBOT_CONTROL_MODE = "robot_runtime"
+DEFAULT_CHILD_MEDIA_MODE = "browser"
+DEFAULT_ROBOT_CONTROL_MODE = "disabled"
 DEFAULT_DIALOGUE_WAKE_WORD_ENABLED = False
 DEFAULT_BROWSER_SPEECH_RATE = 0.88
 MIN_BROWSER_SPEECH_RATE = 0.5
 MAX_BROWSER_SPEECH_RATE = 2.0
-VALID_CHILD = ("browser", "agent")
-VALID_ROBOT = ("server_osc", "child_agent", "robot_runtime")
+VALID_CHILD = ("browser",)
+VALID_ROBOT = ("disabled",)
 
 
 def runtime_modes_path() -> Path:
@@ -32,8 +32,8 @@ def _normalize_child(mode: Any) -> str:
 
 
 def _normalize_robot(mode: Any) -> str:
-    m = str(mode or "").strip().lower()
-    return m if m in VALID_ROBOT else DEFAULT_ROBOT_CONTROL_MODE
+    # Demo 没有机械结构；配置文件、环境变量或旧 UI 都不能重新启用输出。
+    return DEFAULT_ROBOT_CONTROL_MODE
 
 
 def _normalize_bool(value: Any, default: bool = False) -> bool:
@@ -60,7 +60,7 @@ def normalize_browser_speech_rate(value: Any, *, strict: bool = False) -> float:
 
 def load_runtime_modes() -> Dict[str, Any]:
     """
-    优先级：runtime_modes.yaml > 环境变量 > 代码默认（agent / robot_runtime）。
+    优先级：runtime_modes.yaml > 环境变量 > 代码默认；机器人端固定 disabled。
     """
     child = DEFAULT_CHILD_MEDIA_MODE
     robot = DEFAULT_ROBOT_CONTROL_MODE

@@ -105,7 +105,7 @@ def _update_meta(session_id: str, **kwargs) -> None:
 
 
 def _check_agent_key() -> bool:
-    expected = Config.CHILD_MEDIA_AGENT_KEY or ""
+    expected = Config.MEDIA_UPLOAD_SHARED_KEY or ""
     if not expected:
         return True
     return request.headers.get("X-Child-Media-Agent-Key") == expected

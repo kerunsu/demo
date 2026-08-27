@@ -85,7 +85,7 @@
   }
 
   // ---------- Overview ----------
-  let runtimeBaseline = { child: 'agent', robot: 'robot_runtime', wakeWord: 'false', speechRate: '0.88' };
+  let runtimeBaseline = { child: 'browser', robot: 'disabled', wakeWord: 'false', speechRate: '0.88' };
 
   function fillRuntimeSelects(mediaMode, robotMode, wakeWordEnabled, speechRate) {
     const m = document.getElementById('ov-child-media');
@@ -93,14 +93,14 @@
     const w = document.getElementById('ov-wake-word');
     const s = document.getElementById('ov-speech-rate');
     const sv = document.getElementById('ov-speech-rate-value');
-    if (m && (mediaMode === 'browser' || mediaMode === 'agent')) m.value = mediaMode;
-    if (r && ['server_osc', 'child_agent', 'robot_runtime'].includes(robotMode)) r.value = robotMode;
+    if (m) m.value = 'browser';
+    if (r) r.value = 'disabled';
     if (w) w.value = wakeWordEnabled === true ? 'true' : 'false';
     if (s) s.value = String(Number(speechRate) || 0.88);
     if (sv) sv.textContent = `${Number(s?.value || 0.88).toFixed(2)}×`;
     runtimeBaseline = {
-      child: m ? m.value : 'agent',
-      robot: r ? r.value : 'robot_runtime',
+      child: 'browser',
+      robot: 'disabled',
       wakeWord: w ? w.value : 'false',
       speechRate: s ? s.value : '0.88',
     };
@@ -115,9 +115,9 @@
     const sv = document.getElementById('ov-speech-rate-value');
     const btn = document.getElementById('btn-ov-apply-runtime');
     const hint = document.getElementById('ov-runtime-dirty');
-    if (!m || !r || !w || !s || !btn) return;
+    if (!m || !w || !s || !btn) return;
     if (sv) sv.textContent = `${Number(s.value).toFixed(2)}×`;
-    const dirty = m.value !== runtimeBaseline.child || r.value !== runtimeBaseline.robot || w.value !== runtimeBaseline.wakeWord || s.value !== runtimeBaseline.speechRate;
+    const dirty = m.value !== runtimeBaseline.child || w.value !== runtimeBaseline.wakeWord || s.value !== runtimeBaseline.speechRate;
     btn.disabled = !dirty;
     if (hint) hint.textContent = dirty ? '有未应用的修改' : '';
   }
@@ -179,13 +179,13 @@
       const cam = camRes.config || {};
       const rep = repRes.config || {};
       const mediaMode = mediaRes.mode || mediaRes.data?.mode || mediaRes.childMediaMode || '—';
-      const robotMode = robotRes.mode || robotRes.data?.mode || robotRes.controlMode || '—';
+      const robotMode = 'disabled';
       fillRuntimeSelects(mediaMode, robotMode, runtimeRes.dialogueWakeWordEnabled === true, runtimeRes.browserSpeechRate);
       bindRuntimeDirty();
 
       metrics.innerHTML = `
         <div class="cc-card"><div class="cc-metric-label">全局分析器</div><div class="cc-metric-value" style="font-size:22px;">${esc(globalMode)}</div></div>
-        <div class="cc-card"><div class="cc-metric-label">儿童 mediaMode</div><div class="cc-metric-value" style="font-size:22px;">${esc(mediaMode)}</div><div class="cc-metric-note">robot: ${esc(robotMode)}</div></div>
+        <div class="cc-card"><div class="cc-metric-label">儿童 mediaMode</div><div class="cc-metric-value" style="font-size:22px;">${esc(mediaMode)}</div><div class="cc-metric-note">Demo 机械输出固定关闭</div></div>
         <div class="cc-card"><div class="cc-metric-label">摄像头采样</div><div class="cc-metric-value" style="font-size:22px;">${cam.enabled ? '开' : '关'}</div><div class="cc-metric-note">${cam.fps || '—'} fps · ${cam.width || '—'}×${cam.height || '—'}</div></div>
         <div class="cc-card"><div class="cc-metric-label">报告 schema</div><div class="cc-metric-value" style="font-size:14px;line-height:1.3;">${esc(rep.schema_version || '—')}</div></div>
       `;
@@ -238,10 +238,10 @@
 
   async function applyRuntimeModes() {
     const child = document.getElementById('ov-child-media')?.value;
-    const robot = document.getElementById('ov-robot-mode')?.value;
+    const robot = 'disabled';
     const wakeWord = document.getElementById('ov-wake-word')?.value;
     const speechRate = document.getElementById('ov-speech-rate')?.value;
-    if (!child || !robot || !wakeWord || !speechRate) return;
+    if (!child || !wakeWord || !speechRate) return;
     if (
       child === runtimeBaseline.child &&
       robot === runtimeBaseline.robot &&
@@ -376,7 +376,7 @@
       field('matchers.pose.mode', modeSelect('mp-mode', mp.mode)),
       field(
         'matchers.pose.threshold',
-        `<input class="cc-inp" type="number" id="mp-th" value="${mp.threshold ?? 0.85}" step="0.01" />`
+        `<input class="cc-inp" type="number" id="mp-th" value="${mp.threshold ?? 0.70}" step="0.01" />`
       ),
     ].join('');
     el.querySelectorAll('input,select').forEach((n) =>
@@ -693,6 +693,10 @@
       )
     ).join('');
     el.innerHTML =
+      field(
+        '训练参考线（%）',
+        `<input class="cc-inp" type="number" id="r-course-goal" min="0" max="100" value="${cfg.course_goal_score ?? 70}" step="1" />`
+      ) +
       weightFields +
       field(
         'narrative_provider',
@@ -744,6 +748,7 @@
       weights[k] = Number(document.getElementById('w-' + k).value);
     });
     return {
+      course_goal_score: Number(document.getElementById('r-course-goal').value),
       weights,
       narrative_provider: document.getElementById('r-narr').value,
       interactive_course: {

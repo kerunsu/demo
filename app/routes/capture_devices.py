@@ -276,7 +276,7 @@ def freeze_capture_snapshot():
         deployment = DeploymentProfile(
             profile_id=str(payload.get("profileId") or "default"),
             version=str(payload.get("version") or "1"),
-            child_media_mode=str(payload.get("childMediaMode") or "agent"),
+            child_media_mode="browser",
             required_modules=tuple(str(item) for item in required_modules),
             optional_modules=tuple(str(item) for item in optional_modules),
             strict_preflight=_bool_value(payload.get("strictPreflight", False), field="strictPreflight"),

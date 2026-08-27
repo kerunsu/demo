@@ -70,7 +70,8 @@ SYSTEM_PROMPT = """你是面向孤独症儿童课程训练的中文对话机器�
 6. 儿童问“你是谁”时，可以介绍“我是麦麦”，随后邀请儿童回到当前题目。
 7. 儿童良性跑题时：先短短顺着一句，再拉回当前题目或下面的图片；不要百科展开。
 8. 优先引导儿童看上面的图片、看下面的图片、尝试点击或继续表达。
-9. 拟声课的目标是让儿童开口模仿声音：示范一个短拟声，再邀请儿童跟着说；禁止要求儿童点击、指认或选择图片。"""
+9. 拟声课的目标是让儿童开口模仿声音：示范一个短拟声，再邀请儿童跟着说；禁止要求儿童点击、指认或选择图片。
+10. 模仿课的目标是让儿童观察屏幕上的动作图片并照着做：只说“看图片”“学着做”“照着做”或具体动作提示；不要声称机器人会示范全部动作，禁止要求儿童读、说、念或模仿声音。"""
 
 ADULT_HELP_REPLY = "这个问题要找老师或家长。我们先停一下。"
 WAKE_ACK_REPLY = "我在这里"
@@ -268,7 +269,7 @@ def _align_onomatopoeia_reply(
     course_type = str(
         context.get("courseType") or context.get("course_type") or ""
     ).strip().lower()
-    if course_type not in ("onomatopoeia", "mimic"):
+    if course_type != "onomatopoeia":
         return reply
 
     from .image_semantics import humanize_label
@@ -300,6 +301,48 @@ def _align_onomatopoeia_reply(
         return text
     first_sentence = re.split(r"[。！？!?]", text, maxsplit=1)[0].strip()[:12]
     return f"{first_sentence}。{practice}" if first_sentence else practice
+
+
+_MIMIC_NON_ACTION_RE = re.compile(
+    r"读|朗读|说一|说说|念|复述|发声|声音|叫声|怎么叫|点击|点一|选择|哪一张|哪张"
+)
+_MIMIC_ROBOT_FOLLOW_RE = re.compile(
+    r"看着?麦麦|跟着?麦麦|麦麦做|机器人做|跟着?机器人"
+)
+_MIMIC_ACTION_RE = re.compile(
+    r"动作|图片|图上|屏幕|学着做|照着做|手臂|身体|抬手|举手|伸手|摆手"
+)
+
+
+def _align_mimic_reply(
+    reply: str,
+    page_context: Optional[Dict[str, Any]],
+) -> str:
+    """动作模仿课硬约束：引导身体动作，绝不退化成跟读/拟声。"""
+    context = page_context or {}
+    course_type = str(
+        context.get("courseType") or context.get("course_type") or ""
+    ).strip().lower()
+    if course_type not in ("mimic", "imitation", "pose"):
+        return reply
+
+    practice = pick_phrase("question", "mimic")
+    text = str(reply or "").strip()
+    if not text or _MIMIC_NON_ACTION_RE.search(text) or _MIMIC_ROBOT_FOLLOW_RE.search(text):
+        return practice
+    if _MIMIC_ACTION_RE.search(text):
+        return text
+    first_sentence = re.split(r"[。！？!?]", text, maxsplit=1)[0].strip()[:12]
+    return f"{first_sentence}。{practice}" if first_sentence else practice
+
+
+def _align_course_reply(
+    reply: str,
+    page_context: Optional[Dict[str, Any]],
+) -> str:
+    """Apply the mutually-exclusive semantic guard for the active course."""
+    aligned = _align_onomatopoeia_reply(reply, page_context)
+    return _align_mimic_reply(aligned, page_context)
 
 
 def _short_kid_visual(label: str, description: str = "") -> str:
@@ -358,6 +401,11 @@ def _page_context_fingerprint(page_context: Optional[Dict[str, Any]]) -> str:
             str(q_index if q_index is not None else ""),
         ]
     )
+
+
+# 教师端只能看到即将播放的课点，交互页最终提交的 questionId 可能要到儿童端
+# iframe 生成首题后才确定。手动唤醒先记为待绑定，由当前儿童端的已提交上下文完成绑定。
+_PENDING_MANUAL_WAKE_CONTEXT = "__pending_manual_wake_context__"
 
 
 def _wake_syllables(text: str) -> list[str]:
@@ -476,6 +524,8 @@ class DialogueService:
         awake_fp = self._awake_fp.get(session_id)
         if awake_fp is None:
             return False
+        if awake_fp == _PENDING_MANUAL_WAKE_CONTEXT:
+            return True
         fp = _page_context_fingerprint(page_context)
         if awake_fp != fp:
             self.clear_awake(session_id)
@@ -486,9 +536,30 @@ class DialogueService:
         self,
         session_id: str,
         page_context: Optional[Dict[str, Any]] = None,
+        *,
+        defer_context_binding: bool = False,
     ) -> None:
         self._ensure_awake_store()
-        self._awake_fp[session_id] = _page_context_fingerprint(page_context)
+        self._awake_fp[session_id] = (
+            _PENDING_MANUAL_WAKE_CONTEXT
+            if defer_context_binding
+            else _page_context_fingerprint(page_context)
+        )
+
+    def bind_pending_awake_context(
+        self,
+        session_id: str,
+        page_context: Optional[Dict[str, Any]],
+    ) -> bool:
+        """用儿童端已提交的题目上下文完成一次手动唤醒绑定。"""
+        self._ensure_awake_store()
+        if self._awake_fp.get(session_id) != _PENDING_MANUAL_WAKE_CONTEXT:
+            return False
+        fingerprint = _page_context_fingerprint(page_context)
+        if not fingerprint:
+            return False
+        self._awake_fp[session_id] = fingerprint
+        return True
 
     def clear_awake(self, session_id: str) -> None:
         self._ensure_awake_store()
@@ -544,7 +615,9 @@ class DialogueService:
         course_type_l = str(course_type).strip().lower()
         is_ordering = course_type_l in ("ordering", "sequencing")
         is_pairing = course_type_l in ("pairing", "matching")
-        is_speech = course_type_l in ("naming", "speech", "onomatopoeia", "mimic")
+        is_speech = course_type_l in ("naming", "speech", "onomatopoeia")
+        is_mimic = course_type_l in ("mimic", "imitation", "pose")
+        is_single_target = is_speech or is_mimic
 
         prompt = page_context.get("prompt") or ""
         raw_target = (
@@ -602,6 +675,11 @@ class DialogueService:
             lines.append(
                 "回复要求：示范一个短拟声并邀请儿童跟着说；禁止说“点一张图”或要求儿童选择图片。"
             )
+        elif is_mimic:
+            lines.append("课程目标：让儿童观察屏幕上的动作图片并学着做身体动作，不是跟读或模仿声音。")
+            lines.append(
+                "回复要求：使用“看图片”“学着做”“照着做”或具体动作提示；不要声称机器人会示范全部动作，禁止要求儿童读、说、念或发声。"
+            )
         if category or rule_id or rule_text:
             lines.append(
                 f"当前规则：{rule_text or f'{category} {rule_id}'.strip()}".strip()
@@ -627,7 +705,9 @@ class DialogueService:
                 target,
                 str(page_context.get("targetDescription") or ""),
             )
-            if is_speech:
+            if is_mimic:
+                lines.append(f"当前图片动作：{target}")
+            elif is_speech:
                 if target_vis and target_vis != target:
                     lines.append(f"当前物品：{target}（{target_vis}）")
                 else:
@@ -640,7 +720,7 @@ class DialogueService:
 
         option_entries = self._option_entries(page_context)
         option_labels = [e["label"] for e in option_entries]
-        if option_entries and not is_speech:
+        if option_entries and not is_single_target:
             # DemoRobot：下面第N张：label（从左到右）；附短视觉供孩子听懂
             parts = []
             for i, ent in enumerate(option_entries):
@@ -863,6 +943,7 @@ class DialogueService:
                 "禁止答上面的图片，禁止沿用历史里旧题目的选项名称。"
                 "当前页面上下文优先于聊天历史。"
                 "若当前是拟声课，只引导儿童开口模仿声音，可先示范短拟声；绝不要求点击、指认或选择图片。"
+                "若当前是模仿课，只引导儿童看当前动作图片并照着做；不要让儿童跟机器人做，也不要声称机器人能完成图片中的全部动作。"
                 "不要反问孩子。"
                 "不要说“目标图”“选项”“训练目标”“页面上下文”“三角体”“立方体”“几何体”"
                 "“做朋友”“真有趣”：\n"
@@ -910,7 +991,7 @@ class DialogueService:
                 content = content.split("。")[0][:24]
         if not content:
             raise RuntimeError("ASD LLM returned empty reply")
-        content = _align_onomatopoeia_reply(content, page_context)
+        content = _align_course_reply(content, page_context)
 
         history.append({"role": "user", "content": child_text})
         history.append({"role": "assistant", "content": content})
@@ -954,7 +1035,7 @@ class DialogueService:
             if self.provider == "asd" and not self.api_key:
                 logger.warning("ASD key 未配置，对话降级为 rule")
             result = self._rule_reply(child_text, course_type)
-            result["reply"] = _align_onomatopoeia_reply(result.get("reply", ""), page_context)
+            result["reply"] = _align_course_reply(result.get("reply", ""), page_context)
             return result
 
         try:
@@ -968,7 +1049,7 @@ class DialogueService:
         except Exception as exc:  # noqa: BLE001
             logger.error("ASD 对话失败，降级 rule: %s", exc)
             result = self._rule_reply(child_text, course_type)
-            result["reply"] = _align_onomatopoeia_reply(result.get("reply", ""), page_context)
+            result["reply"] = _align_course_reply(result.get("reply", ""), page_context)
             return result
 
     def clear_history(self, session_id: str) -> None:

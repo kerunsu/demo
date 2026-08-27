@@ -1,148 +1,122 @@
-# Operations, release and rollback
+# Demo 运维、发布与回滚
 
-## Health checks
+本文只描述无机械结构 Demo 机的现行运维流程。完整版本的机器人、机械动作、Robot Runtime 和表情系统不属于本仓库；同步规则见 [Demo 同步规范](DEMO_SYNC.md)。
 
-Run `python -m pytest tests -q`, `python -m py_compile app.py`, and
-`python scripts/bootstrap.py --check-only`. Build the teacher client with
-`npm ci` and `npm run build` in a clean environment. Runtime health is checked
-through `/api/server/status`, `/api/robot/runtime/status` and the existing
-monitor endpoint.
+## 运行边界
 
-Normal Windows startup is `./start_server.ps1`. It builds the finite teacher
-production bundle and serves it at `http://<server>:8080/teacher/`; it does not
-leave a Vite process on 5173. A repeated Server start reuses the one healthy
-8080 instance.
+- 课程固定为模仿识别、配对、排序。
+- 儿童端固定使用浏览器摄像头、麦克风、语音识别和 TTS。
+- 允许儿童屏鼓励动画 `static/resources/Animations/`。
+- 不启动或探测 19091，不连接 DollSer/OSC，不下载机器人包。
+- 不发布 `doll/Pose/`、`motions.json`、`emotions_meta.json` 或 `static/resources/Emotions/`。
+- 报告只展示三门 Demo 课程及注意力、配对、排序三个评分维度；儿童情绪观测属于分析数据，不是机器人表情输出。
 
-In the local configuration console, “设备与录制” calls
-`POST /api/v2/control/devices/check`: Runtime and Server probes must each read
-a real first video frame/audio chunk. Runtime heartbeat alone is never a green
-device check. After a course, `GET /api/v2/control/overview` groups recorded
-sessions by child and the local-only reveal action opens only a validated
-direct child of the sessions root.
+这些边界由 `config/demo_course_scope.json`、`config/demo_deployment.json` 和代码中的 fail-closed 校验共同保证。编辑 JSON 也不能启用被禁止的硬件能力。
 
-The teacher client selects strict preflight automatically in agent/Robot
-Runtime mode. Before each course, confirm all enabled and required devices are
-capture-ready in the console; the same frozen device snapshot is then sent to
-Runtime for one shared recording start. Browser mode intentionally keeps the
-legacy preflight path for compatibility. Server-owned extra devices are
-currently probe-only; select Robot Runtime ownership for extra tracks that
-must be recorded and uploaded into the session dataset.
+## 首次部署
 
-## Safe deployment
+Windows 机器安装 Git、Python 3.10+ 和 Node.js LTS 后，克隆独立 Demo 仓库并在根目录运行：
 
-1. Back up `database/app.db`, `static/recordings`, `static/resources`, config
-   files and the Robot Runtime release manifest.
-2. Install Python dependencies and run non-destructive checks.
-3. Run teacher `npm ci`/build and verify static URLs.
-4. Apply database schema compatibility checks; never delete the old DB.
-5. Start `app.py`, then register Runtime and verify heartbeats.
-6. Run fake-device contract tests, then the browser/Runtime/hardware smoke
-checklist in `docs/TESTING.md`.
+```powershell
+.\start_server.ps1
+```
 
-On the robot, extract `releases/robot/EIArt-Robot-latest.zip` and run
-`start.bat`. Repeated clicks on the same build reuse the healthy Runtime. If a
-different packaged version owns 19091, the launcher validates that the owning
-process is `RobotRuntime`, stops it, restarts the named `DollSer` process so the
-current `Settings.xml` is loaded, and waits for `/ready=true`. The current
-release configures DollSer as COM3. Never kill an unrelated owner of 19091.
+引导程序会检查 Python/npm 依赖、教师端依赖和课程资源；首次没有 `database/app.db` 时创建仅含三门课程的数据库。它不会覆盖已有 `.env`、数据库、录制或日志。
 
-`app.py` no longer installs, downloads or starts a local speech model. The
-production child page requires Chrome/Edge browser `SpeechRecognition` and
-sends recognized text to the Server. `tools/voice-service/` and
-`/api/v2/voice/health` remain manual legacy diagnostics only; normal startup
-does not create a process on port 8765.
+启动脚本只复用 `/api/server/status` 明确返回 `deployment=demo-machine` 的 8080 服务。若端口被完整版或其他项目占用，脚本会停止并提示；两版不能连接到同一个后端进程。
 
-Rollback is a versioned application/config switch: disable new V2 profiles,
-return to `legacy_only`, restore the prior application/release package and
-restart. Do not rewrite historical sessions or delete assets. Keep deprecated
-shims for at least one release cycle.
+启动后验证：
 
-The current Robot Runtime package is described by
-`releases/robot/manifest.json` and `robot_runtime/VERSION`; its hash and size
-must be checked before distribution. The packer publishes the complete
-`EIArt-Robot-<version>.zip` for first installation and a smaller
-`EIArt-Robot-Update-<version>.zip` for `/ui` hot update, then atomically replaces
-the manifest last. The Server refuses a package whose size, SHA-256 or embedded
-VERSION differs from the manifest. Never repair a failed release by pointing a
-new manifest at an older `latest.zip`.
+1. `http://127.0.0.1:8080/teacher/` 可登录。
+2. `/child` 可打开并允许摄像头和麦克风。
+3. `/server` 可查看浏览器端连接、录制和分析状态。
+4. 课程选择、预设和配置目录只出现模仿、配对、排序。
+5. `/robot`、`/robot/emotion`、`/robot/download` 明确返回 Demo 能力禁用。
+6. 完成三类课程后可以评分、生成报告并提交审核。
 
-## Analyzer health
+只读环境检查：
 
-`GET /api/server/diagnostics` reports `pipelineHealth.status`, separate vision
-and audio flags, and component failures with `required/stage/error`. Required
-failure is `unhealthy` and blocks strict readiness; optional failure is
-`degraded`. Install the pinned MediaPipe range from `requirements.txt`. The
-production speech analyzer is disabled because recognized browser text is the
-fact source; the optional ASR stack is needed only when manually testing the
-legacy analyzer.
+```powershell
+.\start_server.ps1 -CheckOnly
+```
 
-## Multi-worker coordination
+`-CheckOnly` 不创建首次数据库，因此新机器的第一次部署应运行正常启动命令。
 
-Teacher leases are atomically persisted under
-`.runtime/coordination/teacher_leases.json` with a same-host OS file lock. The
-robot behavior slot uses `.runtime/coordination/robot_behavior.lock`, preventing
-overlap across local WSGI workers. Multi-host deployments still require a
-shared backend such as Redis.
+## 摄像头、麦克风与录制
 
-On Windows, coordination lock paths are resolved once to absolute paths.
-Blocking acquisition retries transient `EINVAL`/open failures, and an unlock
-error is contained because closing the descriptor releases the OS lock. A
-worker that still cannot acquire the lock returns
-`teacher_control_temporarily_unavailable` and must not read or write lease
-state without coordination. Raw OS errors such as `[Errno 22]` must never be
-shown by the teacher UI.
+默认摄像头和麦克风由儿童端浏览器持有。Server 不能替浏览器授予权限；设备页显示“等待儿童端浏览器授权”是未开儿童端时的正常状态，不是 Robot Runtime 故障。
 
-For a stuck interaction, inspect `/api/robot/runtime/status` first. The
-`preferredRuntimeId` should equal the `advertisedUrl` reported by the live child
-page. Then correlate `sessionId/requestId/behaviorId` in
-`full_interaction_timeline.jsonl`. `another_behavior_prepared` should self-heal
-after the prepared-motion TTL or when a new session takes over; repeated
-occurrence after an upgrade means the robot is still running an old package.
+正式训练使用一个连续媒体会话。切换课点只追加 `timeline.csv`，不会重启录像。稳定文件名和目录规则见 [数据格式](DATA_SCHEMA.md)：
 
-Uploaded MP4 assets are size-bounded and parsed as ISO-BMFF. Known duration,
-resolution and codec values are validated. Older partial-metadata assets remain
-readable but return `validationStatus: degraded` with specific warnings.
+- `video.avi`
+- `audio.wav`
+- `timeline.csv`
+- `session_meta.json`
+- `archive_meta.json`
+- `interaction_timeline.jsonl`
+- `full_interaction_timeline.jsonl`
 
-## Dialogue wake and audit exports
+不要手工改名、移动或自动修复历史会话。控制台的本机打开、上锁和删除操作仍受路径校验与本机访问限制。
 
-Server Config → Overview controls `dialogue_wake_word_enabled` in
-`config/runtime_modes.yaml`. It defaults to `false`; teacher-button wake remains
-available while voice wake is disabled. The teacher control page can hide/show
-the child dialogue panel without changing recording state. When voice wake is
-enabled, say the sentence-initial two-syllable “麦麦”; reviewed browser-ASR
-variants such as “买卖/卖卖/妹妹/慢慢” also match, while “妈妈” and a wake-like
-pair in the middle of a sentence do not.
+## 健康检查与发布门禁
 
-For a test session, open `full_interaction_timeline.jsonl` directly beside the
-recorded media in `static/recordings/sessions/<humanCourseDirectory>/`. The
-teacher UI intentionally has no log export controls. Server-side tooling may
-request `/api/v2/timeline/<trainingSessionId>?format=csv|jsonl`. Correlate failed or
-out-of-order behavior by `requestId` and `behaviorId`, then compare each modality
-phase. A missing terminal event is distinguishable from `failed`, `timeout`,
-`unverified`, or `degraded` rather than being reported as success.
+每次发布运行：
 
-## Application logs
+```powershell
+python -m pytest tests -q
+python -m compileall -q app database scripts app.py
+python scripts/bootstrap.py --check-only
+Set-Location teacher_frontend
+npm.cmd ci
+npm.cmd run build
+```
 
-All process logs are written to `logs/app.log` (UTF-8). Since 2026-08-10 every
-module — including socket handlers, recording timeline and robot service —
-defaults to appending a shared file handler in `app/utils/logger.py`; the
-console prints `INFO` while the file receives `DEBUG`. Previously only the
-startup logger reached the file, which made "clicked but nothing happened"
-incidents invisible after the fact.
+同时执行 `git diff --check`，检查所有改动 JavaScript 的 `node --check`，并按 [测试指南](TESTING.md) 完成无硬件浏览器冒烟。
 
-Playback incidents are diagnosed from two complementary views:
+发布前还要确认：
 
-- `logs/app.log` — server-side decision trail: `play_resource 收到` (request
-  arrived), `play_resource 被拒` (lease/authorize rejection), `play_resource
-  行为繁忙拒绝` (behavior busy, with `active_behavior` and `remaining_ms`),
-  `表情 ended 回执与命令不匹配，忽略` / `表情完成回传超时` (robot expression
-  receipt missing or unmatched), plus Robot Runtime heartbeats.
-- `full_interaction_timeline.jsonl` — every `play_resource_ack` (accepted,
-  `behavior_busy`, `behavior_start_failed`, idempotent replay, lease rejection)
-  is appended with `requestId`/`behaviorId`/`remainingMs` so teacher clicks can
-  be matched against question progression end to end.
+- 全新临时数据库重复播种后仍只有三类课程。
+- `config/course_presets.json` 的评估/干预预设只引用三类课程。
+- 配置同步 ZIP 不含数据库、录制、日志、机械动作、Robot Runtime 或完整版表情。
+- 机械/表情 Socket 未注册，禁用 HTTP 路径不会返回伪成功。
+- Windows 模仿识别使用仓库模型并保持当前阈值。
+- 教师端生产构建产物能够由 Flask 同源提供。
 
-To capture a live incident without keeping a console window open, start the
-backend via `server.ps1` (stdout is inherited by the PowerShell host) or wrap
-`python app.py` with output redirection; the file handler keeps working
-regardless of how the process was launched.
+## 安全升级
+
+1. 备份 `database/app.db`、`.env`、课程自定义配置和 `static/recordings/sessions/`。
+2. 确认当前没有训练、录制或报告审核正在进行。
+3. 拉取独立 Demo 分支；不要从完整版本目录整树覆盖。
+4. 运行测试、构建和 `-CheckOnly`。
+5. 启动唯一一个 8080 服务实例并完成三课程冒烟。
+6. 只使用现有迁移原地升级数据库，绝不通过删库解决结构差异。
+
+从完整版本同步时必须逐文件审查，重新应用 Demo 课程和能力边界，详见 [Demo 同步规范](DEMO_SYNC.md)。
+
+## 备份与回滚
+
+备份至少包含：
+
+- `database/app.db`
+- `.env`
+- `config/` 中部署配置
+- `static/recordings/sessions/`
+- 经审核的课程媒体和儿童动画
+
+回滚代码时同时恢复与该版本匹配的配置；数据库只能使用兼容迁移或经验证的备份，不重置历史数据。存储校验器保持只读。
+
+## 故障定位
+
+应用日志为 `logs/app.log`。按 `sessionId`、`trainingSessionId`、`requestId`、`behaviorId` 关联以下证据：
+
+- `play_resource 收到`、`play_resource_ack`：课程投递和回执。
+- `resource_ready`、`resource_transition_failed`：儿童端原子切换。
+- `teacher_rating_submit`：教师评分。
+- `finalize_training`、报告审核状态：结束与报告流程。
+- 浏览器控制台的权限错误：摄像头、麦克风或浏览器语音问题。
+
+不要把儿童情绪分析日志当成机器人表情事件；Demo 不存在机器人表情播放回执。接口和事件的现行约束见 [契约](CONTRACT.md)。
+
+## 多进程与数据安全
+
+教师控制租约和课程行为锁仍用于避免重复操作。多主机部署需要共享协调后端；本地文件锁只覆盖同一台 Server。所有配置写入使用同目录临时文件、`fsync` 和原子替换，数据库/录制/日志不进入源码提交。

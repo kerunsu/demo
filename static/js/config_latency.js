@@ -56,7 +56,8 @@
 
   function renderModalities(report) {
     const root = byId('latency-modality-grid');
-    const entries = Object.entries(report.modalities || {});
+    const entries = Object.entries(report.modalities || {})
+      .filter(([key]) => key === 'display' || key === 'audio');
     root.innerHTML = entries.map(([key, item]) => {
       const p95 = Number(item.p95Ms || 0);
       const width = Math.min(100, Math.max(2, p95 / 20));
@@ -67,7 +68,7 @@
         <div class="latency-modality-head"><strong>${esc(item.label)}</strong><span>${item.samples || 0} 样本</span></div>
         <div class="latency-modality-value">P50 ${ms(item.p50Ms)} · P95 ${ms(item.p95Ms)}</div>
         <div class="latency-bar"><i style="width:${width}%"></i></div>
-        <div class="cc-tiny">最大 ${ms(item.maxMs)}${key === 'motion' && item.proxySamples ? ` · ${item.proxySamples} 个下发代理` : ''}</div>
+        <div class="cc-tiny">最大 ${ms(item.maxMs)}</div>
         ${displayStages}
       </article>`;
     }).join('');
@@ -76,7 +77,9 @@
   function renderFocusRail(report) {
     const candidates = [];
     (report.interactions || []).forEach((interaction) => {
-      Object.entries(interaction.modalities || {}).forEach(([modality, detail]) => {
+      Object.entries(interaction.modalities || {})
+        .filter(([modality]) => modality === 'display' || modality === 'audio')
+        .forEach(([modality, detail]) => {
         if (Number.isFinite(Number(detail.startObservedMs))) {
           candidates.push({ interaction, modality, detail });
         }
@@ -159,7 +162,7 @@
     const body = byId('latency-interaction-body');
     const rows = report.interactions || [];
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="9">暂无可关联样本。开始课程并触发提问、提示或表扬后刷新。</td></tr>';
+      body.innerHTML = '<tr><td colspan="7">暂无可关联样本。开始课程并触发提问、提示或表扬后刷新。</td></tr>';
       return;
     }
     body.innerHTML = rows.slice(0, 50).map((item) => {
@@ -169,8 +172,6 @@
         <td>${ms(item.metrics?.teacherNetworkRttMs)}</td>
         <td>${ms(item.metrics?.serverDispatchMs)}</td>
         <td>${ms(item.metrics?.plannedSyncLeadMs)}</td>
-        ${modalityCell(item, 'expression')}
-        ${modalityCell(item, 'motion')}
         ${modalityCell(item, 'display')}
         ${modalityCell(item, 'audio')}
         <td><span class="cc-badge gray">${esc(sourceLabels[item.primarySource] || item.primarySource)}</span></td>

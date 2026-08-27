@@ -208,7 +208,9 @@ def test_control_status_http_contract(monkeypatch):
 
     control = client.get("/api/robot/control/status")
     assert control.status_code == 200
-    assert control.get_json()["control"]["targets"]["motionReady"] is True
+    assert control.get_json()["control"]["mode"] == "disabled"
+    assert control.get_json()["control"]["robotMotion"] is False
+    assert control.get_json()["control"]["robotExpression"] is False
     assert client.get("/api/robot/sequence/status/known").get_json()["status"]["phase"] == "running"
     assert client.get("/api/robot/sequence/status/missing").status_code == 404
 
@@ -245,8 +247,8 @@ def test_operational_stop_controls_return_dispatch_truth(monkeypatch):
     client = app.test_client()
 
     stopped = client.post("/api/v2/control/actions/stop-robot", json={})
-    assert stopped.status_code == 200
-    assert stopped.get_json()["behaviorCancelled"] is True
+    assert stopped.status_code == 410
+    assert stopped.get_json()["error"] == "demo_capability_disabled"
     missing = client.post("/api/v2/control/actions/stop-audio", json={})
     assert missing.status_code == 400
     audio = client.post(
@@ -277,28 +279,15 @@ def test_audio_stop_is_scoped_to_exact_child_room():
     assert socket.calls[0][2]["room"] == "session_session-exact_child"
 
 
-def test_server_control_frontend_tracks_terminal_instead_of_trusting_http_200():
+def test_server_control_frontend_exposes_only_demo_audio_and_child_animation_controls():
     template = (ROOT / "templates/server/config.html").read_text(encoding="utf-8")
-    behavior = (ROOT / "static/js/config_behavior_sequence.js").read_text(encoding="utf-8")
-    mapping = (ROOT / "static/robot/js/robot_mapping.js").read_text(encoding="utf-8")
     monitor = (ROOT / "static/js/server_monitor.js").read_text(encoding="utf-8")
-    display = (ROOT / "static/robot/js/emotion_display.js").read_text(encoding="utf-8")
 
-    assert 'id="behavior-test-status"' in template
-    assert "testAction('question', this)" in template
-    assert "/robot/emotion" in template
-    assert "pollCommandStatus" in behavior
-    assert "TERMINAL_PHASES" in behavior
-    assert "/api/robot/control/status" in behavior
-    assert "data.statusUrl" in behavior
-    assert "testBehaviorSequence(auxType, config, triggerButton)" in mapping
-    assert "fetchWithLegacyFallback('/api/config/courses', '/api/robot/courses', 'courses')" in mapping
-    assert "fetchWithLegacyFallback('/api/students', '/api/robot/students', 'students')" not in mapping
-    assert "/mapping/course/${courseId}/item/${itemId}/${auxType}" in mapping
-    assert "return ['silent', ...ENGAGEMENT_AUX_TYPES, ...SOCIAL_AUX_TYPES.slice(0, 2)]" in mapping
-    assert "return ['silent', ...ENGAGEMENT_AUX_TYPES, ...SOCIAL_AUX_TYPES.slice(2)]" in mapping
-    assert "robot.lastCommand" in monitor
-    assert "/api/v2/control/actions/stop-robot" in monitor
+    assert 'data-page="animations"' in template
+    assert "config_content_animations.js" in template
+    assert not (ROOT / "static/js/config_behavior_sequence.js").exists()
+    assert not (ROOT / "static/robot/js/robot_mapping.js").exists()
+    assert not (ROOT / "static/robot/js/emotion_display.js").exists()
+    assert "/api/v2/control/actions/stop-robot" not in monitor
     assert "/api/v2/control/actions/stop-audio" in monitor
     assert 'id="mon-control-feedback"' in (ROOT / "templates/server.html").read_text(encoding="utf-8")
-    assert "role: 'robot_display'" in display

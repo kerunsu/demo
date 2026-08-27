@@ -9,7 +9,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Mapping, Optional, Set
 
 from flask import Blueprint, jsonify, request
 from sqlalchemy import text
@@ -17,7 +17,6 @@ from sqlalchemy import text
 from app.config import BASE_DIR, Config
 from app.course_scope import (
     canonical_course_type,
-    enabled_course_type_set,
     enabled_course_types,
     filter_course_payloads,
     is_course_type_enabled,
@@ -48,6 +47,35 @@ TYPE_EN_TO_CN = {
 }
 TYPE_CN_TO_EN = {v: k for k, v in TYPE_EN_TO_CN.items()}
 _COURSE_PRESET_STORE = JsonCoursePresetStore(BASE_DIR / 'config' / 'course_presets.json')
+
+_DEMO_GLOBAL_PHRASE_INTENTS = frozenset({'attention', 'reward'})
+_DEMO_COURSE_PHRASE_INTENTS = frozenset({'question', 'hint', 'praise'})
+_DEMO_ORDERING_QUESTION_VARIANTS = frozenset({
+    'size_bigger', 'size_smaller',
+    'length_longer', 'length_shorter',
+    'height_taller', 'height_shorter',
+    'count_more', 'count_less',
+})
+
+
+def _demo_phrase_scope(intent: str, course_type: str) -> str:
+    """Validate and canonicalize a phrase write against the fixed Demo scope."""
+    normalized_intent = str(intent or '').strip().lower()
+    raw_type = str(course_type or '').strip().lower()
+    normalized_type = canonical_course_type(raw_type)
+    if normalized_type == 'global' and normalized_intent in _DEMO_GLOBAL_PHRASE_INTENTS:
+        return normalized_type
+    if (
+        is_course_type_enabled(normalized_type)
+        and normalized_intent in _DEMO_COURSE_PHRASE_INTENTS
+    ):
+        return normalized_type
+    if (
+        raw_type in _DEMO_ORDERING_QUESTION_VARIANTS
+        and normalized_intent == 'question'
+    ):
+        return raw_type
+    raise ValueError('Demo 版仅允许全局、模仿、配对和排序话术')
 
 
 def ensure_speech_target_column() -> None:
@@ -246,99 +274,181 @@ def _item_admin_dict(item: CourseItem) -> Dict[str, Any]:
     return d
 
 
-def _course_preset_catalog() -> tuple[
-    List[Dict[str, Any]],
-    Dict[int, Dict[str, Any]],
-    Dict[int, Dict[str, Any]],
-]:
+def _course_preset_catalog() -> tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
     catalog: List[Dict[str, Any]] = []
-    by_id: Dict[int, Dict[str, Any]] = {}
-    all_by_id: Dict[int, Dict[str, Any]] = {}
+    by_type: Dict[str, Dict[str, Any]] = {}
     for course in Course.query.order_by(Course.id).all():
-        course_type = TYPE_CN_TO_EN.get(
+        type_key = TYPE_CN_TO_EN.get(
             course.course_type.name if course.course_type else '',
             course.course_type.name if course.course_type else '',
         )
+        if not is_course_type_enabled(type_key):
+            continue
         item = {
             'id': course.id,
-            'title': course.title,
-            'type': course_type,
+            'title': course.course_type.name if course.course_type else course.title,
+            'type': type_key,
             'typeName': course.course_type.name if course.course_type else None,
             'itemCount': len(course.items or []),
+            'items': [
+                {
+                    'id': course_item.id,
+                    'name': course_item.name,
+                    'icon': course_item.icon,
+                    'file': course_item.media_file,
+                }
+                for course_item in sorted(course.items or [], key=lambda value: value.id)
+            ],
         }
-        all_by_id[course.id] = item
-        if not is_course_type_enabled(course_type):
-            continue
+        if type_key in by_type:
+            raise RuntimeError(f'duplicate_course_type:{type_key}')
         catalog.append(item)
-        by_id[course.id] = item
-    return catalog, by_id, all_by_id
+        by_type[type_key] = item
+    return catalog, by_type
 
 
 def _course_preset_response() -> Dict[str, Any]:
     document = _COURSE_PRESET_STORE.get_document()
-    catalog, by_id, all_by_id = _course_preset_catalog()
+    catalog, by_type = _course_preset_catalog()
     presets = []
     for raw in document['presets']:
         preset = dict(raw)
-        missing = [course_id for course_id in preset['courseIds'] if course_id not in all_by_id]
-        disabled = [
-            course_id for course_id in preset['courseIds']
-            if course_id in all_by_id and course_id not in by_id
-        ]
-        empty = [
-            course_id for course_id in preset['courseIds']
-            if course_id in by_id and by_id[course_id]['itemCount'] == 0
-        ]
-        preset['courses'] = [by_id[course_id] for course_id in preset['courseIds'] if course_id in by_id]
-        preset['missingCourseIds'] = missing
-        preset['disabledCourseIds'] = disabled
-        preset['emptyCourseIds'] = empty
-        preset['available'] = not missing and not disabled and not empty
-        preset['isDefault'] = raw['id'] == document['defaultPresetId']
+        selections = preset['courseSelections']
+        course_types = [selection['courseType'] for selection in selections]
+        missing = [course_type for course_type in course_types if course_type not in by_type]
+        missing_item_ids: Dict[str, List[int]] = {}
+        resolved_courses = []
+        for selection in selections:
+            course_type = selection['courseType']
+            course = by_type.get(course_type)
+            if course is None:
+                continue
+            available_ids = {item['id'] for item in course['items']}
+            unresolved = [item_id for item_id in selection['itemIds'] if item_id not in available_ids]
+            if unresolved:
+                missing_item_ids[course_type] = unresolved
+            resolved = dict(course)
+            resolved['selectedItemIds'] = list(selection['itemIds'])
+            resolved_courses.append(resolved)
+        preset['courseTypes'] = course_types
+        preset['courses'] = resolved_courses
+        # Compatibility fields remain derived for older teacher bundles. The
+        # persisted schema-v3 facts are mode + courseSelections.
+        preset['courseIds'] = [course['id'] for course in preset['courses']]
+        preset['missingCourseTypes'] = missing
+        preset['missingItemIds'] = missing_item_ids
+        preset['emptyCourseTypes'] = []
+        preset['missingCourseIds'] = []
+        preset['emptyCourseIds'] = []
+        preset['available'] = not missing and not missing_item_ids
+        preset['isDefault'] = raw['id'] == document['defaultPresetIds'][raw['mode']]
         presets.append(preset)
     return {
         'success': True,
         'schemaVersion': document['schemaVersion'],
+        'defaultPresetIds': document['defaultPresetIds'],
+        'defaultPresetId': document['defaultPresetIds']['assessment'],
         'enabledCourseTypes': list(enabled_course_types()),
-        'defaultPresetId': document['defaultPresetId'],
         'presets': presets,
         'courseCatalog': catalog,
     }
 
 
-def _validated_course_preset_payload(data: Mapping[str, Any]) -> tuple[str, str, List[int], bool]:
-    raw_ids = data.get('courseIds')
-    if not isinstance(raw_ids, list):
-        raise ValueError('courseIds must be an array')
-    course_ids = JsonCoursePresetStore._normalize_course_ids(raw_ids)
-    courses = Course.query.filter(Course.id.in_(course_ids)).all()
-    existing = {course.id for course in courses}
-    missing = [course_id for course_id in course_ids if course_id not in existing]
-    if missing:
-        raise ValueError(f'课程不存在: {", ".join(str(value) for value in missing)}')
-    empty = [course.id for course in courses if not course.items]
-    if empty:
-        raise ValueError(f'课程没有课点: {", ".join(str(value) for value in empty)}')
+def _validated_course_preset_payload(
+    data: Mapping[str, Any],
+) -> tuple[str, str, str, List[Dict[str, Any]], bool]:
+    raw_selections = data.get('courseSelections')
+    raw_types = data.get('courseTypes')
+    if raw_selections is None and raw_types is None and isinstance(data.get('courseIds'), list):
+        # One-release request compatibility: resolve IDs immediately and only
+        # use their canonical types before materializing exact item IDs.
+        legacy_ids: List[int] = []
+        for raw_id in data['courseIds']:
+            if isinstance(raw_id, bool) or not str(raw_id).strip().isdigit() or int(raw_id) <= 0:
+                raise ValueError('courseIds 只能包含正整数')
+            course_id = int(raw_id)
+            if course_id not in legacy_ids:
+                legacy_ids.append(course_id)
+        legacy_courses = Course.query.filter(Course.id.in_(legacy_ids)).all()
+        by_id = {course.id: course for course in legacy_courses}
+        raw_types = [
+            TYPE_CN_TO_EN.get(by_id[course_id].course_type.name, '')
+            for course_id in legacy_ids
+            if course_id in by_id and by_id[course_id].course_type
+        ]
+        if len(raw_types) != len(legacy_ids):
+            raise ValueError('课程不存在或未归类')
+    if raw_selections is None:
+        if not isinstance(raw_types, list):
+            raise ValueError('courseSelections must be an array')
+        course_types = JsonCoursePresetStore._normalize_course_types(raw_types)
+    else:
+        if not isinstance(raw_selections, list):
+            raise ValueError('courseSelections must be an array')
+        normalized = JsonCoursePresetStore._normalize_course_selections(raw_selections)
+        course_types = [selection['courseType'] for selection in normalized]
+    unknown = [course_type for course_type in course_types if course_type not in TYPE_EN_TO_CN]
+    if unknown:
+        raise ValueError(f'课型不存在: {", ".join(unknown)}')
     disabled = [
-        course.id for course in courses
-        if not is_course_type_enabled(course.to_dict().get('type'))
+        course_type for course_type in course_types
+        if not is_course_type_enabled(course_type)
     ]
     if disabled:
         raise ValueError(
-            f'Demo 机仅允许模仿、配对和排序课程: {", ".join(str(value) for value in disabled)}'
+            f'Demo 机仅允许模仿、配对和排序课程: {", ".join(disabled)}'
         )
+    courses = Course.query.join(CourseType).filter(CourseType.name.in_([
+        TYPE_EN_TO_CN[course_type] for course_type in course_types
+    ])).all()
+    by_type = {
+        TYPE_CN_TO_EN.get(course.course_type.name, ''): course
+        for course in courses
+        if course.course_type
+    }
+    missing = [course_type for course_type in course_types if course_type not in by_type]
+    if missing:
+        raise ValueError(f'课型没有课程: {", ".join(missing)}')
+    empty = [course_type for course_type in course_types if not by_type[course_type].items]
+    if empty:
+        raise ValueError(f'课型没有课点: {", ".join(empty)}')
+    if raw_selections is None:
+        normalized = [
+            {
+                'courseType': course_type,
+                'itemIds': sorted(item.id for item in by_type[course_type].items),
+            }
+            for course_type in course_types
+        ]
+    invalid_items: List[str] = []
+    for selection in normalized:
+        course_type = selection['courseType']
+        valid_ids = {item.id for item in by_type[course_type].items}
+        for item_id in selection['itemIds']:
+            if item_id not in valid_ids:
+                invalid_items.append(f'{course_type}:{item_id}')
+    if invalid_items:
+        raise ValueError(f'课点不存在或不属于所选大类: {", ".join(invalid_items)}')
     return (
+        JsonCoursePresetStore._normalize_mode(data.get('mode') or 'assessment'),
         str(data.get('name') or ''),
         str(data.get('description') or ''),
-        course_ids,
+        normalized,
         data.get('isDefault') is True,
     )
 
 
 def _course_preset_error_message(error: ValueError) -> str:
     messages = {
-        'course_ids_must_be_positive_integers': 'courseIds 只能包含正整数',
-        'course_ids_required': '请至少选择一门课程',
+        'course_types_must_be_identifiers': 'courseTypes 只能包含规范课型标识',
+        'course_types_required': '请至少选择一个课程大类',
+        'course_selections_required': '请至少选择一个课程大类',
+        'course_selection_items_required': '每个课程大类至少选择一个具体课点',
+        'course_selections_must_be_an_array': 'courseSelections 必须是数组',
+        'item_ids_must_be_an_array': 'itemIds 必须是数组',
+        'item_ids_must_be_positive_integers': 'itemIds 只能包含正整数',
+        'duplicate_course_selection_type': '同一个课程大类不能重复添加',
+        'invalid_course_preset_mode': '预设用途只能是 assessment 或 intervention',
         'preset_name_required': '请填写预设名称',
         'preset_name_too_long': '预设名称不能超过 80 个字符',
         'preset_description_too_long': '预设说明不能超过 240 个字符',
@@ -358,11 +468,12 @@ def list_course_presets():
 def create_course_preset():
     data = request.get_json(silent=True) or {}
     try:
-        name, description, course_ids, is_default = _validated_course_preset_payload(data)
+        mode, name, description, course_selections, is_default = _validated_course_preset_payload(data)
         preset = _COURSE_PRESET_STORE.create(
+            mode=mode,
             name=name,
             description=description,
-            course_ids=course_ids,
+            course_selections=course_selections,
             is_default=is_default,
         )
     except ValueError as exc:
@@ -376,12 +487,13 @@ def create_course_preset():
 def update_course_preset(preset_id: str):
     data = request.get_json(silent=True) or {}
     try:
-        name, description, course_ids, is_default = _validated_course_preset_payload(data)
+        mode, name, description, course_selections, is_default = _validated_course_preset_payload(data)
         preset = _COURSE_PRESET_STORE.update(
             preset_id,
+            mode=mode,
             name=name,
             description=description,
-            course_ids=course_ids,
+            course_selections=course_selections,
             is_default=is_default,
         )
     except KeyError:
@@ -448,9 +560,6 @@ def list_courses():
 @config_content_bp.route('/courses', methods=['POST'])
 def create_course():
     data = request.get_json() or {}
-    title = (data.get('title') or '').strip()
-    if not title:
-        return jsonify({'success': False, 'error': 'title required'}), 400
     type_id = data.get('courseTypeId') or data.get('course_type_id')
     type_en = data.get('type')
     if not type_id and type_en:
@@ -461,19 +570,25 @@ def create_course():
         type_id = ct.id
     if not type_id:
         return jsonify({'success': False, 'error': 'courseTypeId or type required'}), 400
-    ct = CourseType.query.get(type_id)
+    ct = db.session.get(CourseType, int(type_id))
     if not ct:
         return jsonify({'success': False, 'error': '课型不存在'}), 404
-    resolved_type = canonical_course_type(TYPE_CN_TO_EN.get(ct.name, ct.name))
+    resolved_type = TYPE_CN_TO_EN.get(ct.name, ct.name)
     if not is_course_type_enabled(resolved_type):
         return jsonify({
             'success': False,
             'error': 'Demo 机仅允许创建模仿、配对和排序课程',
         }), 400
-
+    existing = Course.query.filter_by(course_type_id=int(type_id)).first()
+    if existing is not None:
+        return jsonify({
+            'success': False,
+            'error': f'“{ct.name}”大类已存在，请在该大类中添加课点',
+            'courseId': existing.id,
+        }), 409
     course = Course(
         course_type_id=int(type_id),
-        title=title,
+        title=ct.name,
         icon=data.get('icon'),
         question_audio=data.get('questionAudio') or data.get('question'),
         praise_audio=data.get('praiseAudio') or data.get('praise'),
@@ -487,7 +602,7 @@ def create_course():
 @config_content_bp.route('/courses/<int:course_id>', methods=['GET'])
 def get_course(course_id: int):
     course = Course.query.get(course_id)
-    if not course:
+    if not course or not is_course_type_enabled(course.to_dict().get('type')):
         return jsonify({'success': False, 'error': '课程不存在'}), 404
     mapped = _course_ids_with_mapping(_load_course_map())
     data = _course_admin_dict(course, mapped)
@@ -498,11 +613,11 @@ def get_course(course_id: int):
 @config_content_bp.route('/courses/<int:course_id>', methods=['PATCH'])
 def patch_course(course_id: int):
     course = Course.query.get(course_id)
-    if not course:
+    if not course or not is_course_type_enabled(course.to_dict().get('type')):
         return jsonify({'success': False, 'error': '课程不存在'}), 404
     data = request.get_json() or {}
-    if 'title' in data and data['title'] is not None:
-        course.title = str(data['title']).strip() or course.title
+    # 一个课型只有一个课程大类，显示名称由 CourseType 唯一决定。
+    course.title = course.course_type.name if course.course_type else course.title
     if 'icon' in data:
         course.icon = data['icon']
     if 'questionAudio' in data or 'question' in data:
@@ -511,7 +626,7 @@ def patch_course(course_id: int):
         course.praise_audio = data.get('praiseAudio', data.get('praise'))
     if 'entryFile' in data or 'file' in data:
         course.entry_file = data.get('entryFile', data.get('file'))
-    # 课型只读：忽略 courseTypeId 变更（v1）
+    # 课型与大类名称只读；课点内容在大类内部维护。
     db.session.commit()
     mapped = _course_ids_with_mapping(_load_course_map())
     return jsonify({'success': True, 'course': _course_admin_dict(course, mapped)})
@@ -520,7 +635,7 @@ def patch_course(course_id: int):
 @config_content_bp.route('/courses/<int:course_id>', methods=['DELETE'])
 def delete_course(course_id: int):
     course = Course.query.get(course_id)
-    if not course:
+    if not course or not is_course_type_enabled(course.to_dict().get('type')):
         return jsonify({'success': False, 'error': '课程不存在'}), 404
     force = request.args.get('force', '').lower() in ('1', 'true', 'yes')
     refs = _course_map_refs_for_course(course_id)
@@ -539,7 +654,7 @@ def delete_course(course_id: int):
 @config_content_bp.route('/courses/<int:course_id>/items', methods=['GET'])
 def list_items(course_id: int):
     course = Course.query.get(course_id)
-    if not course:
+    if not course or not is_course_type_enabled(course.to_dict().get('type')):
         return jsonify({'success': False, 'error': '课程不存在'}), 404
     return jsonify({
         'success': True,
@@ -550,7 +665,7 @@ def list_items(course_id: int):
 @config_content_bp.route('/courses/<int:course_id>/items', methods=['POST'])
 def create_item(course_id: int):
     course = Course.query.get(course_id)
-    if not course:
+    if not course or not is_course_type_enabled(course.to_dict().get('type')):
         return jsonify({'success': False, 'error': '课程不存在'}), 404
     data = request.get_json() or {}
     name = (data.get('name') or '').strip()
@@ -581,7 +696,7 @@ def create_item(course_id: int):
 @config_content_bp.route('/items/<int:item_id>', methods=['PATCH'])
 def patch_item(item_id: int):
     item = CourseItem.query.get(item_id)
-    if not item:
+    if not item or not is_course_type_enabled(item.course.to_dict().get('type')):
         return jsonify({'success': False, 'error': '课点不存在'}), 404
     data = request.get_json() or {}
     if 'name' in data and data['name'] is not None:
@@ -616,7 +731,7 @@ def patch_item(item_id: int):
 @config_content_bp.route('/items/<int:item_id>', methods=['DELETE'])
 def delete_item(item_id: int):
     item = CourseItem.query.get(item_id)
-    if not item:
+    if not item or not is_course_type_enabled(item.course.to_dict().get('type')):
         return jsonify({'success': False, 'error': '课点不存在'}), 404
     db.session.delete(item)
     db.session.commit()
@@ -781,7 +896,7 @@ def delete_media():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# ========== 课型 / 社交语音（audio_manifest） ==========
+# ========== Demo 课型实时话术 ==========
 
 @config_content_bp.route('/phrases', methods=['GET'])
 def get_dialogue_phrases():
@@ -807,9 +922,8 @@ def get_dialogue_phrases():
         'slots': global_slots,
         'globalInteraction': True,
     })
-    enabled_types = enabled_course_type_set()
     for type_key, label in TYPE_EN_TO_CN.items():
-        if canonical_course_type(type_key) not in enabled_types:
+        if not is_course_type_enabled(type_key):
             continue
         db_type = CourseType.query.filter_by(name=label).first()
         linked_courses = []
@@ -859,7 +973,8 @@ def put_dialogue_phrase_selection(intent: str, course_type: str):
 
     data = request.get_json(silent=True) or {}
     try:
-        slot = set_enabled(intent, course_type, data.get('selected'))
+        demo_course_type = _demo_phrase_scope(intent, course_type)
+        slot = set_enabled(intent, demo_course_type, data.get('selected'))
         return jsonify({'success': True, 'slot': slot})
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
@@ -874,7 +989,8 @@ def post_dialogue_custom_phrase(intent: str, course_type: str):
 
     data = request.get_json(silent=True) or {}
     try:
-        slot = add_custom(intent, course_type, data.get('text'))
+        demo_course_type = _demo_phrase_scope(intent, course_type)
+        slot = add_custom(intent, demo_course_type, data.get('text'))
         return jsonify({'success': True, 'slot': slot}), 201
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
@@ -886,7 +1002,12 @@ def post_dialogue_custom_phrase(intent: str, course_type: str):
 def get_audio_course_defaults(course_type: str):
     from app.audio.manifest_io import get_course_type_defaults
     try:
-        return jsonify({'success': True, 'defaults': get_course_type_defaults(course_type)})
+        demo_course_type = canonical_course_type(course_type)
+        if not is_course_type_enabled(demo_course_type):
+            raise ValueError('Demo 版仅允许模仿、配对和排序课程语音')
+        return jsonify({'success': True, 'defaults': get_course_type_defaults(demo_course_type)})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
         logger.error('get_audio_course_defaults: %s', e, exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -900,9 +1021,12 @@ def put_audio_course_defaults(course_type: str):
     updated = []
     keys = ('question', 'praise', 'hint', *ORDERING_QUESTION_KEYS)
     try:
+        demo_course_type = canonical_course_type(course_type)
+        if not is_course_type_enabled(demo_course_type):
+            raise ValueError('Demo 版仅允许模仿、配对和排序课程语音')
         for key in keys:
             if key in data and data[key]:
-                updated.append(set_course_type_audio(course_type, key, str(data[key])))
+                updated.append(set_course_type_audio(demo_course_type, key, str(data[key])))
         if not updated:
             return jsonify({'success': False, 'error': 'no audio fields to update'}), 400
         return jsonify({'success': True, 'updated': updated})
@@ -915,39 +1039,26 @@ def put_audio_course_defaults(course_type: str):
 
 @config_content_bp.route('/audio/entries/<entry_id>', methods=['GET'])
 def get_audio_entry(entry_id: str):
-    from app.audio.manifest_io import get_entry_display_path
-    try:
-        eid, path = get_entry_display_path(entry_id)
-        return jsonify({'success': True, 'entryId': eid, 'filePath': path})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({
+        'success': False,
+        'error': 'Demo 版使用浏览器实时话术，不开放旧音频条目配置',
+        'code': 'demo_capability_disabled',
+    }), 410
 
 
 @config_content_bp.route('/audio/entries/<entry_id>', methods=['PUT'])
 def put_audio_entry(entry_id: str):
-    """社交四键等：body { filePath: "resources/audios/..." }"""
-    from app.audio.manifest_io import SOCIAL_ENTRY_KEYS, set_entry_single_file, set_social_button_audio
-    data = request.get_json(silent=True) or {}
-    file_path = data.get('filePath') or data.get('path') or ''
-    try:
-        if entry_id in SOCIAL_ENTRY_KEYS:
-            result = set_social_button_audio(entry_id, str(file_path))
-        else:
-            result = set_entry_single_file(entry_id, str(file_path))
-        return jsonify({'success': True, **result})
-    except ValueError as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
-    except Exception as e:
-        logger.error('put_audio_entry: %s', e, exc_info=True)
-        return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({
+        'success': False,
+        'error': 'Demo 版使用浏览器实时话术，不开放旧音频条目配置',
+        'code': 'demo_capability_disabled',
+    }), 410
 
 
 # ========== 工作台汇总 ==========
 
 @config_content_bp.route('/content/summary', methods=['GET'])
 def content_summary():
-    from app.robot.emotion_assets import list_emotion_files
-    from app.robot import get_robot_service
     from app.audio.manifest_io import list_types_missing_question
 
     courses = [
@@ -975,20 +1086,16 @@ def content_summary():
         for it in items if not (it.media_file or '').strip()
     ]
     unmapped_courses = [c.id for c in courses if c.id not in mapped]
-    motion_count = 0
-    try:
-        motion_count = len(get_robot_service().get_motion_list() or [])
-    except Exception as e:
-        logger.warning('summary motions: %s', e)
-
     return jsonify({
         'success': True,
         'summary': {
-            'enabledCourseTypes': list(enabled_course_types()),
             'courseCount': len(courses),
             'itemCount': len(items),
-            'emotionCount': len(list_emotion_files()),
-            'motionCount': motion_count,
+            'enabledCourseTypes': list(enabled_course_types()),
+            'emotionCount': 0,
+            'motionCount': 0,
+            'robotMotionEnabled': False,
+            'robotExpressionEnabled': False,
             'missingQuestionAudio': len(missing_types),
             'missingQuestionAudioTypes': missing_types,
             'missingQuestionAudioCourseIds': missing_question_ids,

@@ -124,6 +124,9 @@ class Course(db.Model):
     存储课程的基本信息
     """
     __tablename__ = 'course'
+    __table_args__ = (
+        db.Index('uq_course_course_type', 'course_type_id', unique=True),
+    )
     
     id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='课程ID')
     course_type_id = db.Column(db.Integer, db.ForeignKey('course_type.id', ondelete='RESTRICT'), nullable=False, comment='课程类型ID')

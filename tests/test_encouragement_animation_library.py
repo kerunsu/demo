@@ -62,17 +62,18 @@ def test_animation_library_rejects_bad_files_and_protects_references(tmp_path, m
         animation_assets.delete_animation_file("bound.mp4")
 
 
-def test_mapping_round_trip_keeps_explicit_animation(tmp_path):
+def test_mapping_round_trip_keeps_animation_without_robot_outputs(tmp_path):
     from app.robot.mapping_resolver import MappingResolver
 
     map_path = tmp_path / "course_map.json"
     map_path.write_text(json.dumps({"defaults": {}, "courses": {}, "students": {}}), encoding="utf-8")
     resolver = MappingResolver(str(map_path))
-    resolver.update_course_motions(3, "praise", ["wave"], "happy.mp4", {}, "custom.mp4")
+    resolver.update_course_motions(3, "praise", [], None, {}, "custom.mp4")
     resolver.reload()
 
     binding = resolver.find_mapping(None, 3, None, "praise")
-    assert binding["motions"] == ["wave"]
+    assert binding["motions"] == []
+    assert binding["emotion"] is None
     assert binding["animation"] == "custom.mp4"
     persisted = json.loads(map_path.read_text(encoding="utf-8"))
     assert persisted["courses"]["3"]["praise"]["animation"] == "custom.mp4"
@@ -88,14 +89,11 @@ def test_child_uses_behavior_animation_contract_only():
     assert 'id="behaviorAnimationVideo"' in html
 
 
-def test_config_sync_includes_robot_libraries_bindings_and_animations(tmp_path, monkeypatch):
+def test_config_sync_includes_demo_bindings_and_animations_only(tmp_path, monkeypatch):
     from app.routes import config_sync
 
     expected = {
-        "doll/data/motions.json": "{}",
         "doll/data/course_map.json": "{}",
-        "doll/data/emotions_meta.json": "{}",
-        "static/resources/Emotions/idle.mp4": "emotion",
         "static/resources/Animations/default.mp4": "animation",
     }
     for relative, content in expected.items():
@@ -106,6 +104,9 @@ def test_config_sync_includes_robot_libraries_bindings_and_animations(tmp_path, 
 
     files = {path.relative_to(tmp_path).as_posix() for path, _kind in config_sync._iter_sync_files()}
     assert set(expected).issubset(files)
+    assert "doll/data/motions.json" not in files
+    assert "doll/data/emotions_meta.json" not in files
+    assert not any(path.startswith("static/resources/Emotions/") for path in files)
 
 
 def test_animation_rename_ui_and_api_contract():
@@ -119,14 +120,10 @@ def test_animation_rename_ui_and_api_contract():
     assert "referencesUpdated" in script or "newName" in script
 
 
-def test_animation_picker_updates_the_config_that_save_submits():
+def test_demo_animation_ui_has_no_robot_mapping_script():
     root = Path(__file__).resolve().parents[1]
-    mapping = (root / "static" / "robot" / "js" / "robot_mapping.js").read_text(encoding="utf-8")
-    handler = mapping.split("function onAnimationChange() {", 1)[1].split("\n}", 1)[0]
-
-    assert "const config = currentEditingConfig || getConfigForScope(currentScope);" in handler
-    assert "config.__animation = config.__animation || {};" in handler
-    assert "config.__animation.praise = value;" in handler
-    assert "dirtyAuxTypes.add('praise');" in handler
-    assert "mappingData.defaults" not in handler
-    assert "config.__animation?.[k] || ''" in mapping
+    template = (root / "templates" / "server" / "config.html").read_text(encoding="utf-8")
+    assert "config_content_animations.js" in template
+    assert "robot_mapping.js" not in template
+    assert not (root / "static" / "robot" / "js" / "robot_mapping.js").exists()
+    assert 'id="page-binding"' not in template

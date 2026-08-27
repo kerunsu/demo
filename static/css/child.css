@@ -1,13 +1,74 @@
 /* 儿童端专用样式 */
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root {
+  /* Sampled from resources/images/UI/BG.png so course imagery keeps the
+     established warm frame without stretching that fixed 16:9 bitmap. */
+  --course-image-frame-color: #ffe38f;
+}
+
+*,
+*::before,
+*::after {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+}
+
 body {
   text-align: center;
-  margin-top: 50px;
+  margin: 0;
+}
+
+/* Standby owns the whole child surface.  It must stay above any previously
+   committed course layer while a session is inactive. */
+#standbyImage {
+  display: none;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  min-width: 100vw;
+  min-height: 100vh;
+  object-fit: cover;
+  object-position: center;
+  margin: 0;
+  z-index: 2200;
+  pointer-events: none;
+  background: #ffe38f;
+}
+
+/* Legacy diagnostics remain writable for logs/recovery but are never part of
+   the child-facing surface, including the first frame of a crossfade. */
+body > h1,
+body > #status {
+  display: none;
+}
+
+#childCam {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 #image, #video, #audio, #interactive,
 #image-staging, #video-staging, #interactive-staging {
   display: none;
-  margin-top: 20px;
+  margin: 0;
 }
 
 #poseProgressContainer {
@@ -36,8 +97,7 @@ body {
 /* 全屏媒体样式 */
 .course-media-layer {
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100vw;
   height: 100vh;
   object-fit: contain;
@@ -46,6 +106,31 @@ body {
   opacity: 1;
   transition: opacity 160ms cubic-bezier(0.77, 0, 0.175, 1);
   will-change: opacity;
+}
+
+/*
+ * Naming/onomatopoeia source images have mixed aspect ratios. Their frame is
+ * sized from naturalWidth/naturalHeight in child.js, so the image itself is
+ * never cropped or stretched and no white object-fit letterbox can be exposed.
+ * The large same-colour spread makes the remaining viewport part of the warm
+ * BG.png-style frame; border-radius creates its rounded inner edge.
+ */
+#image.course-image-frame,
+#image-staging.course-image-frame {
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  width: var(--course-image-content-width);
+  height: var(--course-image-content-height);
+  box-sizing: content-box;
+  object-fit: fill;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  border: var(--course-image-frame-width) solid var(--course-image-frame-color);
+  border-radius: var(--course-image-frame-radius);
+  background: #fff;
+  box-shadow: 0 0 0 100vmax var(--course-image-frame-color);
+  overflow: hidden;
 }
 
 /* 表扬视频需覆盖课程内容 */
@@ -121,240 +206,4 @@ canvas {
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 6px;
-}
-
-/* 对话面板：必须压过待机图(100)、课程媒体(1000)、过渡遮罩(2500) */
-#dialoguePanel.dialogue-panel {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 5000;
-  display: block;
-  visibility: visible;
-  opacity: 1;
-  pointer-events: auto;
-  box-sizing: border-box;
-  min-width: 240px;
-  max-width: min(340px, calc(100vw - 24px));
-  padding: 14px 14px 12px;
-  border-radius: 14px;
-  background: rgba(18, 22, 28, 0.92);
-  color: #fff;
-  font-size: 14px;
-  line-height: 1.35;
-  text-align: left;
-  border: 2px solid rgba(255, 196, 86, 0.95);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
-}
-
-#dialoguePanel.dialogue-panel.is-hidden,
-#dialoguePanel.dialogue-panel[hidden] {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-.dialogue-panel__title {
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: 0.02em;
-}
-
-.dialogue-panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 32px;
-  margin-bottom: 8px;
-}
-
-.dialogue-panel__collapse {
-  flex: 0 0 32px;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  cursor: pointer;
-  font-size: 22px;
-  line-height: 28px;
-}
-
-.dialogue-panel__collapse:hover,
-.dialogue-panel__collapse:focus-visible {
-  background: rgba(255, 255, 255, 0.2);
-  outline: 2px solid rgba(255, 196, 86, 0.9);
-  outline-offset: 2px;
-}
-
-#dialoguePanel.dialogue-panel.is-collapsed {
-  min-width: 0;
-  width: 156px;
-  padding: 8px 10px;
-}
-
-#dialoguePanel.dialogue-panel.is-collapsed .dialogue-panel__header {
-  margin-bottom: 0;
-}
-
-#dialoguePanel.dialogue-panel.is-collapsed .dialogue-panel__body {
-  display: none;
-}
-
-.dialogue-panel__btn,
-.dialogue-panel__hold {
-  display: block;
-  width: 100%;
-  margin-bottom: 8px;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  background: #ffc456;
-  color: #1a1a1a;
-  font-weight: 600;
-}
-
-.dialogue-panel__hold {
-  padding: 12px 10px;
-  background: #3dd68c;
-  color: #0b1f14;
-}
-
-.dialogue-panel__hold.is-listening {
-  background: #ff8f6b;
-  color: #2a1208;
-}
-
-.dialogue-panel__hold:active {
-  background: #2bb872;
-}
-
-.dialogue-panel__sleep:disabled {
-  opacity: 0.55;
-  cursor: default;
-  background: #5a6570;
-  color: #d7dde5;
-}
-
-.dialogue-panel__row {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
-  align-items: stretch;
-}
-
-.dialogue-panel__input {
-  flex: 1;
-  min-width: 0;
-  padding: 8px 8px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  color: #111;
-  background: #fff;
-  font-size: 13px;
-}
-
-.dialogue-panel__send {
-  flex: 0 0 auto;
-  padding: 8px 12px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  background: #5b9cff;
-  color: #fff;
-}
-
-.dialogue-panel__label {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 12px;
-  opacity: 0.9;
-}
-
-.dialogue-panel__select {
-  width: 100%;
-  margin-bottom: 10px;
-  padding: 6px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  color: #111;
-  background: #fff;
-}
-
-.dialogue-panel__hint {
-  margin: 0 0 8px;
-  font-size: 11px;
-  line-height: 1.35;
-  opacity: 0.75;
-}
-
-.dialogue-panel__log {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 168px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  margin: 0 0 8px;
-  padding: 8px 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-  -webkit-overflow-scrolling: touch;
-}
-
-.dialogue-panel__msg {
-  max-width: 100%;
-  padding: 5px 7px;
-  border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.35;
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-
-.dialogue-panel__msg-role {
-  display: block;
-  margin-bottom: 2px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  opacity: 0.8;
-}
-
-.dialogue-panel__msg--child {
-  align-self: flex-end;
-  background: rgba(91, 156, 255, 0.28);
-  border: 1px solid rgba(91, 156, 255, 0.45);
-}
-
-.dialogue-panel__msg--maimai {
-  align-self: flex-start;
-  background: rgba(61, 214, 140, 0.22);
-  border: 1px solid rgba(61, 214, 140, 0.4);
-}
-
-.dialogue-panel__msg--system {
-  align-self: stretch;
-  background: rgba(255, 196, 86, 0.16);
-  border: 1px solid rgba(255, 196, 86, 0.35);
-  opacity: 0.95;
-}
-
-.dialogue-panel__status {
-  min-height: 1.3em;
-  max-height: 4.5em;
-  overflow-y: auto;
-  opacity: 0.9;
-  font-size: 12px;
-  line-height: 1.4;
-  word-break: break-word;
-  white-space: pre-wrap;
 }

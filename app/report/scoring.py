@@ -8,23 +8,17 @@ from app.course_scope import enabled_course_dimensions, enabled_course_types
 
 
 DEFAULT_WEIGHTS = {
-    "attention": 20,
-    "expressiveLanguage": 20,
-    "receptiveLanguage": 20,
-    "matching": 20,
-    "ordering": 20,
+    "attention": 34,
+    "matching": 33,
+    "ordering": 33,
 }
 DEFAULT_COURSE_WEIGHTS = {
     "mimic": 1,
-    "naming": 1,
-    "onomatopoeia": 1,
     "pairing": 1,
     "ordering": 1,
 }
 COURSE_LABELS = {
     "mimic": "模仿",
-    "naming": "命名",
-    "onomatopoeia": "拟声",
     "pairing": "配对",
     "ordering": "排序",
 }
@@ -37,10 +31,8 @@ COURSE_ALIASES = {
     "pose": "mimic",
 }
 COURSE_TYPE_EXPECTATIONS = {
-    "pairing": ["matching", "receptiveLanguage"],
-    "ordering": ["ordering", "receptiveLanguage"],
-    "naming": ["receptiveLanguage", "expressiveLanguage"],
-    "onomatopoeia": ["receptiveLanguage", "expressiveLanguage"],
+    "pairing": ["matching"],
+    "ordering": ["ordering"],
     "mimic": ["attention"],
 }
 
@@ -52,6 +44,7 @@ def load_scoring_config() -> Dict[str, Any]:
         cfg = {
             "schema_version": "education-training-index-v2-teacher-rating",
             "score_boundary": "education_training_reference_only",
+            "course_goal_score": 70,
             "weights": DEFAULT_WEIGHTS,
             "course_weights": DEFAULT_COURSE_WEIGHTS,
             "teacher_rating": {"min": 1, "max": 5, "scale": 20},
@@ -87,7 +80,7 @@ def validate_scoring_config(cfg: Dict[str, Any]) -> List[str]:
     if not isinstance(weights, dict):
         errors.append("weights 必须为对象")
         return errors
-    keys = ("attention", "expressiveLanguage", "receptiveLanguage", "matching", "ordering")
+    keys = tuple(enabled_course_dimensions())
     total = 0.0
     for k in keys:
         if k not in weights:
@@ -98,13 +91,19 @@ def validate_scoring_config(cfg: Dict[str, Any]) -> List[str]:
         except (TypeError, ValueError):
             errors.append(f"权重 {k} 必须为数字")
     if abs(total - 100.0) > 0.01:
-        errors.append(f"五维 weights 之和必须为 100（当前 {total:.2f}）")
+        errors.append(f"Demo 三维 weights 之和必须为 100（当前 {total:.2f}）")
     np_ = cfg.get("narrative_provider")
     if np_ is not None and np_ not in ("rule", "mock"):
         errors.append("narrative_provider 仅为 rule|mock")
     ic = cfg.get("interactive_course")
     if ic is not None and not isinstance(ic, dict):
         errors.append("interactive_course 必须为对象")
+    try:
+        reference = float(cfg.get("course_goal_score", 70))
+        if not 0 <= reference <= 100:
+            errors.append("course_goal_score 必须在 0 到 100 之间")
+    except (TypeError, ValueError):
+        errors.append("course_goal_score 必须为数字")
     return errors
 
 

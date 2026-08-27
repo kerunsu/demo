@@ -1,42 +1,29 @@
-# Extension guide
+# Demo 扩展指南
 
-## New device or track
+所有扩展必须先满足 `config/demo_course_scope.json` 与 `config/demo_deployment.json`。这两个事实源固定 Demo 只启用模仿、配对、排序，并永久关闭机械动作、Robot Runtime 和完整版表情；不得通过环境变量、接口或新配置绕过。
 
-Add a `DeviceProfile`/`DeviceDiscoveryPort` adapter and fake tests first. Keep
-stable IDs, explicit owner/runtime, clock domain and required/optional policy.
-Do not choose filenames in acquisition; use the storage layout port. The
-primary environment track must retain its compatibility name.
+## 同步主项目改进
 
-The control console distinguishes `connected` (a real first frame/chunk was
-read) from `captureReady` (the recorder can write that source into the frozen
-session manifest). Robot Runtime devices advertise `multi-track-media-v1`, are
-frozen at strict readiness, open before the shared start time and upload their
-manifest/files at stop. Server-owned additional devices remain probe-only
-until a Server multi-track recorder is supplied; they must not be promoted to
-`captureReady`.
+先按 `DEMO_SYNC.md` 判断改动是否适用于三门课程或通用平台。同步顺序是事实源/迁移、后端处理、前端消费方、测试与文档。不能整目录覆盖 `app.py`、`app/robot/`、课程目录、报告配置或教师端控制页。
 
-## New expression asset
+## 新增课程内容
 
-New expression uploads and batch imports are MP4 only. Event MP4 files must be
-authored as one complete non-looping cycle whose final frame joins the idle
-asset; the browser uses the native `ended` event and then reveals the looping
-idle layer. Existing GIF files remain readable for legacy course bindings but
-are deprecated and cannot be uploaded as new assets.
+Demo 不新增第四类课程。模仿、配对或排序新增课点时，需要同时更新数据库种子、`static/courses.json`、`doll/data/courses.json`、课程预设、资源引用和自动化测试。旧数据库只做原地兼容升级，不能通过删库发布。
 
-## New model
+## 新增儿童屏动画
 
-Implement `AnalysisModel`/`ModelProvider` with descriptor, health, analyze,
-close, timeout/cancel and degraded/no-data output. Register it through the
-composition root; never import Flask, SocketIO, the dialogue service or a
-concrete recorder from computation.
+儿童屏鼓励动画放在 `static/resources/Animations/`，通过 `/api/robot/animations` 这一兼容路径管理。这里的 `robot` 只是历史 API 前缀；动画只在儿童浏览器中播放，不得添加动作、表情媒体、DollSer 或 Runtime 依赖。上传、重命名、删除必须保留引用保护和 MP4 校验。
 
-## New interaction/dialogue
+## 新增分析模型
 
-Add a catalog event and schema fixture, then bind by
-`courseId -> eventKey -> sceneKey -> lineId`. Validate reachability, fallback,
-unique line IDs, assets and durations before publish. Use the stable dialogue
-request/response/speech-command ports; the facade may continue emitting the
-existing `robot_speak_text` event. Preview and shadow must not actuate hardware.
+实现分析端口并提供描述、健康状态、超时/取消、降级和无数据语义。模型层不得依赖 Flask、SocketIO、具体录制器或硬件。Windows 路径和模型加载必须使用仓库内可复现路径，并补真实/模拟两种测试。
 
-Every extension needs a legacy fallback, a rollback switch, an automated
-contract test, a migration-log entry and an update to the traceability matrix.
+## 修改配对或排序交互
+
+题目身份、左右/先后呈现、反馈、教师评分与报告窗口必须使用同一请求和题目标识。修改互动页时同步 `interactive_question_state.js`、对应 HTML、Socket 处理、报告解析和回归测试。
+
+## 修改话术
+
+可修改全局注意力/奖励，以及模仿、配对、排序的提问、提示、表扬和排序八类规则句。配置接口会拒绝命名、拟声、社交等旧课型写入；旧音频条目接口固定返回 410。浏览器语音事件名属于兼容契约，不代表机器人表情能力。
+
+每项扩展都必须更新契约或数据事实文档，并通过 `docs/TESTING.md` 的发布门禁。

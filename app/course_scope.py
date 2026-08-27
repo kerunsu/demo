@@ -19,11 +19,8 @@ COURSE_TYPE_ALIASES = {
 }
 COURSE_TYPE_LABELS = {
     "mimic": "模仿",
-    "naming": "命名",
-    "onomatopoeia": "拟声",
     "pairing": "配对",
     "ordering": "排序",
-    "social": "社交",
 }
 COURSE_DIMENSIONS = {
     "mimic": "attention",
@@ -60,9 +57,9 @@ def enabled_course_types(path: Path | None = None) -> tuple[str, ...]:
         normalized = _normalize_course_types(values)
         if not normalized:
             raise ValueError("enabledCourseTypes_must_not_be_empty")
-        if any(course_type not in COURSE_TYPE_LABELS for course_type in normalized):
-            raise ValueError("enabledCourseTypes_contains_unknown_type")
-        return normalized
+        if normalized != SAFE_DEFAULT_COURSE_TYPES:
+            raise ValueError("demo_course_scope_must_remain_fixed")
+        return SAFE_DEFAULT_COURSE_TYPES
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return SAFE_DEFAULT_COURSE_TYPES
 

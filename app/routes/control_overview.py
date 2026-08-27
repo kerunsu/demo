@@ -10,9 +10,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request
 
 from app.acquisition.device_registry import get_device_registry
-from app.robot.runtime_registry import get_runtime_status
 from app.storage.session_catalog import build_session_catalog, resolve_session_folder
-from app.acquisition.device_preflight_runtime import perform_device_preflight
 from app.utils.logger import setup_logger
 
 logger = setup_logger("control_overview")
@@ -20,6 +18,10 @@ logger = setup_logger("control_overview")
 control_overview_bp = Blueprint("control_overview", __name__, url_prefix="/api/v2/control")
 _check_lock = threading.RLock()
 _last_device_checks: dict[str, dict] = {}
+
+
+def _disabled_runtime_status() -> dict:
+    return {"onlineCount": 0, "runtimes": [], "primary": None, "enabled": False}
 
 
 def _reveal_local_folder(folder) -> None:
@@ -37,6 +39,8 @@ def _configured_devices(runtime_status: dict) -> list[dict]:
     devices = []
     for profile in get_device_registry().list_devices():
         item = asdict(profile)
+        if item.get("owner") == "runtime":
+            continue
         runtime_id = item.pop("runtime_id")
         item["deviceId"] = item.pop("device_id")
         item["trackId"] = item.pop("track_id")
@@ -72,8 +76,7 @@ def _configured_devices(runtime_status: dict) -> list[dict]:
 
 
 def _default_devices(runtime_status: dict) -> list[dict]:
-    runtime_online = bool(runtime_status.get("onlineCount"))
-    status = "runtime_online_unprobed" if runtime_online else "runtime_offline"
+    status = "browser_unprobed"
     with _check_lock:
         camera_check = dict(_last_device_checks.get("default.child.camera", {}))
         microphone_check = dict(_last_device_checks.get("default.child.microphone", {}))
@@ -113,7 +116,7 @@ def get_control_overview():
         limit = int(request.args.get("limit", 200))
     except ValueError:
         return jsonify({"success": False, "error": "limit_must_be_integer"}), 400
-    runtime_status = get_runtime_status()
+    runtime_status = _disabled_runtime_status()
     try:
         configured = _configured_devices(runtime_status)
     except RuntimeError as exc:
@@ -140,8 +143,29 @@ def get_control_overview():
 @control_overview_bp.route("/devices/check", methods=["POST"])
 def check_control_devices():
     try:
-        result = perform_device_preflight(get_device_registry(), get_runtime_status())
-        checks = result.get("checks") or []
+        # Demo 的主摄像头和麦克风由儿童端浏览器持有，服务端不能替浏览器
+        # 申请权限或伪造首样本检查。明确返回待儿童端授权，避免误报
+        # Robot Runtime 离线（Demo 根本不依赖 Runtime）。
+        checks = [
+            {
+                "deviceId": "default.child.camera",
+                "trackId": "child_video",
+                "kind": "video",
+                "required": True,
+                "connected": False,
+                "captureReady": False,
+                "error": "browser_permission_required",
+            },
+            {
+                "deviceId": "default.child.microphone",
+                "trackId": "child_audio",
+                "kind": "audio",
+                "required": True,
+                "connected": False,
+                "captureReady": False,
+                "error": "browser_permission_required",
+            },
+        ]
         with _check_lock:
             for check in checks:
                 if check.get("deviceId"):
@@ -149,9 +173,9 @@ def check_control_devices():
         return jsonify({
             "success": True,
             "checks": checks,
-            "checkedAt": result.get("checkedAt"),
-            "allConnected": bool(result.get("ok")),
-            "error": result.get("error"),
+            "checkedAt": datetime.now(timezone.utc).isoformat(),
+            "allConnected": False,
+            "error": "browser_permission_required",
         })
     except Exception as exc:
         return jsonify({"success": False, "error": "runtime_device_check_failed", "detail": str(exc)}), 502
@@ -159,27 +183,12 @@ def check_control_devices():
 
 @control_overview_bp.route("/actions/stop-robot", methods=["POST"])
 def stop_robot_output():
-    """Stop the current robot behavior and expose every dispatch result."""
-    try:
-        from app.robot import get_robot_service
-
-        result = get_robot_service().cancel_active_behavior()
-        status_code = 200 if result.get("success") else 502
-        return jsonify({
-            **result,
-            "action": "stop_robot",
-            "message": (
-                "机器人停止命令已下发"
-                if result.get("success") else "机器人停止命令下发失败"
-            ),
-        }), status_code
-    except Exception as exc:
-        return jsonify({
-            "success": False,
-            "action": "stop_robot",
-            "error": "robot_stop_failed",
-            "detail": str(exc),
-        }), 500
+    """Compatibility path: the Demo has no robot output to stop."""
+    return jsonify({
+        "success": False,
+        "action": "stop_robot",
+        "error": "demo_capability_disabled",
+    }), 410
 
 
 @control_overview_bp.route("/actions/stop-audio", methods=["POST"])

@@ -3,7 +3,7 @@ import { ControlPage, Course } from './ControlPage';
 const PREVIEW_COURSES: Course[] = [
   {
     id: 2,
-    title: '课程2-命名',
+    title: '命名',
     type: 'naming',
     question: '这是什么？',
     praise: '说得很好！',
@@ -14,7 +14,7 @@ const PREVIEW_COURSES: Course[] = [
   },
   {
     id: 3,
-    title: '课程 3 - 拟声',
+    title: '拟声',
     type: 'onomatopoeia',
     question: '听一听，这是什么声音？',
     praise: '模仿得很像！',
@@ -25,21 +25,21 @@ const PREVIEW_COURSES: Course[] = [
   },
   {
     id: 9,
-    title: '配对课程',
+    title: '配对',
     type: 'pairing',
     file: 'pairing/index.html',
     items: [{ id: 901, name: '水果配对', type: 'pairing' }],
   },
   {
     id: 10,
-    title: '排序课程',
+    title: '排序',
     type: 'ordering',
     file: 'ordering/index.html',
     items: [{ id: 1001, name: '大小排序', type: 'ordering' }],
   },
   {
     id: 11,
-    title: '社交课程',
+    title: '社交',
     type: 'social',
     items: [
       { id: 1101, name: '打招呼', type: 'social', config: { socialRole: 'greeting' } },

@@ -80,7 +80,7 @@ def test_prepare_behavior_animation_does_not_start_playback():
         'clearHeldPraiseOverlay("content_committed")'
     )
     template = _read("templates/child.html")
-    assert 'child.js?v=20260824-screen-click-v1' in template
+    assert 'child.js?v=20260826-child-surface-v2' in template
     handle_play = child[
         child.index("function handlePlayResource") :
         child.index('socket.on("play_resource"')
@@ -201,10 +201,9 @@ def test_teacher_praise_scoring_is_armed_before_emit_and_survives_degradation():
     assert "queuePraiseRating(" in ack
 
 
-def test_behavior_media_are_correlated_and_expression_self_heals():
+def test_behavior_media_are_correlated_without_robot_expression_output():
     browser_tts = _read("static/js/browser_tts.js")
     audio_player = _read("static/js/audio_player.js")
-    emotion = _read("static/robot/js/emotion_display.js")
 
     assert "if (activeSpeech)" in browser_tts
     assert 'reason = sameSpeech(activeSpeech.identity, identity) ? "duplicate" : "busy"' in browser_tts
@@ -215,13 +214,8 @@ def test_behavior_media_are_correlated_and_expression_self_heals():
     assert "this._rememberPlayback(blockedIdentity)" in audio_player
     assert "behaviorId: identity && (identity.behaviorId || identity.sequenceId)" in audio_player
 
-    assert "正式表情播放中，新事件进入队列" in emotion
-    assert "pendingEmotionEvents.push(eventData)" in emotion
-    assert "superseded_by_dialogue_reply" in emotion
-    assert "dialogueReply" in emotion
-    assert "stopIdlePlayback();" in emotion
-    assert "emotion_busy" not in emotion
-    assert "robot_emotion_ended" in emotion
+    assert not (ROOT / "static/robot/js/emotion_display.js").exists()
+    assert not (ROOT / "templates/robot/emotion.html").exists()
 
 
 def test_browser_tts_delay_does_not_start_watchdog_before_speak():
@@ -254,10 +248,9 @@ def test_browser_tts_is_preheated_and_does_not_cancel_churn_while_cold():
     assert "warmBrowserSpeechOutput" in child
 
 
-def test_class_start_has_no_resource_prewarm_and_behavior_uses_shared_start():
+def test_class_start_has_no_resource_prewarm_and_animation_uses_shared_start():
     child = _read("static/js/child.js")
     animation = child[child.index("function playBehaviorAnimation") :]
-    emotion = _read("static/robot/js/emotion_display.js")
 
     assert 'socket.on("readiness_prepare"' not in child
     assert "handleReadinessPrepare" not in child
@@ -265,8 +258,7 @@ def test_class_start_has_no_resource_prewarm_and_behavior_uses_shared_start():
     assert 'socket.on("readiness_complete"' in child
     assert "behaviorStartDelayMs" in animation
     assert "startScheduled" in animation
-    assert "startDelayMs" in emotion
-    assert "restartRequested" in emotion
+    assert not (ROOT / "static/robot/js/emotion_display.js").exists()
 
 
 def test_interactive_shell_prefers_course_entry_file():
@@ -318,7 +310,9 @@ def test_child_rejects_old_session_media_and_praise_is_request_correlated():
     assert 'socket.emit("child_sync_request"' in child
     assert 'socket.on("child_session_sync"' in child
     assert "resourceReady: 1" in child
-    assert "recordingStartPromise" in child
+    assert "recordingStartPromise" not in child
+    assert "callMediaAgent" not in child
+    assert 'let childMediaMode = "browser"' in child
     sync_block = child[
         child.index("function emitChildPresenceAndSync") :
         child.index("// 页面加载时拉取运行时配置")
@@ -415,7 +409,7 @@ def test_interactive_controls_use_authorized_parent_socket_bridge():
     assert "relayInteractiveControl(eventName" in child
     assert 'frame.dataset.pageContextActive !== "true"' in child
     assert "}, window.location.origin);" in child
-    assert 'child.js?v=20260824-screen-click-v1' in template
+    assert 'child.js?v=20260826-child-surface-v2' in template
 
     for page, prefix, apply_name in (
         (matching, "matching_", "applyMatchingControl"),

@@ -125,6 +125,7 @@ interface PendingPlayRequest {
   payload: Record<string, any>;
   timeoutId: number | null;
   retryCount: number;
+  advanceAfterPlayback?: AdvanceSource;
 }
 
 interface KnownPlayRequest extends PendingPlayRequest {
@@ -261,7 +262,7 @@ interface SelectedCourseItem {
   items: CourseItem[];
 }
 
-type AdvanceSource = 'manual' | 'matching_end' | 'ordering_end' | 'praise_end';
+type AdvanceSource = 'manual' | 'matching_end' | 'ordering_end' | 'praise_end' | 'social_end';
 
 interface AdvanceSnapshot {
   source: AdvanceSource;
@@ -357,7 +358,6 @@ export function ControlPage({
   const [playbackNotice, setPlaybackNotice] = useState<string | null>(null);
   const [hasFailedPlayback, setHasFailedPlayback] = useState(false);
   const [dialogueAwake, setDialogueAwake] = useState(false);
-  const [dialoguePanelVisible, setDialoguePanelVisible] = useState(true);
   const [dialogueControlBusy, setDialogueControlBusy] = useState(false);
   const [dialogueControlNotice, setDialogueControlNotice] = useState<string | null>(null);
   const [engagementAnimations, setEngagementAnimations] = useState<Array<{ name: string }>>([]);
@@ -434,6 +434,7 @@ export function ControlPage({
       expectedCourseIndex?: number;
       expectedItemIndex?: number;
       requestId?: string;
+      advanceAfterPlayback?: AdvanceSource;
     },
   ) => void>(() => {});
   const currentCourseIndexRef = useRef(currentCourseIndex);
@@ -474,6 +475,7 @@ export function ControlPage({
     intent: PlayIntent;
     courseIndex: number;
     itemIndex: number;
+    advanceAfterPlayback?: AdvanceSource;
   } | null>(null);
   const failedPlayRetryRef = useRef<{
     requestId: string;
@@ -481,6 +483,7 @@ export function ControlPage({
     courseIndex: number;
     itemIndex: number;
     retryCount: number;
+    advanceAfterPlayback?: AdvanceSource;
   } | null>(null);
   const autoQuestionWaitRef = useRef<{
     contentRequestId: string;
@@ -521,6 +524,29 @@ export function ControlPage({
     sessionId: string | null;
   } | null>(null);
   const praiseRatingTimerRef = useRef<number | null>(null);
+  const completionRatingContextRef = useRef<{
+    requestId: string;
+    behaviorId: string | null;
+    courseIndex: number;
+    itemIndex: number;
+    sessionId: string | null;
+    source: AdvanceSource;
+    fallbackTimerId: number | null;
+  } | null>(null);
+  const socialAutomationIdsRef = useRef<Set<string>>(new Set());
+  /**
+   * A social prompt is a course-entry lifecycle action, not a simulated button
+   * click.  Keep the committed content request as its idempotency key so React
+   * re-renders, resource-ready retries and Socket re-delivery cannot greet or
+   * say goodbye twice.
+   */
+  const socialEntryRequestIdsRef = useRef<Set<string>>(new Set());
+  const deferredSocialEntryRef = useRef<{
+    contentRequestId: string;
+    auxKey: 'socialGreetingIntro' | 'socialFarewellBye';
+    courseIndex: number;
+    itemIndex: number;
+  } | null>(null);
   const delayedTimersRef = useRef<Set<number>>(new Set());
   const finalizePromiseRef = useRef<Promise<string | null> | null>(null);
   const finalizeOperationIdRef = useRef<string | null>(null);
@@ -694,7 +720,28 @@ export function ControlPage({
         playCurrentItemRef.current(deferredManual.aux, {
           expectedCourseIndex: deferredManual.courseIndex,
           expectedItemIndex: deferredManual.itemIndex,
+          advanceAfterPlayback: deferredManual.advanceAfterPlayback,
         });
+        return;
+      }
+    }
+
+    const socialEntry = deferredSocialEntryRef.current;
+    if (socialEntry) {
+      if (
+        currentCourseIndexRef.current !== socialEntry.courseIndex ||
+        currentItemIndexRef.current !== socialEntry.itemIndex
+      ) {
+        deferredSocialEntryRef.current = null;
+      } else {
+        deferredSocialEntryRef.current = null;
+        playCurrentItemRef.current(
+          { [socialEntry.auxKey]: true } as PlayAux,
+          {
+            expectedCourseIndex: socialEntry.courseIndex,
+            expectedItemIndex: socialEntry.itemIndex,
+          },
+        );
         return;
       }
     }
@@ -753,6 +800,52 @@ export function ControlPage({
     context.fallbackTimerId = null;
     praiseRequestContextRef.current = null;
   }, [clearScheduledTimeout]);
+
+  const clearCompletionRatingContext = useCallback((requestId?: string | null) => {
+    const context = completionRatingContextRef.current;
+    if (!context || (requestId && context.requestId !== requestId)) return;
+    clearScheduledTimeout(context.fallbackTimerId);
+    completionRatingContextRef.current = null;
+  }, [clearScheduledTimeout]);
+
+  const queueCompletionRating = useCallback((
+    context: NonNullable<typeof completionRatingContextRef.current>,
+    notice?: string,
+    delayMs = 0,
+  ) => {
+    if (
+      completionRatingContextRef.current?.requestId !== context.requestId ||
+      currentCourseIndexRef.current !== context.courseIndex ||
+      currentItemIndexRef.current !== context.itemIndex ||
+      (context.sessionId && currentSessionIdRef.current !== context.sessionId)
+    ) {
+      clearCompletionRatingContext(context.requestId);
+      return;
+    }
+    clearScheduledTimeout(context.fallbackTimerId);
+    context.fallbackTimerId = null;
+    if (notice) setPlaybackNotice(notice);
+    scheduleTimeout(() => {
+      if (completionRatingContextRef.current?.requestId !== context.requestId) return;
+      completionRatingContextRef.current = null;
+      completionAtRef.current = Date.now();
+      handleNextRef.current(context.source);
+    }, Math.max(0, delayMs));
+  }, [clearCompletionRatingContext, clearScheduledTimeout, scheduleTimeout]);
+
+  const armCompletionRatingFallback = useCallback((
+    context: NonNullable<typeof completionRatingContextRef.current>,
+    delayMs: number,
+  ) => {
+    clearScheduledTimeout(context.fallbackTimerId);
+    context.fallbackTimerId = scheduleTimeout(() => {
+      if (completionRatingContextRef.current?.requestId !== context.requestId) return;
+      queueCompletionRating(
+        context,
+        '课程回应已完成，但结束回执超时，现进入评分',
+      );
+    }, Math.max(3000, delayMs));
+  }, [clearScheduledTimeout, queueCompletionRating, scheduleTimeout]);
 
   const queuePraiseRating = useCallback((
     context: NonNullable<typeof praiseRequestContextRef.current>,
@@ -865,6 +958,7 @@ export function ControlPage({
       if (pending.isContent) {
         clearContentResourceWait(pending.requestId);
       }
+      clearCompletionRatingContext(pending.requestId);
       failedPlayRetryRef.current = {
         // Reuse the same idempotency key: the server may have executed the
         // request while only its ACK was lost.
@@ -873,6 +967,7 @@ export function ControlPage({
         courseIndex: pending.courseIndex,
         itemIndex: pending.itemIndex,
         retryCount: pending.retryCount,
+        advanceAfterPlayback: pending.advanceAfterPlayback,
       };
       setHasFailedPlayback(true);
       setPlaybackGate(
@@ -1009,6 +1104,7 @@ export function ControlPage({
     praiseRequestContextRef.current = null;
     pendingPraiseAdvanceRef.current = null;
     failedPlayRetryRef.current = null;
+    deferredSocialEntryRef.current = null;
     setHasFailedPlayback(false);
   }, [
     cancelAutoQuestionWait,
@@ -1494,16 +1590,12 @@ export function ControlPage({
         } else if (data.action === 'sleep') {
           setDialogueAwake(false);
           setDialogueControlNotice('智能体已关闭；课程语音识别仍可正常使用');
-        } else if (data.action === 'visibility') {
-          setDialoguePanelVisible(data.visible !== false);
-          setDialogueControlNotice(data.visible === false ? '儿童端对话窗口已隐藏' : '儿童端对话窗口已显示');
         }
       });
       socket.on('teacher_dialogue_control_state', (data: any) => {
         const sessionId = normalizeId(data?.sessionId);
         if (!data?.success || (sessionId && sessionId !== currentSessionIdRef.current)) return;
         setDialogueAwake(data.awake === true);
-        setDialoguePanelVisible(data.visible !== false);
       });
       socket.on('teacher_dialogue_runtime_state', (data: any) => {
         const sessionId = normalizeId(data?.sessionId);
@@ -1687,6 +1779,7 @@ export function ControlPage({
           }
           clearContentResourceWait(requestId);
           clearPraiseRequestContext(requestId);
+          clearCompletionRatingContext(requestId);
           releasePlaybackGate(requestId);
           return;
         }
@@ -1699,6 +1792,7 @@ export function ControlPage({
 
         if (!accepted) {
           clearPraiseRequestContext(requestId);
+          clearCompletionRatingContext(requestId);
           if (contentRequestRef.current?.requestId === requestId) {
             contentRequestRef.current = null;
           }
@@ -1711,7 +1805,7 @@ export function ControlPage({
           const message =
             data?.message ||
             data?.error ||
-            (data?.busy ? '上一条动作仍在完整播放，请稍候' : '播放请求未被服务端接受');
+            (data?.busy ? '上一条语音或儿童屏动画仍在播放，请稍候' : '播放请求未被服务端接受');
 
           if (data?.busy === true) {
             holdPlaybackGate(requestId, behaviorId, remainingMs || 750, message);
@@ -1740,9 +1834,10 @@ export function ControlPage({
                 intent: pending.intent,
                 courseIndex: pending.courseIndex,
                 itemIndex: pending.itemIndex,
+                advanceAfterPlayback: pending.advanceAfterPlayback,
               };
               setHasFailedPlayback(false);
-              setPlaybackNotice('机器人正在完成上一条指令，本次操作已排队');
+              setPlaybackNotice('当前课程输出尚未完成，本次操作已排队');
             } else {
               failedPlayRetryRef.current = {
                 requestId,
@@ -1750,6 +1845,7 @@ export function ControlPage({
                 courseIndex: pending.courseIndex,
                 itemIndex: pending.itemIndex,
                 retryCount: pending.retryCount,
+                advanceAfterPlayback: pending.advanceAfterPlayback,
               };
               setHasFailedPlayback(true);
             }
@@ -1760,6 +1856,7 @@ export function ControlPage({
               courseIndex: pending.courseIndex,
               itemIndex: pending.itemIndex,
               retryCount: pending.retryCount,
+              advanceAfterPlayback: pending.advanceAfterPlayback,
             };
             setHasFailedPlayback(true);
             setPlaybackGate('idle', null, null, message);
@@ -1832,6 +1929,15 @@ export function ControlPage({
               );
             }
           }
+        }
+        const completionContext = completionRatingContextRef.current;
+        if (completionContext?.requestId === requestId) {
+          completionContext.sessionId = ackSessionId || completionContext.sessionId;
+          completionContext.behaviorId = behaviorId;
+          armCompletionRatingFallback(
+            completionContext,
+            Math.max(5000, remainingMs + 5000),
+          );
         }
 
         if (remainingMs > 0) {
@@ -1906,6 +2012,32 @@ export function ControlPage({
         ) {
           return;
         }
+        const selected = selectedCourseItemsRef.current[request.courseIndex];
+        const item = selected?.items?.[request.itemIndex];
+        const socialRole = selected?.course?.type === 'social'
+          ? getSocialRole(item)
+          : null;
+        if (socialRole && !socialEntryRequestIdsRef.current.has(requestId)) {
+          socialEntryRequestIdsRef.current.add(requestId);
+          while (socialEntryRequestIdsRef.current.size > 100) {
+            const oldest = socialEntryRequestIdsRef.current.values().next().value;
+            if (!oldest) break;
+            socialEntryRequestIdsRef.current.delete(oldest);
+          }
+          deferredSocialEntryRef.current = {
+            contentRequestId: requestId,
+            auxKey: socialRole === 'greeting'
+              ? 'socialGreetingIntro'
+              : 'socialFarewellBye',
+            courseIndex: request.courseIndex,
+            itemIndex: request.itemIndex,
+          };
+          setPlaybackNotice(
+            socialRole === 'greeting'
+              ? '已进入课程，正在自动打招呼'
+              : '已进入结束环节，正在自动说再见',
+          );
+        }
         markResourceReady(requestId);
         startPendingGame(requestId);
       });
@@ -1979,7 +2111,13 @@ export function ControlPage({
           ((requestId && requestId === praiseContext.requestId) ||
             (behaviorId && behaviorId === praiseContext.behaviorId))
         );
-        if (!matchesRequest && !matchesBehavior && !matchesPraise) return;
+        const completionContext = completionRatingContextRef.current;
+        const matchesCompletion = Boolean(
+          completionContext &&
+          ((requestId && requestId === completionContext.requestId) ||
+            (behaviorId && behaviorId === completionContext.behaviorId))
+        );
+        if (!matchesRequest && !matchesBehavior && !matchesPraise && !matchesCompletion) return;
         const eventSessionId = normalizeId(data?.sessionId ?? data?.session_id);
         if (
           eventSessionId &&
@@ -1996,12 +2134,12 @@ export function ControlPage({
         const componentLabels: Record<string, string> = {
           audio: '语音',
           childAnimation: '儿童端动画',
-          motion: '动作',
-          expression: '表情',
         };
         const componentStatuses: Array<[string, { status?: unknown }]> =
           data?.components && typeof data.components === 'object'
-          ? Object.entries(data.components).map(([name, component]) => [
+          ? Object.entries(data.components)
+            .filter(([name]) => name === 'audio' || name === 'childAnimation')
+            .map(([name, component]) => [
               name,
               component && typeof component === 'object'
                 ? component as { status?: unknown }
@@ -2009,8 +2147,6 @@ export function ControlPage({
             ])
           : [
               ['childAnimation', { status: data?.animationStatus }],
-              ['motion', { status: data?.motionStatus }],
-              ['expression', { status: data?.expressionStatus }],
             ];
         const abnormalComponents = componentStatuses
           .filter(([, component]) =>
@@ -2025,7 +2161,16 @@ export function ControlPage({
           queuePraiseRating(
             praiseContext,
             failed || degraded
-              ? `表扬已完成，但部分画面或动作未完整播放${reason ? `（${reason}）` : ''}，现可评分`
+              ? `表扬已完成，但部分语音或儿童屏画面未完整播放${reason ? `（${reason}）` : ''}，现可评分`
+              : undefined,
+          );
+        }
+        if (matchesCompletion && completionContext) {
+          const reason = data?.message || data?.error || abnormalComponents.join('、');
+          queueCompletionRating(
+            completionContext,
+            failed || degraded
+              ? `课程回应已结束，但部分语音或儿童屏画面未完整播放${reason ? `（${reason}）` : ''}，现进入评分`
               : undefined,
           );
         }
@@ -2036,11 +2181,11 @@ export function ControlPage({
         }
         if (failed) {
           setPlaybackNotice(
-            `机器人执行失败：${data?.message || data?.error || abnormalComponents.join('、') || terminalStatus}`,
+            `课程输出失败：${data?.message || data?.error || abnormalComponents.join('、') || terminalStatus}`,
           );
         } else if (degraded) {
           setPlaybackNotice(
-            `机器人已执行，但部分状态未完整同步${abnormalComponents.length ? `（${abnormalComponents.join('、')}）` : ''}`,
+            `课程输出已完成，但部分状态未完整同步${abnormalComponents.length ? `（${abnormalComponents.join('、')}）` : ''}`,
           );
         }
       });
@@ -2051,7 +2196,7 @@ export function ControlPage({
       });
       
       socket.on('trigger_action', (data: any) => {
-        console.log('🎬 收到触发动作:', data);
+        console.log('🎬 收到课程反馈触发:', data);
         // 教师端可以显示通知
       });
       
@@ -2191,6 +2336,85 @@ export function ControlPage({
         if (readyQuestionId) interactiveQuestionIdRef.current = readyQuestionId;
         completeInteractiveNext('pairing', readyQuestionId);
       });
+
+      socket.on('interactive_course_completion_praise_started', (data: any) => {
+        if (!eventMatchesCurrentSession(data)) return;
+        const current = selectedCourseItemsRef.current[currentCourseIndexRef.current];
+        const currentType = current?.course?.type;
+        const eventType = String(data?.courseType || '').toLowerCase();
+        const source: AdvanceSource | null =
+          currentType === 'pairing' && ['pairing', 'matching'].includes(eventType)
+            ? 'matching_end'
+            : currentType === 'ordering' && ['ordering', 'sequencing'].includes(eventType)
+              ? 'ordering_end'
+              : null;
+        const requestId = normalizeId(data?.requestId);
+        if (!source || !requestId || advanceLockRef.current) return;
+        if (completionRatingContextRef.current?.requestId === requestId) return;
+        clearCompletionRatingContext();
+        const completionContext: NonNullable<typeof completionRatingContextRef.current> = {
+          requestId,
+          behaviorId: normalizeId(data?.behaviorId),
+          courseIndex: currentCourseIndexRef.current,
+          itemIndex: currentItemIndexRef.current,
+          sessionId: normalizeId(data?.sessionId) || currentSessionIdRef.current,
+          source,
+          fallbackTimerId: null,
+        };
+        completionRatingContextRef.current = completionContext;
+        armCompletionRatingFallback(
+          completionContext,
+          Math.max(8000, Number(data?.remainingMs || 0) + 5000),
+        );
+        setPlaybackNotice('课程题组已完成，完整表扬结束后将自动进入评分');
+      });
+
+      socket.on('social_course_response_matched', (data: any) => {
+        if (!eventMatchesCurrentSession(data) || advanceLockRef.current) return;
+        const automationId = normalizeId(data?.requestId);
+        if (!automationId || socialAutomationIdsRef.current.has(automationId)) return;
+        const courseIndex = currentCourseIndexRef.current;
+        const itemIndex = currentItemIndexRef.current;
+        const selected = selectedCourseItemsRef.current[courseIndex];
+        const item = selected?.items?.[itemIndex];
+        const role = getSocialRole(item);
+        const eventRole = String(data?.role || '').toLowerCase();
+        const eventItemId = normalizeId(data?.itemId);
+        if (
+          selected?.course?.type !== 'social' ||
+          role !== eventRole ||
+          (eventItemId && item?.id != null && eventItemId !== String(item.id))
+        ) {
+          return;
+        }
+        const auxKey = data?.auxKey;
+        if (
+          (role === 'greeting' && auxKey !== 'socialGreetingPlay') ||
+          (role === 'farewell' && auxKey !== 'socialFarewellReply')
+        ) {
+          return;
+        }
+        socialAutomationIdsRef.current.add(automationId);
+        while (socialAutomationIdsRef.current.size > 100) {
+          const oldest = socialAutomationIdsRef.current.values().next().value;
+          if (!oldest) break;
+          socialAutomationIdsRef.current.delete(oldest);
+        }
+        completionAtRef.current = Date.now();
+        setPlaybackNotice(
+          role === 'greeting'
+            ? '已识别儿童问好，正在自动执行“一起玩耍”'
+            : '已识别儿童告别，正在自动执行“回应”',
+        );
+        playCurrentItemRef.current(
+          { [auxKey]: true } as PlayAux,
+          {
+            expectedCourseIndex: courseIndex,
+            expectedItemIndex: itemIndex,
+            advanceAfterPlayback: 'social_end',
+          },
+        );
+      });
       
       socket.on('matching_game_end', (data: any) => {
         if (!eventMatchesCurrentSession(data)) return;
@@ -2207,7 +2431,7 @@ export function ControlPage({
             accuracy: data.accuracy
           } : null);
         }
-        setPlaybackNotice('配对题组已完成；确认结果后可点击“下一个”进入下一课点');
+        setPlaybackNotice('配对题组已完成；完整表扬结束后将自动进入评分');
       });
 
       // 排序游戏事件监听
@@ -2320,7 +2544,7 @@ export function ControlPage({
           });
         }
         
-        setPlaybackNotice('排序题组已完成；确认结果后可点击“下一个”进入下一课点');
+        setPlaybackNotice('排序题组已完成；完整表扬结束后将自动进入评分');
       });
       
       // 关键词自动表扬：服务端已播完整表扬包时只挂打分；否则等同点「表扬」
@@ -2458,7 +2682,7 @@ export function ControlPage({
         const courseIdx = currentCourseIndexRef.current;
         const current = selected?.[courseIdx];
 
-        // 配对/排序课程仍播放完整语音、表情、动作和动画，但结束后回到
+        // 配对/排序课程仍播放完整语音和儿童屏动画，但结束后回到
         // 当前题目，不进入“表扬视频结束 -> 评分/下一题”链路。
         const currentType = current?.course?.type;
         if (currentType === 'pairing' || currentType === 'ordering') {
@@ -2497,6 +2721,10 @@ export function ControlPage({
       awaitingResourceReadyRef.current = false;
       contentRequestRef.current = null;
       clearPraiseRequestContext();
+      clearCompletionRatingContext();
+      socialAutomationIdsRef.current.clear();
+      socialEntryRequestIdsRef.current.clear();
+      deferredSocialEntryRef.current = null;
       interactiveQuestionIdRef.current = null;
       interactiveNextPendingRef.current = null;
       pendingPraiseAdvanceRef.current = null;
@@ -2549,16 +2777,20 @@ export function ControlPage({
   }, [
     armPlayRequestTimeout,
     armAutoQuestionWait,
+    armCompletionRatingFallback,
     armPraiseRatingFallback,
     cancelAutoQuestionWait,
     clearAllScheduledTimeouts,
     clearContentResourceWait,
+    clearCompletionRatingContext,
+    clearCompletionRatingContext,
     clearPraiseRequestContext,
     clearScheduledTimeout,
     completeInteractiveNext,
     flushDeferredAutoQuestion,
     holdPlaybackGate,
     markResourceReady,
+    queueCompletionRating,
     queuePraiseRating,
     releasePlaybackGate,
     scheduleTimeout,
@@ -2799,6 +3031,7 @@ export function ControlPage({
       expectedCourseIndex?: number;
       expectedItemIndex?: number;
       requestId?: string;
+      advanceAfterPlayback?: AdvanceSource;
     } = {},
   ) => {
     console.log('🎯 playCurrentItem 被调用，参数:', aux);
@@ -2877,6 +3110,7 @@ export function ControlPage({
             intent,
             courseIndex,
             itemIndex,
+            advanceAfterPlayback: options.advanceAfterPlayback,
           };
         }
         const intentLabel: Record<Exclude<PlayIntent, 'content'>, string> = {
@@ -2885,12 +3119,12 @@ export function ControlPage({
           question: '提问',
           praise: '表扬',
           hint: '提示',
-          social: '社交动作',
+          social: '社交回应',
         };
         setPlaybackNotice(
           isDuplicate
             ? `${intentLabel[intent]}已在等待执行，请勿重复点击`
-            : `机器人正在完成上一条指令，已排队：${intentLabel[intent]}`,
+            : `当前课程输出尚未完成，已排队：${intentLabel[intent]}`,
         );
         return;
       }
@@ -2903,7 +3137,7 @@ export function ControlPage({
       setPlaybackNotice(
         playbackPhaseRef.current === 'pending'
           ? '正在确认上一条操作，请稍候'
-          : '上一条语音、动作和表情仍在完整播放，新课点将在结束后加载',
+          : '上一条语音或儿童屏动画仍在播放，新课点将在结束后加载',
       );
       return;
     }
@@ -2990,6 +3224,7 @@ export function ControlPage({
       payload: playData,
       timeoutId: null,
       retryCount: Math.max(0, options.retryCount || 0),
+      advanceAfterPlayback: options.advanceAfterPlayback,
     };
     pendingPlayRequestsRef.current.set(requestId, pending);
     failedPlayRetryRef.current = null;
@@ -3025,6 +3260,20 @@ export function ControlPage({
       praiseRequestContextRef.current = praiseContext;
       armPraiseRatingFallback(praiseContext, 15000);
     }
+    if (options.advanceAfterPlayback) {
+      clearCompletionRatingContext();
+      const completionContext: NonNullable<typeof completionRatingContextRef.current> = {
+        requestId,
+        behaviorId: null,
+        courseIndex,
+        itemIndex,
+        sessionId: currentSessionIdRef.current,
+        source: options.advanceAfterPlayback,
+        fallbackTimerId: null,
+      };
+      completionRatingContextRef.current = completionContext;
+      armCompletionRatingFallback(completionContext, 15000);
+    }
     setPlaybackGate('pending', requestId);
     setPlaybackNotice(null);
     armPlayRequestTimeout(pending);
@@ -3036,6 +3285,7 @@ export function ControlPage({
       clearScheduledTimeout(pending.timeoutId);
       pendingPlayRequestsRef.current.delete(requestId);
       clearPraiseRequestContext(requestId);
+      clearCompletionRatingContext(requestId);
       if (contentRequestRef.current?.requestId === requestId) {
         contentRequestRef.current = null;
       }
@@ -3049,6 +3299,8 @@ export function ControlPage({
     armContentResourceWait,
     armPlayRequestTimeout,
     armPraiseRatingFallback,
+    armCompletionRatingFallback,
+    clearCompletionRatingContext,
     clearPraiseRequestContext,
     clearScheduledTimeout,
     clearContentResourceWait,
@@ -3080,6 +3332,7 @@ export function ControlPage({
       retryCount: retry.retryCount + 1,
       expectedCourseIndex: retry.courseIndex,
       expectedItemIndex: retry.itemIndex,
+      advanceAfterPlayback: retry.advanceAfterPlayback,
     });
   }, []);
 
@@ -3174,38 +3427,6 @@ export function ControlPage({
       setDialogueControlNotice('暂未收到儿童端回执，按钮已恢复，可确认连接后重试');
     }, 4000);
   }, [dialogueAwake]);
-
-  const toggleDialoguePanel = useCallback(() => {
-    const activeSocket = socketRef.current;
-    const sessionId = currentSessionIdRef.current;
-    const trainingId = trainingSessionIdRef.current;
-    if (!activeSocket?.connected || !sessionId) {
-      setDialogueControlNotice('对话窗口控制不可用：课程会话尚未连接');
-      return;
-    }
-    const requestId = createClientRequestId('dialogue-visibility');
-    if (dialogueControlTimerRef.current) {
-      window.clearTimeout(dialogueControlTimerRef.current);
-    }
-    dialogueControlRequestRef.current = requestId;
-    setDialogueControlBusy(true);
-    setDialogueControlNotice('正在同步儿童端界面…');
-    activeSocket.emit('teacher_dialogue_visibility', {
-      sessionId,
-      trainingSessionId: trainingId || undefined,
-      questionId: currentQuestionIdRef.current,
-      visible: !dialoguePanelVisible,
-      requestId,
-      clientTimestamp: Date.now(),
-    });
-    dialogueControlTimerRef.current = window.setTimeout(() => {
-      if (dialogueControlRequestRef.current !== requestId) return;
-      dialogueControlRequestRef.current = null;
-      dialogueControlTimerRef.current = null;
-      setDialogueControlBusy(false);
-      setDialogueControlNotice('暂未收到儿童端窗口回执，按钮已恢复，可重试');
-    }, 4000);
-  }, [dialoguePanelVisible]);
 
   useEffect(() => {
     const activeSocket = socketRef.current;
@@ -3391,7 +3612,7 @@ export function ControlPage({
         awaitingResourceReadyRef.current
       )
     ) {
-      setPlaybackNotice('请等待当前语音、动作和表情完整播放后再进入下一项');
+      setPlaybackNotice('请等待当前语音或儿童屏动画播放完成后再进入下一项');
       return;
     }
     const selected = selectedCourseItemsRef.current;
@@ -3969,16 +4190,17 @@ export function ControlPage({
           )}
         </div>
         
-        <section
-          className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5"
-          aria-label="全局注意力支持"
-        >
-          <div className="grid grid-cols-2 gap-2">
+        <div className="mb-3 grid grid-cols-1 gap-2 xl:grid-cols-2" aria-label="课堂快捷控制">
+          <section
+            className="rounded-lg border border-slate-200 bg-slate-50 p-2"
+            aria-label="全局注意力支持"
+          >
+          <div>
             <button
               type="button"
               onClick={handleAttention}
               disabled={commandControlsLocked}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-8 items-center justify-center gap-1 rounded-md bg-violet-600 px-2 text-xs font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Target className="h-4 w-4" />
               吸引
@@ -3987,7 +4209,7 @@ export function ControlPage({
               type="button"
               onClick={handleAttentionReward}
               disabled={commandControlsLocked}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-rose-500 px-3 text-sm font-semibold text-white shadow-sm hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-8 items-center justify-center gap-1 rounded-md bg-rose-500 px-2 text-xs font-semibold text-white shadow-sm hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Award className="h-4 w-4" />
               夸奖
@@ -3996,43 +4218,36 @@ export function ControlPage({
           <button
             type="button"
             onClick={() => setEngagementSettingsOpen(true)}
-            className="mt-1.5 flex h-7 w-full items-center justify-between rounded-md px-2 text-xs text-slate-500 hover:bg-white hover:text-slate-800"
+            className="mt-1 flex h-6 w-full items-center justify-between rounded px-1.5 text-[11px] text-slate-500 hover:bg-white hover:text-slate-800"
           >
             <span>个性化配置</span>
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
-        </section>
+          </section>
 
-        <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm font-medium text-sky-900">儿童端智能体</span>
-            <span className={`text-xs ${dialogueAwake ? 'text-green-700' : 'text-slate-500'}`}>
+          <div className="rounded-lg border border-sky-200 bg-sky-50 p-2">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-sky-900">儿童端智能体</span>
+            <span className={`text-[11px] ${dialogueAwake ? 'text-green-700' : 'text-slate-500'}`}>
               {dialogueAwake ? '已手动唤醒' : '等待教师唤醒'}
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-1.5">
             <button
               type="button"
               onClick={toggleDialogueAgent}
               disabled={dialogueControlBusy || !socketConnected || !currentSessionId}
-              className={`rounded-lg px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`h-8 rounded-md px-2 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50 ${
                 dialogueAwake ? 'bg-rose-600 hover:bg-rose-700' : 'bg-sky-600 hover:bg-sky-700'
               }`}
             >
               {dialogueAwake ? '关闭智能体' : '唤醒智能体'}
             </button>
-            <button
-              type="button"
-              onClick={toggleDialoguePanel}
-              disabled={dialogueControlBusy || !socketConnected || !currentSessionId}
-              className="rounded-lg bg-white px-3 py-2 text-sm text-sky-800 ring-1 ring-inset ring-sky-300 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {dialoguePanelVisible ? '隐藏对话窗口' : '显示对话窗口'}
-            </button>
           </div>
-          <p className="mt-2 text-xs text-sky-700">
-            {dialogueControlNotice || '手动唤醒不播放提示音；隐藏窗口不会影响课程录制。'}
+          <p className="mt-1.5 text-[11px] leading-4 text-sky-700">
+            {dialogueControlNotice || '手动唤醒不播放提示音；对话记录与控制已移至 Server 监控页。'}
           </p>
+          </div>
         </div>
 
         {/* 音频控制面板 */}

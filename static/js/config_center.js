@@ -4,10 +4,7 @@
 (function () {
   const READY_VIEWS = new Set([
     'workbench',
-    'expressions',
     'animations',
-    'binding',
-    'motions',
     'media',
     'courses',
     'presets',
@@ -47,17 +44,8 @@
     if (READY_VIEWS.has(v)) {
       const page = document.getElementById('page-' + v);
       if (page) page.hidden = false;
-      if (v === 'expressions' && typeof window.loadEmotionLibrary === 'function') {
-        window.loadEmotionLibrary();
-      }
       if (v === 'animations' && typeof window.loadAnimationLibrary === 'function') {
         window.loadAnimationLibrary();
-      }
-      if (v === 'motions' && typeof window.loadMotionLibrary === 'function') {
-        window.loadMotionLibrary();
-      }
-      if (v === 'binding' && typeof window.initMappingView === 'function') {
-        setTimeout(() => window.initMappingView(), 40);
       }
       if (v === 'media' && typeof window.loadMediaLibrary === 'function') {
         window.loadMediaLibrary();
@@ -97,19 +85,6 @@
   }
 
   async function refreshWorkbenchStats() {
-    const elEmo = document.getElementById('stat-emotions');
-    const elMot = document.getElementById('stat-motions');
-    try {
-      const [emoRes, motRes] = await Promise.all([
-        fetch('/api/robot/emotions').then((r) => r.json()),
-        fetch('/api/robot/motions').then((r) => r.json()),
-      ]);
-      if (elEmo && emoRes.success) elEmo.textContent = String((emoRes.emotions || []).length);
-      if (elMot && motRes.success) elMot.textContent = String((motRes.motions || []).length);
-    } catch (_) {
-      if (elEmo) elEmo.textContent = '—';
-      if (elMot) elMot.textContent = '—';
-    }
     if (typeof window.refreshWorkbenchSummary === 'function') {
       window.refreshWorkbenchSummary();
     }

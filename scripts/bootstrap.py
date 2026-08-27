@@ -314,37 +314,7 @@ def ensure_db(
         _ok('标准库课程已覆盖更新')
         return True
 
-    # 已有库但缺社交课：只补齐，不整库覆盖（社交不在旧 courses.json 里，易漏）
-    if _db_missing_social_course(py):
-        if check_only:
-            _warn('已有 app.db 但缺少「社交课程」，需补齐')
-            return False
-        _info('检测到缺少社交课程 → 运行 import_social_course --force')
-        run([str(py), str(ROOT / 'database' / 'import_social_course.py'), '--force'])
-        _ok('社交课程已补齐')
     return True
-
-
-def _db_missing_social_course(py: Path) -> bool:
-    """True = 库在但没有社交课程（或查库失败时偏保守地返回 False）。"""
-    probe = r"""
-import os, sys
-sys.path.insert(0, os.getcwd())
-from flask import Flask
-from database.models import db, Course, CourseType
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join('database', 'app.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db.init_app(app)
-with app.app_context():
-    t = CourseType.query.filter_by(name='社交').first()
-    if not t:
-        raise SystemExit(2)
-    c = Course.query.filter_by(course_type_id=t.id).first()
-    raise SystemExit(0 if c else 2)
-"""
-    r = subprocess.run([str(py), '-c', probe], cwd=str(ROOT), capture_output=True)
-    return r.returncode == 2
 
 
 def print_next_steps() -> None:

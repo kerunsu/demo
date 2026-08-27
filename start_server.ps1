@@ -18,6 +18,10 @@ $env:SERVER_NO_WAIT = '1'
 try {
     $status = Invoke-RestMethod -Uri 'http://127.0.0.1:8080/api/server/status' -TimeoutSec 3
     if ($status.success) {
+        if ($status.deployment -ne 'demo-machine') {
+            [Console]::Error.WriteLine('[start] Port 8080 is occupied by another project/version. Stop it before starting the Demo repository.')
+            exit 1
+        }
         Write-Host '[start] Backend is already healthy on port 8080; reusing it.'
         Write-Host '[start] Teacher UI: http://127.0.0.1:8080/teacher/'
         if (-not $NoPauseOnReuse) {

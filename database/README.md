@@ -2,7 +2,7 @@
 
 ## 概述
 
-本项目使用SQLite数据库存储教师账户信息。数据库文件位于 `database/app.db`。
+本项目使用 SQLite 数据库存储教师、学生、三门 Demo 课程、训练和报告。数据库文件位于 `database/app.db`。
 
 ## 初始化数据库
 
@@ -85,12 +85,7 @@ python database/migrate_courses.py --force
 
 ### CourseType（课程类型字典表）
 
-存储固定的5类课程：
-1. 命名
-2. 拟声
-3. 模仿
-4. 配对
-5. 排序
+全新 Demo 数据库只建立三类课程：模仿、配对、排序。旧部署数据库中的其他历史课型不删除，但所有生产目录、预设和新报告都由 `config/demo_course_scope.json` 过滤。
 
 字段说明：
 - `id`: 主键，自增

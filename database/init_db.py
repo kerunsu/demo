@@ -31,24 +31,18 @@ def init_database():
         print("数据库表创建成功！")
         
         # 初始化课程类型字典表
-        if CourseType.query.count() == 0:
-            course_types = [
-                CourseType(name='命名'),
-                CourseType(name='拟声'),
-                CourseType(name='模仿'),
-                CourseType(name='配对'),
-                CourseType(name='排序'),
-                CourseType(name='社交'),
-            ]
-            db.session.add_all(course_types)
-            print("课程类型字典表初始化成功！")
+        # Fresh Demo databases only receive the reviewed three-course scope.
+        # Existing deployments are upgraded in place: historical inactive rows
+        # are retained for data safety but never exposed by Demo APIs.
+        missing_types = [
+            name for name in ('模仿', '配对', '排序')
+            if not CourseType.query.filter_by(name=name).first()
+        ]
+        if missing_types:
+            db.session.add_all(CourseType(name=name) for name in missing_types)
+            print(f"已补齐 Demo 课程类型：{', '.join(missing_types)}")
         else:
-            # 幂等补齐：已有库可能缺「社交」
-            if not CourseType.query.filter_by(name='社交').first():
-                db.session.add(CourseType(name='社交'))
-                print("已补齐课程类型：社交")
-            else:
-                print("课程类型字典表已有数据，跳过初始化")
+            print("Demo 课程类型字典表已有数据，跳过初始化")
         
         # 初始化能力类型字典表
         if AbilityType.query.count() == 0:

@@ -31,6 +31,11 @@ from app.robot.motion_storage import get_motion_metadata, get_scaled_motion_fram
 from app.robot.neutral_pose import complete_pose, get_neutral_pose
 from app.robot.mapping_resolver import MappingResolver
 from app.robot.runtime_registry import get_primary_runtime
+from app.deployment_capabilities import (
+    robot_expression_enabled,
+    robot_motion_enabled,
+    robot_runtime_enabled,
+)
 from app.utils.logger import setup_logger
 from app.storage.process_lock import InterProcessMutex
 
@@ -92,6 +97,24 @@ def set_socketio(socketio):
     logger.info("SocketIO已绑定到RobotService")
 
 
+class _DisabledMotionPlayer:
+    """No-I/O replacement used by the hardware-free Demo deployment."""
+
+    is_playing = False
+
+    @staticmethod
+    def play(*_args: Any, **_kwargs: Any) -> bool:
+        return False
+
+    @staticmethod
+    def stop() -> None:
+        return None
+
+    @staticmethod
+    def send_realtime(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+
 class RobotService:
     """
     机械臂服务
@@ -115,18 +138,26 @@ class RobotService:
         if hasattr(self, '_initialized') and self._initialized:
             return
         
-        # 确保数据文件存在
+        self._motion_output_enabled = robot_motion_enabled()
+        self._expression_output_enabled = robot_expression_enabled()
+        self._robot_runtime_enabled = robot_runtime_enabled()
+
+        # 确保 Demo 允许的数据文件存在
         ensure_data_files()
         
         # 初始化组件
         self._recorder = MotionRecorder()
-        self._player = MotionPlayer()
+        self._player = (
+            MotionPlayer() if self._motion_output_enabled else _DisabledMotionPlayer()
+        )
         self._mapping_resolver = MappingResolver()
         try:
             from app.runtime_modes import load_runtime_modes
             self._control_mode = load_runtime_modes()["robot_control_mode"]
         except Exception:
             self._control_mode = ROBOT_CONTROL_MODE
+        if not self._robot_runtime_enabled:
+            self._control_mode = 'disabled'
         self._child_room = ROBOT_CHILD_ROOM or None
         # 单事件互斥：行为播放期间的新触发直接失效，不进入等待队列。
         self._sequence_queue: queue.Queue = queue.Queue(maxsize=1)
@@ -154,14 +185,20 @@ class RobotService:
             name='RobotBehaviorSequence',
         )
         self._sequence_worker.start()
-        threading.Thread(
-            target=self._warm_expression_durations,
-            daemon=True,
-            name='RobotExpressionDurationWarmup',
-        ).start()
+        if self._expression_output_enabled:
+            threading.Thread(
+                target=self._warm_expression_durations,
+                daemon=True,
+                name='RobotExpressionDurationWarmup',
+            ).start()
         
         self._initialized = True
-        logger.info("机械臂服务已初始化，控制模式=%s", self._control_mode)
+        logger.info(
+            "Demo 行为协调器已初始化，控制模式=%s motion=%s expression=%s",
+            self._control_mode,
+            self._motion_output_enabled,
+            self._expression_output_enabled,
+        )
 
     @staticmethod
     def _warm_expression_durations() -> None:
@@ -185,7 +222,7 @@ class RobotService:
         if persist:
             from app.runtime_modes import save_runtime_modes
             save_runtime_modes(robot_control_mode=mode)
-        logger.info("机械臂控制模式已切换: %s", mode)
+        logger.info("Demo 兼容输出模式已确认: %s", mode)
     
     # ========== 录制相关 ==========
     
@@ -196,10 +233,14 @@ class RobotService:
     
     def start_recording(self) -> None:
         """开始录制"""
+        if not getattr(self, '_motion_output_enabled', True):
+            return
         self._recorder.start()
     
     def add_frame(self, pose_data: Dict[str, float]) -> None:
         """添加录制帧"""
+        if not getattr(self, '_motion_output_enabled', True):
+            return
         self._recorder.add_frame(pose_data)
     
     def stop_recording(self, motion_name: Optional[str] = None) -> Dict[str, Any]:
@@ -212,6 +253,8 @@ class RobotService:
         Returns:
             {saved: bool, motionName: str, frameCount: int}
         """
+        if not getattr(self, '_motion_output_enabled', True):
+            return {'saved': False, 'motionName': None, 'frameCount': 0, 'disabled': True}
         frames = self._recorder.stop()
         
         if not motion_name:
@@ -229,18 +272,26 @@ class RobotService:
     
     def get_motion_list(self) -> List[Dict[str, Any]]:
         """获取动作列表"""
+        if not getattr(self, '_motion_output_enabled', True):
+            return []
         return self._recorder.get_motion_list()
     
     def get_motion(self, motion_name: str) -> Optional[List[Dict]]:
         """获取动作详情"""
+        if not getattr(self, '_motion_output_enabled', True):
+            return None
         return self._recorder.get_motion(motion_name)
     
     def save_motion(self, motion_name: str, frames: List[Dict]) -> bool:
         """保存动作"""
+        if not getattr(self, '_motion_output_enabled', True):
+            return False
         return self._recorder.save(motion_name, frames)
     
     def delete_motion(self, motion_name: str) -> bool:
         """删除动作"""
+        if not getattr(self, '_motion_output_enabled', True):
+            return False
         return self._recorder.delete_motion(motion_name)
     
     # ========== 播放相关 ==========
@@ -261,6 +312,9 @@ class RobotService:
         Returns:
             是否成功开始播放
         """
+        if not getattr(self, '_motion_output_enabled', True):
+            logger.debug("Demo 已禁用机械动作，忽略播放请求: %s", motion_name)
+            return False
         if self._control_mode == 'robot_runtime':
             # In the deployed topology Runtime registers outbound to Server,
             # while Windows commonly blocks Server -> Runtime:19091. The child
@@ -274,6 +328,8 @@ class RobotService:
     
     def stop_playback(self) -> bool:
         """停止播放"""
+        if not getattr(self, '_motion_output_enabled', True):
+            return False
         if self.get_control_mode() == 'robot_runtime':
             return self._runtime_osc_post('/osc/stop', {})
         if self.get_control_mode() == 'child_agent':
@@ -286,6 +342,8 @@ class RobotService:
     
     def send_realtime(self, pose_data: Dict[str, float]) -> None:
         """实时发送姿态数据"""
+        if not getattr(self, '_motion_output_enabled', True):
+            return
         safe_pose = complete_pose(pose_data)
         if self._control_mode == 'robot_runtime':
             self._runtime_osc_post('/osc/frame', {
@@ -1960,39 +2018,44 @@ class RobotService:
         sequence = sequence if isinstance(sequence, dict) else {}
         source = event_data or {}
         audio = sequence.get('audio') if isinstance(sequence.get('audio'), dict) else {}
+        if not getattr(self, '_motion_output_enabled', True):
+            motion = None
+        expression_enabled = getattr(self, '_expression_output_enabled', True)
         metadata = get_motion_metadata(motion) if motion else {}
         imported_expression = metadata.get('expression') if isinstance(metadata.get('expression'), dict) else {}
         imported_media = str(imported_expression.get('mediaId') or '').strip()
 
-        expression = (
-            str(sequence.get('expressionMediaId') or '').strip()
-            or str(emotion or '').strip()
-            or str(imported_expression.get('mediaId') or '').strip()
-            or self.get_default_emotion()
-        )
-        duration_ms = self._as_ms(sequence.get('expressionDurationMs'))
-        duration_already_scaled = False
-        same_as_imported = bool(imported_media) and (
-            expression.replace('\\', '/').split('/')[-1]
-            == imported_media.replace('\\', '/').split('/')[-1]
-        )
-        if not duration_ms and same_as_imported:
-            duration_ms = self._as_ms(imported_expression.get('durationMs'))
-        if not duration_ms:
-            from app.robot.emotion_assets import get_expression_duration_ms
-            duration_ms = get_expression_duration_ms(expression)
-            duration_already_scaled = bool(duration_ms)
-        if not duration_ms and same_as_imported:
-            duration_ms = self._as_ms(metadata.get('durationMs'))
-        # 视频无元数据、旧 GIF 解析失败时才保守回退 3 秒。
-        if not duration_ms:
-            duration_ms = 3000
-        elif not duration_already_scaled and str(expression).lower().endswith('.mp4'):
-            from app.robot.emotion_assets import get_emotion_style
-            expression_speed = get_emotion_style(expression.replace('\\', '/').split('/')[-1])[
-                'speedMultiplier'
-            ]
-            duration_ms = max(1, int(round(duration_ms / expression_speed)))
+        expression = ''
+        duration_ms = 0
+        if expression_enabled:
+            expression = (
+                str(sequence.get('expressionMediaId') or '').strip()
+                or str(emotion or '').strip()
+                or str(imported_expression.get('mediaId') or '').strip()
+                or self.get_default_emotion()
+            )
+            duration_ms = self._as_ms(sequence.get('expressionDurationMs'))
+            duration_already_scaled = False
+            same_as_imported = bool(imported_media) and (
+                expression.replace('\\', '/').split('/')[-1]
+                == imported_media.replace('\\', '/').split('/')[-1]
+            )
+            if not duration_ms and same_as_imported:
+                duration_ms = self._as_ms(imported_expression.get('durationMs'))
+            if not duration_ms:
+                from app.robot.emotion_assets import get_expression_duration_ms
+                duration_ms = get_expression_duration_ms(expression)
+                duration_already_scaled = bool(duration_ms)
+            if not duration_ms and same_as_imported:
+                duration_ms = self._as_ms(metadata.get('durationMs'))
+            if not duration_ms:
+                duration_ms = 3000
+            elif not duration_already_scaled and str(expression).lower().endswith('.mp4'):
+                from app.robot.emotion_assets import get_emotion_style
+                expression_speed = get_emotion_style(expression.replace('\\', '/').split('/')[-1])[
+                    'speedMultiplier'
+                ]
+                duration_ms = max(1, int(round(duration_ms / expression_speed)))
 
         motion_offset_ms = self._as_ms(sequence.get('motionOffsetMs'))
         if not motion_offset_ms:
@@ -2016,7 +2079,7 @@ class RobotService:
 
         audio_offset_ms = self._as_ms(audio.get('offsetMs'))
         aux = source.get('aux') if isinstance(source.get('aux'), dict) else {}
-        if any(bool(aux.get(key)) for key in (
+        if duration_ms and any(bool(aux.get(key)) for key in (
             'question', 'praise', 'hint', 'socialGreetingIntro',
             'socialGreetingPlay', 'socialFarewellBye', 'socialFarewellReply',
         )) and audio_offset_ms >= duration_ms:
@@ -2490,6 +2553,10 @@ class RobotService:
         """控制端试播：使用传入的未保存绑定，仍走与正式触发相同的调度器。"""
         motions = data.get('motions') if isinstance(data.get('motions'), list) else []
         selected_motion = self._mapping_resolver.select_motion(motions)
+        if not getattr(self, '_motion_output_enabled', True):
+            selected_motion = None
+        if not getattr(self, '_expression_output_enabled', True):
+            emotion = ''
         aux_type = str(data.get('auxType') or '')
         aux_keys = {
             'question': 'question', 'praise': 'praise', 'hint': 'hint',
@@ -2824,6 +2891,8 @@ class RobotService:
         session_id: str,
     ) -> Optional[Dict[str, Any]]:
         """Attach a configured expression to an already reserved dialogue turn."""
+        if not getattr(self, '_expression_output_enabled', True):
+            return None
         try:
             plan = self._build_sequence_plan(
                 motion=None,
@@ -2895,22 +2964,32 @@ class RobotService:
     
     def get_available_emotions(self) -> List[str]:
         """获取所有可用表情列表"""
+        if not getattr(self, '_expression_output_enabled', True):
+            return []
         from app.robot.emotion_assets import list_emotion_files
         return list_emotion_files()
 
     def get_emotions_payload(self) -> Dict[str, Any]:
+        if not getattr(self, '_expression_output_enabled', True):
+            return {'success': True, 'emotions': [], 'items': [], 'disabled': True}
         from app.robot.emotion_assets import get_emotions_payload
         return get_emotions_payload()
 
     def get_dialogue_reply_expressions(self) -> Dict[str, Any]:
+        if not getattr(self, '_expression_output_enabled', True):
+            return {'enabled': False, 'rules': [], 'disabled': True}
         from app.robot.emotion_assets import get_dialogue_reply_expressions
         return get_dialogue_reply_expressions()
 
     def set_dialogue_reply_expressions(self, value: Dict[str, Any]) -> Dict[str, Any]:
+        if not getattr(self, '_expression_output_enabled', True):
+            raise RuntimeError('demo_robot_expression_disabled')
         from app.robot.emotion_assets import set_dialogue_reply_expressions
         return set_dialogue_reply_expressions(value)
 
     def select_dialogue_reply_emotion(self, text: str) -> Optional[Dict[str, Any]]:
+        if not getattr(self, '_expression_output_enabled', True):
+            return None
         from app.robot.emotion_assets import select_dialogue_reply_emotion
         return select_dialogue_reply_emotion(text)
 
@@ -2931,6 +3010,8 @@ class RobotService:
         return set_global_filter(value)
 
     def get_default_emotion(self) -> str:
+        if not getattr(self, '_expression_output_enabled', True):
+            return ''
         from app.robot.emotion_assets import get_default_emotion
         return get_default_emotion()
 
@@ -2971,6 +3052,10 @@ class RobotService:
             是否成功发送
         """
         global _socketio
+
+        if not getattr(self, '_expression_output_enabled', True):
+            logger.debug("Demo 已禁用完整版机器人表情，忽略触发请求")
+            return False
         
         if _socketio is None:
             logger.warning("SocketIO未绑定，无法发送表情事件")

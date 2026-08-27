@@ -54,7 +54,7 @@ def _decorated_contracts():
     return routes, events
 
 
-def test_phase1_legacy_http_surface_has_no_removed_critical_routes():
+def test_phase1_demo_http_surface_keeps_core_routes_and_removes_hardware_routes():
     routes, _ = _decorated_contracts()
     expected = {
         ("GET", "/"),
@@ -69,14 +69,14 @@ def test_phase1_legacy_http_surface_has_no_removed_critical_routes():
         ("POST", "/api/media/<session_id>/upload"),
         ("GET", "/api/monitor/snapshot"),
         ("GET", "/api/monitor/ambient/devices"),
-        ("POST", "/api/robot/motions/import"),
-        ("POST", "/api/robot/emotions/upload"),
         ("GET", "/api/report/<training_session_id>"),
     }
     assert expected <= routes
+    assert ("POST", "/api/robot/motions/import") not in routes
+    assert ("POST", "/api/robot/emotions/upload") not in routes
 
 
-def test_phase1_legacy_socket_surface_has_no_removed_critical_events():
+def test_phase1_demo_socket_surface_keeps_core_events_and_removes_robot_events():
     _, events = _decorated_contracts()
     expected = {
         "connect",
@@ -100,14 +100,15 @@ def test_phase1_legacy_socket_surface_has_no_removed_critical_events():
         "finalize_training",
         "teacher_rating_submit",
         "child_dialogue_text",
-        "child_dialogue_audio",
         "robot_speak_ended",
-        "robot_play_motion",
-        "robot_stop_playback",
-        "robot_emotion_auto_random",
     }
     # readiness_complete is a server-emitted event rather than a decorator.
     assert expected - {"readiness_complete"} <= events
+    assert not {
+        "robot_play_motion",
+        "robot_stop_playback",
+        "robot_emotion_auto_random",
+    } & events
 
 
 def test_phase1_existing_recording_timeline_columns_are_frozen():
@@ -133,18 +134,18 @@ def test_phase1_mapping_resolver_uses_global_course_item_precedence(tmp_path):
         json.dumps(
             {
                 "defaults": {
-                    "question": ["default-question"],
-                    "praise": ["default-praise"],
+                    "question": {"animation": "default-question.mp4"},
+                    "praise": {"animation": "default-praise.mp4"},
                 },
                 "courses": {"7": {
-                    "question": ["course-question"],
-                    "items": {"11": {"question": ["item-question"]}},
+                    "question": {"animation": "course-question.mp4"},
+                    "items": {"11": {"question": {"animation": "item-question.mp4"}}},
                 }},
                 "students": {
                     "3": {
                         "7": {
-                            "question": ["student-course-question"],
-                            "items": {"11": {"question": ["item-question"]}},
+                            "question": {"animation": "ignored-student.mp4"},
+                            "items": {"11": {"question": {"animation": "ignored-item.mp4"}}},
                         }
                     }
                 },
@@ -160,11 +161,13 @@ def test_phase1_mapping_resolver_uses_global_course_item_precedence(tmp_path):
     assert resolver.parse_aux_type({"reward": True}) == "reward"
     assert resolver.parse_aux_type({"socialGreetingIntro": True}) == "social_greeting_intro"
     assert resolver.parse_aux_type({}) == "silent"
-    assert resolver.find_mapping(3, 7, 11, "question")["motions"] == ["item-question"]
+    assert resolver.find_mapping(3, 7, 11, "question")["animation"] == "item-question.mp4"
     # 旧 students 数据保留但已退出机器人执行链。
-    assert resolver.find_mapping(3, 7, 12, "question")["motions"] == ["course-question"]
-    assert resolver.find_mapping(4, 7, 12, "question")["motions"] == ["course-question"]
-    assert resolver.find_mapping(4, 8, 12, "question")["motions"] == ["default-question"]
+    assert resolver.find_mapping(3, 7, 12, "question")["animation"] == "course-question.mp4"
+    assert resolver.find_mapping(4, 7, 12, "question")["animation"] == "course-question.mp4"
+    assert resolver.find_mapping(4, 8, 12, "question")["animation"] == "default-question.mp4"
+    assert resolver.find_mapping(3, 7, 11, "question")["motions"] == []
+    assert resolver.find_mapping(3, 7, 11, "question")["emotion"] is None
 
 
 def test_behavior_event_ownership_separates_social_from_ordering():
@@ -248,9 +251,13 @@ def test_social_course_first_content_load_accepts_empty_aux_independent_of_db_id
 
 def test_mapping_resolver_accepts_windows_utf8_bom(tmp_path):
     mapping_path = tmp_path / "course_map.json"
-    payload = {"defaults": {"question": ["ask"]}, "courses": {}, "students": {}}
+    payload = {
+        "defaults": {"question": {"animation": "ask.mp4"}},
+        "courses": {},
+        "students": {},
+    }
     mapping_path.write_bytes(b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8"))
 
     resolver = MappingResolver(str(mapping_path))
 
-    assert resolver.find_mapping(None, 1, None, "question")["motions"] == ["ask"]
+    assert resolver.find_mapping(None, 1, None, "question")["animation"] == "ask.mp4"

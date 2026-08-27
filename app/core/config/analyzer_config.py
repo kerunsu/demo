@@ -50,7 +50,7 @@ class PoseAnalyzerConfig:
 class PoseMatcherConfig:
     """姿态比对器配置"""
     mode: AnalyzerMode = AnalyzerMode.MOCK
-    threshold: float = 0.85
+    threshold: float = 0.70
     sigma: float = 0.6  # 高斯核参数
     # Mock 专用
     base_match_score: float = 0.8

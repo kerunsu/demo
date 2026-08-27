@@ -1,191 +1,35 @@
 [
   {
     "id": 1,
-    "title": "课程 1 - 模仿",
+    "title": "模仿",
     "type": "mimic",
     "question": "resources/audios/mimic/mimic_question.mp3",
     "praise": "resources/audios/mimic/mimic_praise.mp3",
     "items": [
-      {
-        "id": 1,
-        "name": "双手举起",
-        "type": "image",
-        "file": "resources/images/mimic/pose_1.png"
-      },
-      {
-        "id": 2,
-        "name": "比小花",
-        "type": "image",
-        "file": "resources/images/mimic/pose_2.png"
-      }
+      {"id": 1, "name": "双手举起", "type": "image", "file": "resources/images/mimic/pose_1.png"},
+      {"id": 2, "name": "比小花", "type": "image", "file": "resources/images/mimic/pose_2.png"}
     ]
   },
   {
-    "id": 2,
-    "title": "课程 2 - 命名",
-    "type": "naming",
-    "question": "resources/audios/naming/naming_question.mp3",
-    "praise": "resources/audios/mimic/mimic_praise.mp3",
-    "items": [
-      {
-        "id": 1,
-        "name": "猫",
-        "type": "image",
-        "file": "resources/images/naming/cat_1.png",
-        "hint": "resources/audios/naming/naming_hint_cat.mp3"
-      },
-      {
-        "id": 2,
-        "name": "狗",
-        "type": "image",
-        "file": "resources/images/naming/dog_1.png",
-        "hint": "resources/audios/naming/naming_hint_dog.mp3"
-      }
-    ]
-  },
-  {
-    "id": 3,
-    "title": "课程 3 - 拟声",
-    "type": "onomatopoeia",
-    "question": "resources/audios/a_question_ono.mp3",
-    "praise": "resources/audios/a_praise_ono.mp3",
-    "items": [
-      {
-        "id": 1,
-        "name": "小狗叫",
-        "type": "image",
-        "file": "resources/images/voice/203/",
-        "icon": "resources/images/voice/203/001.jpg",
-        "hint": "resources/audios/naming/hint_dog.mp3"
-      },
-      {
-        "id": 2,
-        "name": "小猫叫",
-        "type": "image",
-        "file": "resources/images/voice/201/",
-        "icon": "resources/images/voice/201/001.jpg",
-        "hint": "resources/audios/naming/hint_dog.mp3"
-      }
-    ]
-  },
-  {
-    "id": 4,
-    "title": "课程 4 - 配对",
+    "id": 9,
+    "title": "配对",
     "type": "pairing",
     "question": "resources/audios/a_question_pairing.mp3",
     "praise": "resources/audios/a_praise_pairing.mp3",
-    "file":"resources/interactive/matching.html",
+    "file": "resources/interactive/matching.html",
     "items": [
-      {
-        "id": 1,
-        "name": "三选一",
-        "type":"interactive",
-        "difficulty": "easy",
-        "config": {
-          "cardCount": 3,
-          "timeLimit": 30,
-          "hints": true
-        }
-      },
-      {
-        "id": 2,
-        "name": "四选一",
-        "type":"interactive",
-        "difficulty": "medium",
-        "config": {
-          "cardCount": 4,
-          "timeLimit": 45,
-          "hints": true
-        }
-      },
-      {
-        "id": 3,
-        "name": "五选一",
-        "type":"interactive",
-        "difficulty": "hard",
-        "config": {
-          "cardCount": 5,
-          "timeLimit": 60,
-          "hints": false
-        }
-      }
+      {"id": 79, "name": "相同物品视觉配对", "type": "interactive", "file": "resources/images/matching/"}
     ]
   },
   {
-    "id": 5,
-    "title": "课程 5 - 排序",
+    "id": 10,
+    "title": "排序",
     "type": "ordering",
     "question": "resources/audios/a_question_ordering.mp3",
     "praise": "resources/audios/a_praise_ordering.mp3",
-    "file":"resources/interactive/sequencing.html",
+    "file": "resources/interactive/sequencing.html",
     "items": [
-      {
-        "id": 1,
-        "name": "大小",
-        "type":"interactive",
-        "difficulty": "easy",
-        "config": {
-          "itemCount": 3,
-          "category": "size",
-          "timeLimit": 30
-        }
-      },
-      {
-        "id": 2,
-        "name": "多少",
-        "type":"interactive",
-        "difficulty": "medium",
-        "config": {
-          "itemCount": 4,
-          "category": "quantity",
-          "timeLimit": 45
-        }
-      },
-      {
-        "id": 3,
-        "name": "高矮",
-        "type":"interactive",
-        "difficulty": "medium",
-        "config": {
-          "itemCount": 4,
-          "category": "height",
-          "timeLimit": 45
-        }
-      },
-      {
-        "id": 4,
-        "name": "长短",
-        "type":"interactive",
-        "difficulty": "hard",
-        "config": {
-          "itemCount": 5,
-          "category": "length",
-          "timeLimit": 60
-        }
-      }
-    ]
-  },
-  {
-    "id": 6,
-    "title": "社交课程",
-    "type": "social",
-    "items": [
-      {
-        "id": 1,
-        "name": "打招呼",
-        "type": "image",
-        "config": {
-          "socialRole": "greeting"
-        }
-      },
-      {
-        "id": 2,
-        "name": "再见",
-        "type": "image",
-        "config": {
-          "socialRole": "farewell"
-        }
-      }
+      {"id": 80, "name": "排序", "type": "interactive", "file": "resources/images/paixu/"}
     ]
   }
 ]

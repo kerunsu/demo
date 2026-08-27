@@ -71,8 +71,6 @@ def test_validate_scoring_weights_must_sum_100():
     bad = {
         "weights": {
             "attention": 10,
-            "expressiveLanguage": 10,
-            "receptiveLanguage": 10,
             "matching": 10,
             "ordering": 10,
         }
@@ -84,11 +82,9 @@ def test_validate_scoring_weights_must_sum_100():
 def test_validate_scoring_ok_when_sum_100():
     cfg = {
         "weights": {
-            "attention": 20,
-            "expressiveLanguage": 20,
-            "receptiveLanguage": 20,
-            "matching": 20,
-            "ordering": 20,
+            "attention": 34,
+            "matching": 33,
+            "ordering": 33,
         },
         "narrative_provider": "rule",
     }
@@ -103,11 +99,9 @@ def test_save_scoring_writes_bak(monkeypatch):
     base = {
         "schema_version": "test-v",
         "weights": {
-            "attention": 20,
-            "expressiveLanguage": 20,
-            "receptiveLanguage": 20,
-            "matching": 20,
-            "ordering": 20,
+            "attention": 34,
+            "matching": 33,
+            "ordering": 33,
         },
         "narrative_provider": "rule",
         "interactive_course": {},
@@ -118,18 +112,16 @@ def test_save_scoring_writes_bak(monkeypatch):
 
     new_cfg = dict(base)
     new_cfg["weights"] = {
-        "attention": 25,
-        "expressiveLanguage": 25,
-        "receptiveLanguage": 20,
-        "matching": 15,
-        "ordering": 15,
+        "attention": 40,
+        "matching": 30,
+        "ordering": 30,
     }
     saved = save_scoring_config(new_cfg)
-    assert saved["weights"]["attention"] == 25
+    assert saved["weights"]["attention"] == 40
     bak = target.with_suffix(target.suffix + ".bak")
     assert bak.exists()
     loaded = load_scoring_config()
-    assert loaded["weights"]["attention"] == 25
+    assert loaded["weights"]["attention"] == 40
 
 
 def _patch_config_files(monkeypatch):
@@ -160,11 +152,9 @@ def _patch_config_files(monkeypatch):
             {
                 "schema_version": "education-training-index-v2-teacher-rating",
                 "weights": {
-                    "attention": 20,
-                    "expressiveLanguage": 20,
-                    "receptiveLanguage": 20,
-                    "matching": 20,
-                    "ordering": 20,
+                    "attention": 34,
+                    "matching": 33,
+                    "ordering": 33,
                 },
                 "narrative_provider": "rule",
                 "interactive_course": {
@@ -240,8 +230,6 @@ def test_api_report_weights_reject_and_accept(monkeypatch):
             "config": {
                 "weights": {
                     "attention": 10,
-                    "expressiveLanguage": 10,
-                    "receptiveLanguage": 10,
                     "matching": 10,
                     "ordering": 10,
                 }
@@ -256,11 +244,9 @@ def test_api_report_weights_reject_and_accept(monkeypatch):
         json={
             "config": {
                 "weights": {
-                    "attention": 30,
-                    "expressiveLanguage": 20,
-                    "receptiveLanguage": 20,
-                    "matching": 15,
-                    "ordering": 15,
+                    "attention": 40,
+                    "matching": 30,
+                    "ordering": 30,
                 },
                 "narrative_provider": "mock",
             }
@@ -268,7 +254,7 @@ def test_api_report_weights_reject_and_accept(monkeypatch):
     )
     assert ok.status_code == 200
     body = ok.get_json()
-    assert body["config"]["weights"]["attention"] == 30
+    assert body["config"]["weights"]["attention"] == 40
     assert body["config"]["narrative_provider"] == "mock"
 
 

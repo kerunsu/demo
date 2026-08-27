@@ -6,12 +6,12 @@ replaced.
 
 | Block | Owns | Does not own |
 |---|---|---|
-| Frontend Web | `teacher_frontend`, `templates`, `static/js`, monitor/config/report/robot pages | DB, server paths, hardware implementations |
+| Frontend Web | `teacher_frontend`, `templates`, `static/js`, monitor/config/report/child-animation pages | DB, server paths, hardware implementations |
 | Backend facade | Flask app/bootstrap, blueprints, Socket registration, auth/validation, DTO presentation | scoring, recording, file writes, LLM, hardware details |
-| Acquisition | browser/Runtime uplink, server environment capture, device discovery, capture lifecycle | session filenames, report formulas, dialogue policy |
+| Acquisition | browser uplink, server environment capture, device discovery, capture lifecycle | session filenames, report formulas, dialogue policy |
 | Storage | SQLite, session layout, metadata/timeline, reports, asset/config catalog | Socket room decisions, device I/O, LLM |
 | Computation | readiness, analysis/model plugins, scoring, progression, decisions, InteractionProfile resolver | Flask/Socket transport, recording codecs, dialogue provider |
-| Dialogue | wake/ASR/context/LLM/TTS and speech orchestration | DB, recorder, direct robot implementation |
+| Dialogue | wake/ASR/context/LLM/TTS and speech orchestration | DB, recorder, mechanical or expression output |
 
 `app/contracts` is a framework-free shared kernel, not a seventh block. It
 contains DTOs, Protocols, event envelopes, time points and error semantics only.
@@ -27,16 +27,17 @@ storage -> contracts
 ```
 
 Legacy `app.py`, `app/sockets`, `app/services`, `app/robot` and `app/recorder`
-remain compatibility owners where the migration log says so. New modules must
+remain compatibility owners. In Demo, `app/robot` is only a historical name for
+speech/child-animation coordination; the hard capability policy prevents any
+mechanical, Runtime or full-version expression output. New modules must
 be lazy on import: no thread, camera, microphone, file or DB mutation at import
 time. The composition root is `app.py` plus `app/facade/bootstrap.py` until a
 later release proves a complete application factory.
 
 ## Runtime invariants
 
-`prepare_training` may reserve a session and legacy warmup remains compatible;
-strict preflight is opt-in until the real Server/Runtime device broker is
-connected. A successful strict path must check every enabled+required module,
-reserve devices, start one continuous recording, verify each required first
-sample, and roll back partial resources on failure. Course changes append
-timeline segments and never restart the session recording.
+`prepare_training` reserves a session and verifies browser permission/device
+readiness. A successful path starts one continuous recording, verifies required
+first samples and rolls back partial resources on failure. Course changes append
+timeline segments and never restart the session recording. Only mimic, pairing
+and ordering can enter this flow; reports project the same fixed scope.

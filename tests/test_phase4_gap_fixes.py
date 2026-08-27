@@ -147,33 +147,10 @@ def test_phase4_session_profile_version_freezes_server_choice(monkeypatch):
     assert session.metadata["activeProfileVersion"] == "v1"
 
 
-def test_phase4_emotion_auto_random_has_busy_gate(monkeypatch):
-    from app.sockets import robot_events
-
-    registrations = {}
-    emitted = []
-
-    class Socket:
-        def on(self, name):
-            def decorator(fn):
-                registrations[name] = fn
-                return fn
-            return decorator
-
-        def emit(self, *args, **kwargs):
-            emitted.append((args, kwargs))
-
-    class Robot:
-        def get_behavior_busy_state(self):
-            return {"busy": True, "eventId": "active"}
-
-        def get_available_emotions(self):
-            raise AssertionError("busy path must not inspect or emit emotion")
-
-    monkeypatch.setattr(robot_events, "get_robot_service", lambda: Robot())
-    robot_events.register_robot_events(Socket())
-    registrations["robot_emotion_auto_random"]()
-    assert emitted == []
+def test_phase4_demo_has_no_full_expression_socket_module():
+    root = Path(__file__).resolve().parents[1]
+    assert not (root / "app/sockets/robot_events.py").exists()
+    assert "register_robot_events" not in (root / "app/sockets/events.py").read_text(encoding="utf-8")
 
 
 def test_phase4_batch_upload_reads_only_bounded_sentinel_bytes():

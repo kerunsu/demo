@@ -8,7 +8,7 @@ import {
   startCameraAnalysis,
   stopCameraAnalysis,
 } from "./camera_analysis/cameraAnalysis.js";
-import { startChildScreenClickTracking } from "./child_screen_clicks.js?v=20260824-screen-click-v1";
+import { startChildScreenClickTracking } from "./child_screen_clicks.js?v=20260826-dialogue-runtime-v2";
 
 // common.js 创建的全局 socket（挂到 window）；模块内显式引用
 const socket = window.socket || (typeof io !== "undefined" ? io() : null);
@@ -125,8 +125,6 @@ let videoContext = null;  // Canvas 2D上下文
 let audioContext = null;  // 音频上下文
 let audioProcessor = null;  // 音频处理器节点
 let isRecording = false;  // 是否正在录制
-let recordingStartPromise = null;
-let recordingStartSessionId = null;
 let currentSessionId = null;  // 当前会话ID（整场 media session）
 let currentRecordingMode = "continuous";  // continuous | segmented（兼容旧）
 let currentHumanDirName = null;  // 与服务端一致的可读目录名
@@ -134,22 +132,15 @@ let currentTrainingSessionId = restoredChildBinding.trainingSessionId || null;  
 let currentQuestionId = null;  // 当前题目窗口ID
 let announcedSessionId = restoredChildBinding.sessionId || null;  // prepare/play 已公布的会话；重连时立即重新 join
 let videoFrameInterval = null;  // 视频帧发送定时器
-let videoFrameRate = 30;  // 视频帧率（fps）— browser 模式；agent 模式由 runtime-config 覆盖
+let videoFrameRate = 30;  // 视频帧率（fps）— Demo 固定 browser 模式
 let audioSampleRate = 16000;  // 音频采样率（Hz）
 let standbyTimer = null;  // 待机图片定时器
 
 // ======================
-// 儿童端媒体模式（browser | agent）
+// 儿童端媒体模式（Demo 固定 browser）
 // ======================
 let childMediaMode = "browser";
-// 生产默认显式报告整场录制失败；仅显式调试配置允许静默。
-let skipRuntimeRecordingCheck = false;
-let childMediaRuntime = null;
 let dialogueTtsMode = "browser";
-const CHILD_MEDIA_AGENT_BASE = window.CHILD_MEDIA_AGENT_BASE || "http://127.0.0.1:19091";
-const CHILD_MEDIA_AGENT_KEY = window.CHILD_MEDIA_AGENT_KEY || "";
-let mediaAgentHeartbeatTimer = null;
-let mediaAgentOnline = false;
 
 // 供对话模块读取当前课点上下文
 window.currentCourseType = window.currentCourseType || "";
@@ -205,7 +196,7 @@ const DEFAULT_SPEECH_PROMPTS = {
   naming: "这是什么呀",
   speech: "这是什么呀",
   onomatopoeia: "听听，这是什么声音呀？",
-  mimic: "跟我做一样的动作吧",
+  mimic: "看一看屏幕上的动作图片，请你照着做。",
 };
 
 function naturalizeOnomatopoeiaName(raw) {
@@ -600,6 +591,7 @@ function notifyInteractiveFrame(type, payload) {
 
 function shouldHoldPraiseOverlay(payload) {
   if (!payload) return true;
+  if (payload.holdLastFrame === true || payload.hold_last_frame === true) return true;
   if (payload.holdLastFrame === false || payload.hold_last_frame === false) return false;
   if (payload.interactiveAutoPraise === true || payload.interactive_auto_praise === true) {
     return false;
@@ -607,31 +599,20 @@ function shouldHoldPraiseOverlay(payload) {
   return true;
 }
 
-function getBackendBaseUrl() {
-  return `${window.location.protocol}//${window.location.host}`;
-}
-
 async function loadChildRuntimeConfig() {
   try {
     const resp = await fetch("/api/child/runtime-config");
     const data = await resp.json();
     if (data && data.success !== false) {
-      childMediaRuntime = data;
-      childMediaMode = data.mediaMode === "agent" ? "agent" : "browser";
+      childMediaMode = "browser";
       if (data.dialogueTtsMode) {
         dialogueTtsMode = String(data.dialogueTtsMode).toLowerCase();
       }
       if (data.browserSpeechRate != null) {
         window.BrowserTts?.setBrowserSpeechRate?.(data.browserSpeechRate);
       }
-      if (typeof data.skipRuntimeRecordingCheck === "boolean") {
-        skipRuntimeRecordingCheck = data.skipRuntimeRecordingCheck;
-      }
       if (data.videoFps) videoFrameRate = Number(data.videoFps) || videoFrameRate;
       if (data.audioSampleRate) audioSampleRate = Number(data.audioSampleRate) || audioSampleRate;
-      if (data.mediaAgentBase) {
-        window.CHILD_MEDIA_AGENT_BASE = data.mediaAgentBase;
-      }
       if (data.cameraAnalysis) {
         configureCameraAnalysis({
           enabled: data.cameraAnalysis.enabled !== false,
@@ -648,208 +629,8 @@ async function loadChildRuntimeConfig() {
   }
 }
 
-function mediaAgentBase() {
-  return window.CHILD_MEDIA_AGENT_BASE || CHILD_MEDIA_AGENT_BASE;
-}
-
-async function callMediaAgent(path, payload) {
-  const headers = { "Content-Type": "application/json" };
-  const key = window.CHILD_MEDIA_AGENT_KEY || CHILD_MEDIA_AGENT_KEY;
-  if (key) headers["X-Child-Media-Agent-Key"] = key;
-
-  const response = await fetch(`${mediaAgentBase()}${path}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload || {}),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) {
-    throw new Error(data.error || `Media Agent request failed: ${response.status}`);
-  }
-  return data;
-}
-
-function setChildCamPreviewFromAgent(enable) {
-  const childCam = document.getElementById("childCam");
-  if (!childCam) return;
-  if (enable) {
-    // video 元素对 MJPEG 支持不稳定，改用同尺寸的 img 覆盖或直接设 src（部分浏览器可用）
-    childCam.removeAttribute("srcObject");
-    try { childCam.srcObject = null; } catch (e) {}
-    // 用 img 替换预览：若已有 previewImg 则复用
-    let previewImg = document.getElementById("childCamPreview");
-    if (!previewImg) {
-      previewImg = document.createElement("img");
-      previewImg.id = "childCamPreview";
-      previewImg.alt = "camera preview";
-      previewImg.style.cssText = childCam.style.cssText || "position:fixed;right:0;bottom:0;width:240px;height:180px;object-fit:cover;z-index:50;";
-      childCam.style.display = "none";
-      childCam.parentNode.insertBefore(previewImg, childCam);
-    }
-    previewImg.style.display = "block";
-    previewImg.src = `${mediaAgentBase()}/preview.mjpeg?t=${Date.now()}`;
-  } else {
-    const previewImg = document.getElementById("childCamPreview");
-    if (previewImg) {
-      previewImg.removeAttribute("src");
-      previewImg.style.display = "none";
-    }
-    childCam.style.display = "";
-  }
-}
-
-function emitMediaAgentHeartbeat(online, detail) {
-  if (!socket) return;
-  socket.emit("child_media_agent_heartbeat", {
-    agentOnline: !!online,
-    detail: detail || null,
-    ts: Date.now(),
-  });
-}
-
-async function checkMediaAgentHealth() {
-  try {
-    const response = await fetch(`${mediaAgentBase()}/health`);
-    if (!response.ok) throw new Error(`status=${response.status}`);
-    const data = await response.json();
-    mediaAgentOnline = true;
-    emitMediaAgentHeartbeat(true, data);
-    console.log("📹 Media Agent 健康检查:", data);
-  } catch (error) {
-    mediaAgentOnline = false;
-    emitMediaAgentHeartbeat(false, { message: error.message });
-    console.warn("⚠️ Media Agent 未连接:", error.message);
-  }
-}
-
-function startMediaAgentHeartbeat() {
-  if (mediaAgentHeartbeatTimer) return;
-  mediaAgentHeartbeatTimer = setInterval(() => {
-    checkMediaAgentHealth();
-  }, 5000);
-}
-
-// ======================
-// 机器人本地 Agent 转发
-// ======================
-const ROBOT_AGENT_BASE = window.ROBOT_AGENT_BASE || window.CHILD_MEDIA_AGENT_BASE || "http://127.0.0.1:19091";
-const ROBOT_AGENT_KEY = window.ROBOT_AGENT_KEY || window.CHILD_MEDIA_AGENT_KEY || "";
-let robotAgentHeartbeatTimer = null;
-let robotAgentOnline = false;
-const CHILD_RUNTIME_PAGE_ID = `child-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-let childRuntimePresenceTimer = null;
-
-function emitRuntimeChildPresence(active = true) {
-  const headers = { "Content-Type": "application/json" };
-  if (ROBOT_AGENT_KEY) headers["X-Robot-Runtime-Key"] = ROBOT_AGENT_KEY;
-  return fetch(`${ROBOT_AGENT_BASE}/ui/child-presence`, {
-    method: "POST",
-    mode: "cors",
-    credentials: "omit",
-    keepalive: !active,
-    headers,
-    body: JSON.stringify({
-      pageId: CHILD_RUNTIME_PAGE_ID,
-      url: window.location.href,
-      visible: document.visibilityState === "visible",
-      active,
-      ts: Date.now(),
-    }),
-  }).catch(() => null);
-}
-
-function startRuntimeChildPresence() {
-  if (childRuntimePresenceTimer) return;
-  void emitRuntimeChildPresence(true);
-  childRuntimePresenceTimer = setInterval(() => {
-    void emitRuntimeChildPresence(true);
-  }, 4000);
-  document.addEventListener("visibilitychange", () => {
-    void emitRuntimeChildPresence(true);
-  });
-  window.addEventListener("pagehide", () => {
-    void emitRuntimeChildPresence(false);
-  });
-}
-
-function updateAgentStatusBadge(online, text) {
-  const badge = document.getElementById("agent-status-badge");
-  if (!badge) return;
-  badge.style.display = "block";
-  badge.textContent = text || (online ? "Agent: 在线" : "Agent: 离线");
-  badge.style.background = online
-    ? "rgba(22, 163, 74, 0.75)"
-    : "rgba(220, 38, 38, 0.75)";
-}
-
-function emitAgentHeartbeat(online, detail) {
-  if (!socket) return;
-  socket.emit("child_agent_heartbeat", {
-    agentOnline: !!online,
-    detail: detail || null,
-    ts: Date.now(),
-  });
-}
-
-async function callRobotAgent(path, payload) {
-  const headers = {
-    "Content-Type": "application/json"
-  };
-  if (ROBOT_AGENT_KEY) {
-    headers["X-Robot-Agent-Key"] = ROBOT_AGENT_KEY;
-    headers["X-Robot-Runtime-Key"] = ROBOT_AGENT_KEY;
-    headers["X-Child-Media-Agent-Key"] = ROBOT_AGENT_KEY;
-  }
-
-  const response = await fetch(`${ROBOT_AGENT_BASE}${path}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload || {})
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) {
-    throw new Error(data.error || `Agent request failed: ${response.status}`);
-  }
-  return data;
-}
-
-async function checkRobotAgentHealth() {
-  try {
-    const response = await fetch(`${ROBOT_AGENT_BASE}/health`);
-    if (!response.ok) {
-      throw new Error(`status=${response.status}`);
-    }
-    const data = await response.json();
-    robotAgentOnline = true;
-    updateAgentStatusBadge(true, "Agent: 在线");
-    emitAgentHeartbeat(true, data);
-    console.log("🤖 Robot Agent 健康检查:", data);
-  } catch (error) {
-    robotAgentOnline = false;
-    updateAgentStatusBadge(false, "Agent: 离线");
-    emitAgentHeartbeat(false, { message: error.message });
-    console.warn("⚠️ Robot Agent 未连接:", error.message);
-  }
-}
-
-function startRobotAgentHeartbeat() {
-  if (robotAgentHeartbeatTimer) return;
-  robotAgentHeartbeatTimer = setInterval(() => {
-    checkRobotAgentHealth();
-  }, 5000);
-}
-
 // 初始化媒体流（摄像头和麦克风）— 仅 browser 模式
 async function initMediaStream() {
-  if (childMediaMode === "agent") {
-    console.log("Media Agent 模式：跳过浏览器 getUserMedia，改用本机 Agent 预览");
-    setChildCamPreviewFromAgent(true);
-    standbyTimer = setTimeout(() => {
-      showStandbyImage();
-    }, 3000);
-    return true;
-  }
-
   try {
     // 请求摄像头和麦克风权限
     mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -902,7 +683,7 @@ async function initMediaStream() {
   }
 }
 
-// 开始录制（browser：本页采集上行；agent：转发本机 Media Agent）
+// 开始录制（Demo browser：本页采集并上行）
 // 方案 B 连续录制：整场同一 mediaSessionId，切题不得 stop/start
 async function startRecording(sessionId, options = {}) {
   if (!sessionId) {
@@ -939,73 +720,6 @@ async function startRecording(sessionId, options = {}) {
     currentHumanDirName = humanDirName;
   }
 
-  if (childMediaMode === "agent") {
-    if (recordingStartPromise) {
-      if (recordingStartSessionId === sessionId) {
-        return recordingStartPromise;
-      }
-      try {
-        await recordingStartPromise;
-      } catch (error) {}
-    }
-    try {
-      setChildCamPreviewFromAgent(true);
-      let captureDevices = Array.isArray(options.captureDevices) ? options.captureDevices : [];
-      if (!Array.isArray(options.captureDevices)) {
-        try {
-          const response = await fetch('/api/v2/capture/devices');
-          const catalog = await response.json();
-          if (response.ok && catalog.success) {
-            captureDevices = (catalog.devices || []).filter((device) =>
-              device.enabled && device.owner === 'runtime'
-            );
-          }
-        } catch (deviceError) {
-          console.warn('读取额外采集设备失败，按默认设备继续:', deviceError);
-        }
-      }
-      const startPayload = {
-        sessionId,
-        backendBaseUrl: getBackendBaseUrl(),
-        recordingMode,
-        captureDevices,
-      };
-      if (currentHumanDirName) {
-        startPayload.humanDirName = currentHumanDirName;
-      }
-      isRecording = true;
-      recordingStartSessionId = sessionId;
-      const startPromise = callMediaAgent("/record/start", startPayload);
-      recordingStartPromise = startPromise;
-      await startPromise;
-      document.getElementById("status").innerText = "正在录制（Media Agent）...";
-      console.log(
-        "Media Agent 开始录制，sessionId:", sessionId,
-        "humanDir:", currentHumanDirName,
-        "mode:", recordingMode
-      );
-      // agent 生产路径：注意力/情绪由服务端对 robot_runtime 上行帧分析，不启浏览器 C2
-      console.log("Agent 模式跳过浏览器摄像头分析（C2），由服务端分析上行帧");
-    } catch (error) {
-      console.error("Media Agent 启动录制失败:", error);
-      isRecording = false;
-      document.getElementById("status").innerText = "Media Agent 录制失败";
-      if (!skipRuntimeRecordingCheck) {
-        alert("整场录制未启动，请检查 Runtime");
-      } else {
-        console.warn(
-          "整场录制未启动，请检查 Runtime（alert 已跳过：SKIP_RUNTIME_RECORDING_CHECK）"
-        );
-      }
-    } finally {
-      if (recordingStartSessionId === sessionId) {
-        recordingStartPromise = null;
-        recordingStartSessionId = null;
-      }
-    }
-    return;
-  }
-  
   if (!mediaStream) {
     console.error("媒体流未初始化");
     return;
@@ -1082,11 +796,6 @@ async function startRecording(sessionId, options = {}) {
 // 停止录制
 async function stopRecording(options = {}) {
   const notifyServer = options.notifyServer !== false;
-  if (recordingStartPromise) {
-    try {
-      await recordingStartPromise;
-    } catch (error) {}
-  }
   if (!isRecording) {
     console.warn("未在录制");
     return;
@@ -1108,15 +817,6 @@ async function stopRecording(options = {}) {
     audioProcessor = null;
   }
 
-  if (childMediaMode === "agent") {
-    try {
-      await callMediaAgent("/record/stop", { sessionId: sessionIdToStop });
-      console.log("Media Agent 已停止录制，sessionId:", sessionIdToStop);
-    } catch (error) {
-      console.error("Media Agent 停止录制失败:", error);
-    }
-  }
-  
   console.log("停止录制，sessionId:", sessionIdToStop);
   
   // 发送停止录制事件（通知后端结束会话/分析）
@@ -1206,7 +906,12 @@ function buildStaticUrl(path) {
   if (/^https?:\/\//i.test(String(path).trim())) {
     return String(path).trim();
   }
-  return "/static/" + p.replace(/^\/+/, "");
+  const normalized = p.replace(/^\/+/, "");
+  const url = "/static/" + normalized;
+  if (/^resources\/interactive\/(matching|sequencing)\.html$/i.test(normalized)) {
+    return `${url}?v=20260826-completion-praise-v1`;
+  }
+  return url;
 }
 
 let transitionCoverFallbackTimer = null;
@@ -1347,9 +1052,17 @@ let stagingInteractiveEl = document.getElementById("interactive-staging");
 
 const RESOURCE_CROSSFADE_MS = 160;
 const RESOURCE_LOAD_TIMEOUT_MS = 10000;
+const INTERACTIVE_CONTENT_READY_TIMEOUT_MS = 18000;
 const RESOURCE_ACK_TTL_MS = 5 * 60 * 1000;
 const RESOURCE_FALLBACK_ACK_TTL_MS = 2000;
 const RESOURCE_ACK_MAX = 256;
+const FRAMED_SPEECH_IMAGE_COURSE_TYPES = new Set([
+  "naming",
+  "speech",
+  "onomatopoeia",
+  "命名",
+  "拟声",
+]);
 let resourceTransitionGeneration = 0;
 let pendingResourceTransition = null;
 let currentVisibleCourseMedia = null;
@@ -1396,6 +1109,77 @@ function waitForNextPaint() {
     requestAnimationFrame(() => requestAnimationFrame(resolve));
   });
 }
+
+function imagePresentationForCourse(payload, course) {
+  const courseType = String(firstDefined(
+    payload && payload.courseType,
+    payload && payload.course_type,
+    course && course.type,
+    ""
+  )).trim().toLowerCase();
+  return FRAMED_SPEECH_IMAGE_COURSE_TYPES.has(courseType)
+    ? "speech-image-frame"
+    : "full-viewport";
+}
+
+function clearCourseImageFrameLayout(image) {
+  if (!image) return;
+  image.classList.remove("course-image-frame");
+  delete image.dataset.courseImagePresentation;
+  [
+    "--course-image-content-width",
+    "--course-image-content-height",
+    "--course-image-frame-width",
+    "--course-image-frame-radius",
+  ].forEach(name => image.style.removeProperty(name));
+}
+
+function layoutCourseImageFrame(image) {
+  if (
+    !image ||
+    image.dataset.courseImagePresentation !== "speech-image-frame" ||
+    !Number.isFinite(image.naturalWidth) || image.naturalWidth <= 0 ||
+    !Number.isFinite(image.naturalHeight) || image.naturalHeight <= 0
+  ) {
+    return false;
+  }
+
+  // Keep BG.png's warm palette and rounded inner edge, but use a lighter frame
+  // than the original 58px artwork so mixed-aspect course images occupy more
+  // of the child screen.
+  const viewportWidth = Math.max(1, Number(window.innerWidth) || 1);
+  const viewportHeight = Math.max(1, Number(window.innerHeight) || 1);
+  const frameWidth = Math.max(12, Math.min(34, viewportHeight * (34 / 1080)));
+  const availableWidth = Math.max(1, viewportWidth - (2 * frameWidth));
+  const availableHeight = Math.max(1, viewportHeight - (2 * frameWidth));
+  const scale = Math.min(
+    availableWidth / image.naturalWidth,
+    availableHeight / image.naturalHeight
+  );
+  const renderedWidth = Math.max(1, image.naturalWidth * scale);
+  const renderedHeight = Math.max(1, image.naturalHeight * scale);
+  // The radius remains proportional to the slimmer frame so the visible inner
+  // corner stays soft without consuming a large ring around the content.
+  const radius = Math.max(24, Math.min(68, frameWidth * 2));
+
+  image.style.setProperty("--course-image-content-width", `${renderedWidth}px`);
+  image.style.setProperty("--course-image-content-height", `${renderedHeight}px`);
+  image.style.setProperty("--course-image-frame-width", `${frameWidth}px`);
+  image.style.setProperty("--course-image-frame-radius", `${radius}px`);
+  return true;
+}
+
+function applyCourseImagePresentation(image, presentation) {
+  clearCourseImageFrameLayout(image);
+  if (!image || presentation !== "speech-image-frame") return;
+  image.dataset.courseImagePresentation = presentation;
+  image.classList.add("course-image-frame");
+  layoutCourseImageFrame(image);
+}
+
+window.addEventListener("resize", () => {
+  [imageEl, stagingImageEl].forEach(image => layoutCourseImageFrame(image));
+});
 
 function firstDefined(...values) {
   return values.find(value => value !== undefined && value !== null && value !== "");
@@ -1532,6 +1316,7 @@ function clearMediaElement(el, type, keepDisplay = false) {
       if (el.getAttribute("src") !== "about:blank") el.src = "about:blank";
     } catch (e) {}
   } else if (type === "image") {
+    clearCourseImageFrameLayout(el);
     try { el.removeAttribute("src"); } catch (e) {}
   }
 }
@@ -1705,6 +1490,25 @@ async function waitForIframeReady(frame, src, token) {
   token.timings.iframeLoadMs = Math.round(performance.now() - iframeLoadStartedAt);
 }
 
+async function waitForInteractiveContentReady(frame, src, token) {
+  const startedAt = performance.now();
+  while (true) {
+    if (!isCurrentResourceTransition(token)) {
+      throw new Error("stale_transition");
+    }
+    const ready = frame.__pendingQuestionReady;
+    const context = ready && ready.payload && ready.payload.pageContext;
+    if (context && (context.questionId || context.question_id)) {
+      token.timings.interactiveContentReadyMs = Math.round(performance.now() - startedAt);
+      return;
+    }
+    if (performance.now() - startedAt >= INTERACTIVE_CONTENT_READY_TIMEOUT_MS) {
+      throw new Error(`interactive_content_timeout:${src}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+}
+
 function interactiveResourceUrl(payload, course, item, transitionId) {
   // Interactive item.file may be a question-image directory. The course entry
   // document (matching.html / sequencing.html) is always the preferred shell.
@@ -1718,7 +1522,7 @@ function interactiveResourceUrl(payload, course, item, transitionId) {
   if (!base) throw new Error("interactive_resource_missing");
 
   const params = new URLSearchParams();
-  params.set("uiVersion", "20260823-focus-v2");
+  params.set("uiVersion", "20260826-asset-ready-v3");
   params.set("courseId", firstDefined(payload.courseId, course && course.id, ""));
   params.set("courseType", firstDefined(payload.courseType, course && course.type, "interactive"));
   const itemId = firstDefined(payload.itemId, item && item.id);
@@ -1801,7 +1605,11 @@ function buildResourceSpec(payload, course, item, transitionId) {
   const interactiveTypes = new Set(["interactive", "pairing", "matching", "ordering", "sequencing"]);
   if (rawType === "image") {
     const source = resolveImageSource(payload, course, item);
-    return { type: "image", src: buildStaticUrl(source) };
+    return {
+      type: "image",
+      src: buildStaticUrl(source),
+      presentation: imagePresentationForCourse(payload, course),
+    };
   }
   if (rawType === "video") {
     const source = firstDefined(payload.resolvedFile, item && item.file, course && course.file);
@@ -1828,6 +1636,7 @@ async function preloadStagingResource(spec, staging, token) {
 
   if (spec.type === "image") {
     await waitForImageReady(staging, spec.src);
+    applyCourseImagePresentation(staging, spec.presentation);
   } else if (spec.type === "video") {
     await waitForVideoReady(staging, spec.src);
     if (!isCurrentResourceTransition(token)) throw new Error("stale_transition");
@@ -1837,6 +1646,9 @@ async function preloadStagingResource(spec, staging, token) {
     staging.currentTime = 0;
   } else if (spec.type === "interactive") {
     await waitForIframeReady(staging, spec.src, token);
+    // iframe.onload 只代表 HTML 外壳到达；配对/排序页必须在图片验证并渲染首题后
+    // 才会发布 question_ready。等到该提交点再向教师端报告课点加载成功。
+    await waitForInteractiveContentReady(staging, spec.src, token);
   }
 }
 
@@ -2367,9 +2179,7 @@ socket.on("training_prepare", async (payload) => {
   }
   // 后端可能紧接着下发首句音频；录制/Agent 启动前先 join 并绑定播放器。
   attachChildSession(payload.sessionId);
-  if (payload.mediaMode === "agent" || payload.mediaMode === "browser") {
-    childMediaMode = payload.mediaMode;
-  }
+  childMediaMode = "browser";
   persistChildSessionBinding();
   if (payload.questionId) {
     currentQuestionId = payload.questionId;
@@ -2380,7 +2190,6 @@ socket.on("training_prepare", async (payload) => {
   if (payload.humanDirName) {
     currentHumanDirName = payload.humanDirName;
   }
-  setChildCamPreviewFromAgent(childMediaMode === "agent");
   try {
     if (payload.preflightOnly) {
       const statusEl = document.getElementById("status");
@@ -2402,11 +2211,7 @@ socket.on("training_prepare", async (payload) => {
       humanDirName: currentHumanDirName,
     });
     const statusEl = document.getElementById("status");
-    if (statusEl) {
-      statusEl.innerText = childMediaMode === "agent"
-        ? "准备录制中（等待选课/开课）…"
-        : "准备录制中…";
-    }
+    if (statusEl) statusEl.innerText = "准备录制中…";
   } catch (err) {
     console.error("training_prepare 启动录制失败:", err);
   }
@@ -2919,46 +2724,6 @@ socket.on("trigger_action", (data) => {
   }
 });
 
-socket.on("robot_motion_command", async (command) => {
-  if (!command || !command.type) return;
-
-  try {
-    if (command.type === "play_motion") {
-      const payload = command.payload || {};
-      await callRobotAgent("/osc/play", {
-        requestId: command.commandId,
-        motionName: payload.motionName,
-        frames: payload.frames || []
-      });
-    } else if (command.type === "realtime_pose") {
-      const payload = command.payload || {};
-      await callRobotAgent("/osc/frame", {
-        requestId: command.commandId,
-        pose: payload.pose || {},
-        moveMs: payload.moveMs || 100
-      });
-    } else if (command.type === "stop_motion") {
-      await callRobotAgent("/osc/stop", {
-        requestId: command.commandId
-      });
-    } else {
-      return;
-    }
-
-    socket.emit("robot_motion_ack", {
-      commandId: command.commandId,
-      ok: true
-    });
-  } catch (error) {
-    console.error("❌ Robot Agent 转发失败:", error);
-    socket.emit("robot_motion_ack", {
-      commandId: command.commandId,
-      ok: false,
-      error: error.message
-    });
-  }
-});
-
 // 监听match_result事件（可选：在儿童端显示匹配结果）
 socket.on("match_result", (data) => {
   //console.log("📊 收到匹配结果:", data);
@@ -3013,8 +2778,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   // 把浏览器语音进程的冷启动放在待机阶段，避免第一句课程语音承担
   // 数秒初始化延迟；后续用户点击麦克风时还会再尝试一次。
   window.BrowserTts?.warmBrowserSpeechOutput?.();
-  startRuntimeChildPresence();
-
   // Presence also carries the persisted binding/capability handshake so a
   // refreshed child can be rejoined and receive the last committed content.
   if (socket) {
@@ -3031,16 +2794,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // course transition. The formal playback element still validates canplay.
   void preloadBehaviorAnimations();
   await initMediaStream();
-  // browser 联调不依赖本机 19091；避免控制台刷 ERR_CONNECTION_REFUSED
-  if (childMediaMode === "agent") {
-    await checkRobotAgentHealth();
-    startRobotAgentHeartbeat();
-    await checkMediaAgentHealth();
-    startMediaAgentHeartbeat();
-  } else {
-    updateAgentStatusBadge(false, "Agent: 未启用(browser)");
-    console.log("browser 模式：跳过 Robot/Media Agent 健康检查");
-  }
+  console.log("Demo browser 模式：不连接 Robot/Media Agent");
 });
 
 if (socket) {

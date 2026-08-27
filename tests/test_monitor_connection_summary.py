@@ -1,15 +1,7 @@
 from app.monitor.snapshot import _build_connection_summary
 
 
-def test_connection_summary_is_operator_facing(monkeypatch):
-    monkeypatch.setattr(
-        "app.robot.runtime_registry.get_runtime_status",
-        lambda: {
-            "onlineCount": 1,
-            "primary": {"advertisedUrl": "http://192.168.1.106:19091"},
-            "preferredRuntimeId": "http://192.168.1.106:19091",
-        },
-    )
+def test_connection_summary_is_operator_facing():
     summary = _build_connection_summary({
         "teacherOnline": 1,
         "childOnline": 1,
@@ -22,15 +14,11 @@ def test_connection_summary_is_operator_facing(monkeypatch):
     assert cards["teacher"]["level"] == "ok"
     assert "192.168.1.20" in cards["teacher"]["summary"]
     assert "192.168.1.106" in cards["child"]["summary"]
-    assert "19091" in cards["runtime"]["summary"]
+    assert "runtime" not in cards
     assert summary["issues"] == []
 
 
-def test_connection_summary_explains_duplicate_connections(monkeypatch):
-    monkeypatch.setattr(
-        "app.robot.runtime_registry.get_runtime_status",
-        lambda: {"onlineCount": 2, "primary": {}, "preferredRuntimeId": None},
-    )
+def test_connection_summary_explains_duplicate_connections():
     summary = _build_connection_summary({
         "teacherOnline": 2,
         "childOnline": 0,
@@ -39,4 +27,4 @@ def test_connection_summary_explains_duplicate_connections(monkeypatch):
     problems = " ".join(item["problem"] for item in summary["issues"])
     assert "2 条教师连接" in problems
     assert "未连接儿童端" in problems
-    assert "2 个 Runtime" in problems
+    assert "Runtime" not in problems

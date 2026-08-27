@@ -404,33 +404,7 @@ def _build_connection_summary(
         ),
         "detail": (
             f"当前绑定学生：{child_binding.get('studentId') or '尚未选课绑定'}；只保留一个儿童端窗口。"
-            if child_count else "请在机器人上启动 Robot Runtime 并打开儿童端页面。"
-        ),
-    })
-
-    try:
-        from app.robot.runtime_registry import get_runtime_status
-        runtime = get_runtime_status()
-    except Exception:
-        runtime = {}
-    runtime_count = int(runtime.get("onlineCount") or 0)
-    primary = runtime.get("primary") or {}
-    runtime_url = primary.get("advertisedUrl")
-    cards.append({
-        "id": "runtime",
-        "level": "ok" if runtime_count == 1 else "warn" if runtime_count > 1 else "error",
-        "title": "机器人动作 Runtime",
-        "summary": (
-            f"已连接：{runtime_url or '地址暂未识别'}"
-            if runtime_count == 1 else
-            f"检测到 {runtime_count} 个 Runtime，动作可能发往错误实例。"
-            if runtime_count > 1 else "未连接 Robot Runtime，机器人不会执行动作。"
-        ),
-        "detail": (
-            "Runtime 已由儿童端锁定为首选实例。"
-            if runtime_count == 1 and runtime.get("preferredRuntimeId") else
-            "请结束旧 Runtime，只保留机器人上的一个实例。"
-            if runtime_count > 1 else "在机器人上点击 start，确认 Runtime 显示已注册到服务端。"
+            if child_count else "请在 Demo 机打开儿童端页面，并允许浏览器使用摄像头和麦克风。"
         ),
     })
 
@@ -537,38 +511,21 @@ def _build_voice_block(store, training_session_id: str, question_id: Optional[st
 
 
 def _build_robot_block() -> Dict[str, Any]:
-    runtime_online = False
-    try:
-        from app.robot.runtime_registry import get_runtime_status
-
-        st = get_runtime_status()
-        runtime_online = int(st.get("onlineCount") or 0) > 0
-    except Exception:
-        pass
     try:
         from app.robot import get_robot_service
 
         control = get_robot_service().get_control_snapshot()
-        targets = control.get("targets") or {}
         command = control.get("lastCommand") or None
         components = (command or {}).get("components") or {}
         audio = components.get("audio") or {}
-        expression = components.get("expression") or {}
         command_phase = (command or {}).get("phase")
-        online = bool(
-            runtime_online
-            or targets.get("childAgentOnline")
-            or targets.get("robotDisplayOnline")
-            or targets.get("robotControlOnline")
-        )
         return {
-            "online": online,
-            "runtimeOnline": runtime_online,
-            "controlMode": control.get("controlMode"),
-            "targets": targets,
+            "online": False,
+            "runtimeOnline": False,
+            "controlMode": "disabled",
+            "targets": {},
             "busy": control.get("busy") or {},
             "lastCommand": command,
-            "animation": expression.get("status"),
             "audioPlaying": bool(
                 command_phase == "running"
                 and audio.get("required")
@@ -577,13 +534,12 @@ def _build_robot_block() -> Dict[str, Any]:
         }
     except Exception:
         return {
-            "online": runtime_online,
-            "runtimeOnline": runtime_online,
-            "controlMode": None,
+            "online": False,
+            "runtimeOnline": False,
+            "controlMode": "disabled",
             "targets": {},
             "busy": {},
             "lastCommand": None,
-            "animation": None,
             "audioPlaying": False,
         }
 

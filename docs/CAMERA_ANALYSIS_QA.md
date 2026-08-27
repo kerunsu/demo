@@ -1,36 +1,24 @@
-# 摄像头 / 注意力·情绪验收清单
+# Demo 摄像头与分析验收
 
-配置：`config/camera_analysis.yaml`、`config/analyzers.yaml`。
+Demo 固定使用儿童浏览器采集，配置事实源为 `config/runtime_modes.yaml`、`config/camera_analysis.yaml` 和 `config/analyzers.yaml`。
 
-## 生产路径（推荐）：`CHILD_MEDIA_MODE=agent`
+## 验收步骤
 
-1. 后端 `.env`：`CHILD_MEDIA_MODE=agent`，`ROBOT_CONTROL_MODE=robot_runtime`。
-2. 机器人机运行 `RobotRuntime`，浏览器打开后端 `/child`（**不要**期望本页 `getUserMedia`）。
-3. 上课后后端应对上行帧做 **Real 窗口注意力**，并写入 `record_attention(provider=server)` + `record_emotion(provider=server)`。
-4. 儿童端控制台应出现「Agent 模式跳过浏览器摄像头分析」，**不应**依赖 `[camera_analysis] 已启动`。
-5. 报告：注意力曲线有分；情绪三色条在有人脸时有样本（≥ `emotion_min_samples`）。
-6. 教师端实时注意力为 0–100，且不应与无效 0 分交替跳变。
+1. 启动后打开 `/child`，同意摄像头与麦克风权限。
+2. 教师端执行准备检查，确认默认浏览器摄像头/麦克风可用。
+3. 进入模仿课程，检查儿童画面持续上行、姿态模型加载成功，并产生模仿识别结果。
+4. 切换配对、排序时确认同一训练会话持续录制，课程切换只追加时间线。
+5. 结束训练后核对录像、音频、时间线和报告均属于同一个 `trainingSessionId`。
+6. 拒绝权限或拔掉设备时，页面应给出可恢复提示，不能把缺失样本当成低注意力或低分。
 
-## 联调捷径：`CHILD_MEDIA_MODE=browser`
+## 分析规则
 
-仅本机单机测试：
+- `global.mode=real` 时优先加载仓库内真实模型；加载失败必须明确降级并记录日志。
+- 模仿姿态阈值以 `config/analyzers.yaml` 为准，Windows 路径应使用字节安全加载方式。
+- 浏览器预览只用于现场确认，不替代录制首样本和会话文件校验。
+- 报告只投影模仿、配对、排序；旧课型历史样本不进入 Demo 新报告。
+- 无人脸、无姿态或设备缺失必须标记为数据不足，不得伪造正常分数。
 
-1. 重启后端，儿童端强制刷新。
-2. 控制台可出现 `[camera_analysis] 已启动`（C2 JS，参考计分）。
-3. 正中单脸：浏览器描述符可进 behavior；仅当 `prefer_browser_when_media_mode_browser: true`（默认）时报告优先有效 browser 样本。
-4. 关闭摄像头：情绪「数据不足」，页面不崩溃。
+## 禁止项
 
-## 策略说明
-
-| 项 | 生产 agent | 联调 browser |
-|----|------------|--------------|
-| 采流 | robot_runtime | /child getUserMedia |
-| 注意力/情绪 | 服务端 Real + `server-emotion-v1` | 可选 C2 JS |
-| `prefer_browser_for_report` | 默认 `false` | 由 mediaMode 动态优先 browser |
-| Mock | 保留；Real 创建失败回退并打日志 | 可用 `USE_REAL_ANALYZERS=false` |
-
-## 降级
-
-- agent 下不再向 behavior 刷 `missing_device` browser 观测。
-- face 分析器无 Real 实现 → Registry 回退 Mock。
-- Real 注意力/语音模型缺失 → 创建失败回退 Mock，日志含「回退 Mock」。
+验收不需要 19091、Robot Runtime、DollSer、OSC、机械动作或完整版表情页面。若任一检查要求这些组件，说明 Demo 边界被破坏，不能发布。

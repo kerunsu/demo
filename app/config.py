@@ -102,19 +102,14 @@ class Config:
     WS_TIMEOUT = int(os.environ.get('WS_TIMEOUT', 60))
 
     # ==================== 儿童端媒体采集模式 ====================
-    # browser: 浏览器 getUserMedia 上行（本地联调捷径）
-    # agent: robot_runtime 独占采集（课堂/生产部署，推荐）
-    # 默认 agent；配置中心「应用」会写入 config/runtime_modes.yaml，重启后优先读该文件
-    CHILD_MEDIA_MODE = "agent"
-    CHILD_MEDIA_AGENT_PORT = int(os.environ.get('CHILD_MEDIA_AGENT_PORT', 19091))
-    CHILD_MEDIA_AGENT_KEY = os.environ.get('CHILD_MEDIA_AGENT_KEY', '')
-    # Agent 默认采集参数（与 child_media_agent 对齐）
-    CHILD_MEDIA_AGENT_FPS = int(os.environ.get('CHILD_MEDIA_AGENT_FPS', 5))
-    CHILD_MEDIA_AGENT_JPEG_QUALITY = int(os.environ.get('CHILD_MEDIA_AGENT_JPEG_QUALITY', 50))
-    # 生产默认显式报告 Runtime 录制失败；仅本地自动化调试可主动跳过。
-    SKIP_RUNTIME_RECORDING_CHECK = os.environ.get(
-        'SKIP_RUNTIME_RECORDING_CHECK', '0'
-    ).strip().lower() in ('1', 'true', 'yes', 'on')
+    # Demo 不启动 Robot Runtime；儿童页直接通过浏览器采集并上行。
+    CHILD_MEDIA_MODE = "browser"
+    MEDIA_UPLOAD_SHARED_KEY = os.environ.get(
+        'MEDIA_UPLOAD_SHARED_KEY', os.environ.get('CHILD_MEDIA_AGENT_KEY', '')
+    )
+    BROWSER_JPEG_QUALITY = int(os.environ.get(
+        'BROWSER_JPEG_QUALITY', os.environ.get('CHILD_MEDIA_AGENT_JPEG_QUALITY', 50)
+    ))
 
     # ==================== Server 监控台预览（阶段 E2）====================
     # 默认开启：从 agent 上行 probe 缓存抽稀展示；仅预览不进评分
@@ -128,14 +123,13 @@ class Config:
 
     @classmethod
     def get_child_media_mode(cls) -> str:
-        mode = (cls.CHILD_MEDIA_MODE or 'agent').strip().lower()
-        return mode if mode in ('browser', 'agent') else 'agent'
+        return 'browser'
 
     @classmethod
     def set_child_media_mode(cls, mode: str, *, persist: bool = True) -> str:
         normalized = (mode or '').strip().lower()
-        if normalized not in ('browser', 'agent'):
-            raise ValueError("CHILD_MEDIA_MODE 必须是 browser 或 agent")
+        if normalized != 'browser':
+            raise ValueError("Demo 机儿童媒体模式固定为 browser")
         cls.CHILD_MEDIA_MODE = normalized
         if persist:
             from app.runtime_modes import save_runtime_modes
@@ -144,8 +138,7 @@ class Config:
 
     @classmethod
     def get_child_runtime_config(cls) -> dict:
-        """儿童端页面启动时拉取的运行时配置。"""
-        mode = cls.get_child_media_mode()
+        """Demo 儿童端启动配置；不暴露 Robot/Media Agent 地址。"""
         try:
             from app.behavior.camera_config import (
                 load_camera_analysis_config,
@@ -155,18 +148,15 @@ class Config:
             cam_enabled = should_run_browser_camera_analysis(cam)
         except Exception:
             cam = {"enabled": True, "fps": 1, "width": 160, "height": 120}
-            cam_enabled = mode == "browser"
+            cam_enabled = True
         return {
-            'mediaMode': mode,
-            'mediaAgentPort': cls.CHILD_MEDIA_AGENT_PORT,
-            'mediaAgentBase': f'http://127.0.0.1:{cls.CHILD_MEDIA_AGENT_PORT}',
-            'videoFps': cls.CHILD_MEDIA_AGENT_FPS if mode == 'agent' else cls.VIDEO_FPS,
-            'videoWidth': int(os.environ.get('CHILD_MEDIA_WIDTH', 320)) if mode == 'agent' else cls.VIDEO_WIDTH,
-            'videoHeight': int(os.environ.get('CHILD_MEDIA_HEIGHT', 240)) if mode == 'agent' else cls.VIDEO_HEIGHT,
-            'jpegQuality': cls.CHILD_MEDIA_AGENT_JPEG_QUALITY,
+            'mediaMode': 'browser',
+            'videoFps': cls.VIDEO_FPS,
+            'videoWidth': cls.VIDEO_WIDTH,
+            'videoHeight': cls.VIDEO_HEIGHT,
+            'jpegQuality': cls.BROWSER_JPEG_QUALITY,
             'audioSampleRate': cls.AUDIO_SAMPLE_RATE,
             'audioChannels': cls.AUDIO_CHANNELS,
-            # agent 生产路径不启浏览器 C2；仅 browser 联调启用
             'cameraAnalysis': {
                 'enabled': bool(cam_enabled),
                 'fps': float(cam.get('fps', 1)),
@@ -178,7 +168,6 @@ class Config:
             'dialogueWakeWordEnabled': bool(cls.DIALOGUE_WAKE_WORD_ENABLED),
             'browserSpeechRate': float(cls.BROWSER_SPEECH_RATE),
             'chatProvider': cls.AI_CHAT_PROVIDER,
-            'skipRuntimeRecordingCheck': bool(cls.SKIP_RUNTIME_RECORDING_CHECK),
         }
     
     # ==================== 儿童对话 / 浏览器 TTS ====================

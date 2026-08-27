@@ -227,6 +227,9 @@
       transform: translate3d(var(--question-focus-x, 0), var(--question-focus-y, 0), 0) scale(1.52);
       box-shadow: 0 28px 70px rgba(28, 73, 115, 0.28);
     }
+    body.question-input-locked.question-focus-entering .rule-text-wrapper {
+      animation: ordering-question-enter 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
     body.question-input-locked .options-grid {
       opacity: 0;
       transform: scale(0.98);
@@ -240,8 +243,22 @@
       transition-delay: 220ms;
     }
 
+    @keyframes ordering-question-enter {
+      from {
+        opacity: 0.2;
+        transform: translate3d(var(--question-entry-x, 0), var(--question-focus-y, 0), 0) scale(1.52);
+      }
+      to {
+        opacity: 1;
+        transform: translate3d(var(--question-focus-x, 0), var(--question-focus-y, 0), 0) scale(1.52);
+      }
+    }
+
     @media (prefers-reduced-motion: reduce) {
-      .rule-text-wrapper { transform: none !important; transition: none !important; }
+      .rule-text-wrapper { transition: none !important; animation: none !important; }
+      body.question-input-locked .rule-text-wrapper {
+        transform: translate3d(var(--question-focus-x, 0), var(--question-focus-y, 0), 0) scale(1.52) !important;
+      }
       .options-grid {
         transform: none !important;
         transition: opacity 160ms ease !important;
@@ -344,15 +361,6 @@
       font-weight: 700;
     }
 
-    .result-content { text-align: center; display: none; }
-    .result-content.show { display: block; animation: fadeIn 0.5s ease; }
-    .result-emoji { font-size: 6em; margin-bottom: 20px; }
-    .result-text {
-      font-size: 2em;
-      color: var(--primary-color);
-      font-weight: 700;
-    }
-
     @media (max-width: 780px) {
       :root { --ordering-card-size: min(44.4vh, 366px); }
       .options-grid { gap: 15px; }
@@ -385,11 +393,6 @@
       <div class="waiting-text">准备开始...</div>
     </div>
     
-    <!-- 结束内容 -->
-    <div id="resultContent" class="result-content">
-      <div class="result-emoji">🎉</div>
-      <div class="result-text">太棒了！</div>
-    </div>
   </div>
 
   <!-- 主游戏界面 -->
@@ -409,7 +412,7 @@
     </div>
   </div>
 
-  <script src="/static/js/interactive_question_state.js?v=20260823-focus-v2"></script>
+  <script src="/static/js/interactive_question_state.js?v=20260826-direction-v1"></script>
   <script>
     // ==================== 粒子特效系统 ====================
     const canvas = document.getElementById('confetti-canvas');
@@ -525,6 +528,54 @@
     // ==================== 调试日志 ====================
     function debugLog(message) {
       console.log(`[SequencingGame] ${message}`);
+    }
+
+    function imageRetryUrl(src) {
+      const url = new URL(src, window.location.href);
+      url.searchParams.set('assetRetry', String(Date.now()));
+      return url.origin === window.location.origin
+        ? `${url.pathname}${url.search}${url.hash}`
+        : url.href;
+    }
+
+    function waitForImageAsset(src, timeoutMs = 8000) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        let settled = false;
+        const timer = window.setTimeout(() => finish(new Error(`image_timeout:${src}`)), timeoutMs);
+        const finish = (error) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          image.onload = null;
+          image.onerror = null;
+          error ? reject(error) : resolve(src);
+        };
+        image.decoding = 'async';
+        image.onload = () => {
+          if (image.naturalWidth > 0 && image.naturalHeight > 0) finish();
+          else finish(new Error(`image_empty:${src}`));
+        };
+        image.onerror = () => finish(new Error(`image_failed:${src}`));
+        image.src = src;
+        if (image.complete) {
+          Promise.resolve().then(() => image.naturalWidth > 0
+            ? finish()
+            : finish(new Error(`image_empty:${src}`)));
+        }
+      });
+    }
+
+    async function verifyImageAsset(src) {
+      try {
+        await waitForImageAsset(src);
+        return src;
+      } catch (firstError) {
+        const retrySrc = imageRetryUrl(src);
+        debugLog(`图片首次加载失败，重新请求: ${src}`);
+        await waitForImageAsset(retrySrc);
+        return retrySrc;
+      }
     }
 
     // 对齐 DemoRobot paixu 前缀名 / config/interactive_image_semantics.yaml
@@ -718,6 +769,7 @@
           sessionId,
           timeoutMs: 8000,
           focusElement: '.rule-text-wrapper',
+          focusScale: 1.52,
           onUnlock: () => {
             if (this.questionStartAt == null) this.questionStartAt = Date.now();
           },
@@ -726,7 +778,6 @@
         // DOM 元素
         this.overlay = document.getElementById('gameOverlay');
         this.waitingContent = document.getElementById('waitingContent');
-        this.resultContent = document.getElementById('resultContent');
         this.ruleText = document.getElementById('ruleText');
         this.optionsGrid = document.getElementById('optionsGrid');
       }
@@ -774,8 +825,8 @@
       }
       
       async startGame() {
-        if (this.isGameActive) return;
-        this.isGameActive = true;
+        if (this.isGameActive || this.isStarting) return;
+        this.isStarting = true;
         debugLog('开始游戏');
         this.currentQuestion = 0;
         this.resetStats();
@@ -788,10 +839,22 @@
           debugLog(`自动模式：类别顺序 = ${this.categoryQueue.join(' -> ')}`);
         }
         
-        await this.loadImages();
-        window.setTimeout(() => this.preloadRemainingCategories(), 0);
-        this.generateQuestion();
-        this.hideOverlay();
+        try {
+          const groups = await this.loadImages();
+          if (Object.keys(groups || {}).length === 0) {
+            this.isGameActive = false;
+            const waitingText = this.waitingContent?.querySelector('.waiting-text');
+            if (waitingText) waitingText.textContent = '资源加载失败，请稍后重试';
+            this.overlay.classList.remove('hidden');
+            return;
+          }
+          this.isGameActive = true;
+          window.setTimeout(() => this.preloadRemainingCategories(), 0);
+          await this.generateQuestion();
+          this.hideOverlay();
+        } finally {
+          this.isStarting = false;
+        }
       }
       
       resetStats() {
@@ -825,21 +888,40 @@
           let groups = this.imageGroupsByCategory[category];
           if (!groups) {
             const response = await fetch(`/api/getSequencingImages?category=${category}`, {
-              cache: 'default',
+              cache: 'no-store',
             });
+            if (!response.ok) throw new Error(`catalog_http_${response.status}`);
             const data = await response.json();
-            groups = data.groups || {};
-            this.imageGroupsByCategory[category] = groups;
+            if (data.error) throw new Error(data.error);
+            const rawGroups = data.groups || {};
+            const verifiedEntries = await Promise.all(
+              Object.entries(rawGroups).map(async ([prefix, items]) => {
+                const verifiedItems = await Promise.all((items || []).map(async (item) => {
+                  const src = item && (item.path || item.src || item.file);
+                  if (!src) return null;
+                  try {
+                    const verifiedSrc = await verifyImageAsset(src);
+                    return {
+                      ...item,
+                      ...(item.path ? { path: verifiedSrc } : item.src ? { src: verifiedSrc } : { file: verifiedSrc }),
+                    };
+                  } catch (error) {
+                    debugLog(`跳过不可用图片 ${src}: ${error.message}`);
+                    return null;
+                  }
+                }));
+                const usable = verifiedItems.filter(Boolean);
+                return usable.length >= 2 ? [prefix, usable] : null;
+              })
+            );
+            groups = Object.fromEntries(verifiedEntries.filter(Boolean));
+            if (Object.keys(groups).length > 0) {
+              this.imageGroupsByCategory[category] = groups;
+            } else {
+              delete this.imageGroupsByCategory[category];
+            }
           }
           if (activate && this.category === category) this.imageGroups = groups;
-          Object.values(groups || {}).flat().forEach((item) => {
-            const src = item && (item.path || item.src || item.file);
-            if (!src) return;
-            const image = new Image();
-            image.decoding = 'async';
-            image.src = src;
-            image.decode?.().catch(() => {});
-          });
           debugLog(`已加载 ${category} 的 ${Object.keys(groups).length} 组图片`);
           return groups;
         } catch (error) {
@@ -953,7 +1035,10 @@
         this.ruleText.classList.remove('bounce-big');
         document.body.classList.remove('flash-bg');
         
-        this.questionGate.lock(this.buildPageContext().questionId);
+        const pageContext = this.buildPageContext();
+        this.questionGate.lock(pageContext.questionId, {
+          presentationDirection: pageContext.presentationDirection,
+        });
         this.renderOptionCards();
 
         this.isProcessing = false;
@@ -1018,6 +1103,10 @@
           wrongAttempts: this.wrongAttemptsThisQuestion || 0,
           mode: this.operationMode,
           questionIndex: this.activeQuestionNumber || (this.currentQuestion || 0) + 1,
+          presentationDirection:
+            window.InteractiveQuestionState.presentationDirectionForQuestion(
+              this.activeQuestionNumber || (this.currentQuestion || 0) + 1
+            ),
           totalQuestions: this.maxQuestions,
           // Per-item id so server hard-ask identity never collapses across items
           questionId: `${questionId || courseId || 'ordering'}_q${this.activeQuestionNumber || (this.currentQuestion || 0) + 1}`,
@@ -1177,6 +1266,7 @@
           category: this.category,
           rule: this.rule,
           questionIndex: pageContext.questionIndex,
+          presentationDirection: pageContext.presentationDirection,
           askSeq,
           prompt: pageContext.prompt,
           pageContext,
@@ -1236,12 +1326,14 @@
         this.publishPageContext();
 
         // 必须先挂 wait，再发 status_update 触发 TTS；否则 ended 可能早于监听到达
-        const speakIntent = isCorrect ? 'praise' : 'encourage';
+        const courseComplete =
+          this.activeQuestionResolved && this.currentQuestion >= this.maxQuestions;
+        const speakIntent = courseComplete ? 'praise' : (isCorrect ? 'praise' : 'encourage');
         const token = (this._advanceToken = (this._advanceToken || 0) + 1);
         const waitPackage = this.waitForFeedbackPackage(speakIntent, {
           minMs: isCorrect ? 2000 : 900,
           maxMs: 20000,
-          waitAnimation: !!isCorrect,
+          waitAnimation: !!isCorrect || courseComplete,
         });
 
         // 上报状态（含部分进度正确率与反应时，中途退出也可出分）
@@ -1269,6 +1361,8 @@
           wrongAttempts: this.wrongAttemptsThisQuestion || 0,
           prompt: pageContext.prompt,
           mode: this.operationMode,
+          isFinished: courseComplete,
+          courseComplete,
         });
 
         debugLog(`第${this.currentQuestion}题: ${isCorrect ? '正确' : '错误'}`);
@@ -1397,20 +1491,13 @@
           responseTimesMs: this.responseTimesMs.slice()
         });
         
-        // 显示结束界面
-        this.showEndScreen();
+        // 整课完成由父页完整表扬画面承接，不再显示 iframe 结果遮罩。
+        this.hideOverlay();
       }
       
       hideOverlay() {
         this.waitingContent.style.display = 'block';
-        this.resultContent.classList.remove('show');
         this.overlay.classList.add('hidden');
-      }
-      
-      showEndScreen() {
-        this.waitingContent.style.display = 'none';
-        this.resultContent.classList.add('show');
-        this.overlay.classList.remove('hidden');
       }
       
       shuffleArray(array) {

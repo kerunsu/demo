@@ -20,10 +20,6 @@
       .replace(/"/g, '&quot;');
   }
 
-  function isSocialCourse(c) {
-    return c?.type === 'social' || c?.audioConfigMode === 'social';
-  }
-
   async function loadCourseLibrary() {
     try {
       const [tRes, cRes] = await Promise.all([
@@ -62,23 +58,21 @@
     const el = document.getElementById('course-list');
     if (!el) return;
     if (!courses.length) {
-      el.innerHTML = '<p class="cc-tiny">暂无课程，点击「新建课程」。</p>';
+      el.innerHTML = '<p class="cc-tiny">暂无课程大类，可补建缺失大类。</p>';
       return;
     }
     el.innerHTML = `
       <table class="cc-table">
         <thead><tr>
-          <th>标题</th><th>课型</th><th>课点</th><th>语音方式</th><th>映射</th><th></th>
+          <th>课程大类</th><th>课点</th><th>语音方式</th><th></th>
         </tr></thead>
         <tbody>
           ${courses
             .map(
               (c) => `<tr>
-            <td>${esc(c.title)}</td>
             <td>${esc(c.courseTypeName || c.type)}</td>
             <td>${c.itemCount ?? (c.items || []).length}</td>
             <td>实时 TTS</td>
-            <td>${c.hasBehaviorMapping ? '✓' : '—'}</td>
             <td><button type="button" class="cc-btn soft small" data-id="${c.id}">编辑</button></td>
           </tr>`
             )
@@ -104,7 +98,7 @@
       currentCourse = data.course;
       document.getElementById('course-list-panel')?.setAttribute('hidden', '');
       document.getElementById('course-detail-panel')?.removeAttribute('hidden');
-      document.getElementById('cd-title').value = currentCourse.title || '';
+      document.getElementById('cd-title').value = currentCourse.courseTypeName || currentCourse.type || '';
       document.getElementById('cd-type').textContent =
         currentCourse.courseTypeName || currentCourse.type || '';
       document.getElementById('cd-entry').value = currentCourse.file || '';
@@ -123,37 +117,7 @@
       return;
     }
 
-    const social = isSocialCourse(currentCourse);
-    if (social) {
-      el.innerHTML = `
-        <table class="cc-table">
-          <thead><tr>
-            <th>#</th><th>显示名</th><th>媒体</th><th>操作</th>
-          </tr></thead>
-          <tbody>
-            ${items
-              .map((it, i) => {
-                const media = it.file || it.mediaFile || '';
-                return `<tr data-item-id="${it.id}">
-              <td>${i + 1}</td>
-              <td><input class="cc-inp" data-f="name" value="${esc(it.name)}" /></td>
-              <td>
-                <span class="cc-tiny">${esc(media) || '—'}</span>
-                <button type="button" class="cc-btn soft small" data-act="pick-media">选</button>
-              </td>
-              <td>
-                <button type="button" class="cc-btn soft small" data-act="save">存</button>
-                <button type="button" class="cc-btn soft small" data-act="bind" title="仅机器人动作/表情">配行为</button>
-                <button type="button" class="cc-btn danger small" data-act="del">删</button>
-              </td>
-            </tr>`;
-              })
-              .join('')}
-          </tbody>
-        </table>
-        <p class="cc-tiny" style="margin-top:8px;">社交语音也使用实时 TTS；「配行为」只配置机器人动作和表情。</p>`;
-    } else {
-      el.innerHTML = `
+    el.innerHTML = `
         <table class="cc-table">
           <thead><tr>
             <th>#</th><th>显示名</th><th>语音目标</th><th>媒体</th><th>操作</th>
@@ -173,7 +137,6 @@
               </td>
               <td>
                 <button type="button" class="cc-btn soft small" data-act="save">存</button>
-                <button type="button" class="cc-btn soft small" data-act="bind">配行为</button>
                 <button type="button" class="cc-btn danger small" data-act="del">删</button>
               </td>
             </tr>`;
@@ -181,16 +144,11 @@
               .join('')}
           </tbody>
         </table>`;
-    }
 
     el.querySelectorAll('tr[data-item-id]').forEach((row) => {
       const id = Number(row.dataset.itemId);
       row.querySelector('[data-act="save"]')?.addEventListener('click', () => saveItemRow(row, id));
       row.querySelector('[data-act="del"]')?.addEventListener('click', () => deleteItem(id));
-      row.querySelector('[data-act="bind"]')?.addEventListener('click', () => {
-        const url = `/server/config/content?view=binding&courseId=${currentCourse.id}&itemId=${id}`;
-        window.location.href = url;
-      });
       row.querySelector('[data-act="pick-media"]')?.addEventListener('click', () => {
         window.openMediaPicker({ root: 'images' }, async (path) => {
           await patchItem(id, { mediaFile: path });
@@ -235,7 +193,6 @@
   async function saveCourseMeta() {
     if (!currentCourse) return;
     const body = {
-      title: document.getElementById('cd-title').value,
       entryFile: document.getElementById('cd-entry').value || null,
     };
     const res = await fetch(`/api/config/courses/${currentCourse.id}`, {
@@ -249,28 +206,32 @@
       return;
     }
 
-    toast('课程已保存', currentCourse.title);
+    toast('课程大类已保存', currentCourse.courseTypeName || currentCourse.type);
     await loadCourseLibrary();
     await openCourse(currentCourse.id);
   }
 
   async function createCourse() {
-    const title = window.prompt('课程标题');
-    if (!title) return;
-    const typeOpts = types.map((t) => t.type).join(', ');
-    const type = window.prompt(`课型英文（只读选择现有）: ${typeOpts}`, types[0]?.type || 'naming');
+    const existingTypes = new Set(courses.map((course) => course.type));
+    const missingTypes = types.filter((type) => !existingTypes.has(type.type));
+    if (!missingTypes.length) {
+      toast('无需补建', '所有课程大类都已存在', 'success');
+      return;
+    }
+    const typeOpts = missingTypes.map((item) => `${item.type}（${item.name}）`).join(', ');
+    const type = window.prompt(`输入要补建的课型: ${typeOpts}`, missingTypes[0].type);
     if (!type) return;
     const res = await fetch('/api/config/courses', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, type }),
+      body: JSON.stringify({ type }),
     });
     const data = await res.json();
     if (!data.success) {
       toast('创建失败', data.error || '', 'danger');
       return;
     }
-    toast('已创建', title);
+    toast('已补建课程大类', data.course.courseTypeName || data.course.type);
     filterType = '';
     await loadCourseLibrary();
     await openCourse(data.course.id);
@@ -328,10 +289,6 @@
     document.getElementById('btn-course-save')?.addEventListener('click', () => saveCourseMeta());
     document.getElementById('btn-course-delete')?.addEventListener('click', () => deleteCourse());
     document.getElementById('btn-add-item')?.addEventListener('click', () => addItem());
-    document.getElementById('btn-course-binding')?.addEventListener('click', () => {
-      if (!currentCourse) return;
-      window.location.href = `/server/config/content?view=binding&courseId=${currentCourse.id}`;
-    });
   });
 
   window.loadCourseLibrary = loadCourseLibrary;

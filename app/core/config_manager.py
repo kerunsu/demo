@@ -101,7 +101,7 @@ class AnalyzerConfigManager:
                 'pose': {
                     'mode': 'real',
                     'enabled': True,
-                    'threshold': 0.72,
+                    'threshold': 0.70,
                     'min_keypoint_visibility': 0.35,
                     'action_sigma': 0.55,
                     'allow_mirror': True,

@@ -72,7 +72,6 @@ def test_phase1_http_server_status_field_snapshot(monkeypatch, phase1_root_runti
     monkeypatch.setitem(view_globals, "robot_service", RobotModule)
     monkeypatch.setattr(view_globals["Config"], "get_child_media_mode", staticmethod(lambda: "browser"))
     monkeypatch.setitem(view_globals, "get_media_session_meta", lambda: {"m1": {"status": "active"}})
-    monkeypatch.setitem(view_globals, "get_runtime_status", lambda: {"online": False})
 
     response = ns["app"].test_client().get("/api/server/status")
     assert response.status_code == 200
@@ -88,7 +87,19 @@ def test_phase1_http_server_status_field_snapshot(monkeypatch, phase1_root_runti
         "robotControlMode": "robot_runtime",
         "childMediaMode": "browser",
         "mediaSessionMeta": {"m1": {"status": "active"}},
-        "robotRuntime": {"online": False},
+        "robotRuntime": {
+            "enabled": False,
+            "online": False,
+            "reason": "demo_capability_disabled",
+        },
+        "deployment": "demo-machine",
+        "capabilities": {
+            "robotMotion": False,
+            "robotExpression": False,
+            "robotRuntime": False,
+            "childAnimation": True,
+            "browserSpeech": True,
+        },
     }
 
 
@@ -148,83 +159,28 @@ def test_phase1_http_monitor_snapshot_error_snapshot(monkeypatch):
     }
 
 
-def test_phase1_http_robot_motion_and_emotion_field_snapshots(monkeypatch):
-    class Robot:
-        def get_motion_list(self):
-            return [{"name": "wave", "frameCount": 2}]
-
-        def get_emotions_payload(self):
-            return {"emotions": ["happy.gif"], "default": "happy.gif"}
-
-    monkeypatch.setattr(robot_routes, "get_robot_service", lambda: Robot())
+def test_phase1_http_demo_hardware_surfaces_are_disabled():
     client = _blueprint_app(robot_routes.robot_bp)
     motions = client.get("/api/robot/motions")
     emotions = client.get("/api/robot/emotions")
-    assert motions.status_code == 200
-    assert motions.get_json() == {"success": True, "motions": [{"name": "wave", "frameCount": 2}]}
-    assert emotions.status_code == 200
-    assert emotions.get_json() == {
-        "success": True,
-        "emotions": ["happy.gif"],
-        "default": "happy.gif",
-    }
+    assert motions.status_code == 410
+    assert motions.get_json()["error"] == "demo_capability_disabled"
+    assert emotions.status_code == 410
+    assert emotions.get_json()["error"] == "demo_capability_disabled"
 
-    monkeypatch.setattr(robot_routes, "import_dollser_motion_file", lambda _path, _name: "imported-wave")
-    imported = client.post(
-        "/api/robot/motions/import",
-        data={"file": (io.BytesIO(b'{"frames": []}'), "wave.json")},
-        content_type="multipart/form-data",
-    )
-    assert imported.status_code == 200
-    assert imported.get_json() == {
-        "success": True,
-        "message": 'Motion "imported-wave" imported',
-        "motionName": "imported-wave",
-    }
+    imported = client.post("/api/robot/motions/import")
+    assert imported.status_code == 410
     missing = client.post("/api/robot/motions/import", data={})
-    assert missing.status_code == 400
-    assert missing.get_json() == {"success": False, "error": "file required"}
+    assert missing.status_code == 410
 
 
-def test_phase1_http_robot_motion_and_emotion_error_snapshots(monkeypatch):
-    class RobotFailures:
-        def get_motion_list(self):
-            raise RuntimeError("phase1-motion-failure")
-
-        def get_emotions_payload(self):
-            raise RuntimeError("phase1-emotion-failure")
-
-    monkeypatch.setattr(robot_routes, "get_robot_service", lambda: RobotFailures())
+def test_phase1_http_demo_hardware_block_is_independent_of_service_state():
     client = _blueprint_app(robot_routes.robot_bp)
-
     motions = client.get("/api/robot/motions")
     emotions = client.get("/api/robot/emotions")
-    assert motions.status_code == 500
-    assert motions.get_json() == {
-        "success": False,
-        "error": "phase1-motion-failure",
-    }
-    assert emotions.status_code == 500
-    assert emotions.get_json() == {
-        "success": False,
-        "error": "phase1-emotion-failure",
-    }
-
-    monkeypatch.setattr(
-        robot_routes,
-        "import_dollser_motion_file",
-        lambda *_args: (_ for _ in ()).throw(ValueError("invalid-motion-file")),
-    )
-    malformed = client.post(
-        "/api/robot/motions/import",
-        data={"file": (io.BytesIO(b"not-json"), "bad.json")},
-        content_type="multipart/form-data",
-    )
-    assert malformed.status_code == 400
-    assert malformed.get_json() == {
-        "success": False,
-        "error": "invalid-motion-file",
-    }
+    assert motions.status_code == 410
+    assert emotions.status_code == 410
+    assert client.get("/api/robot/runtime/status").status_code == 410
 
 
 def test_phase1_http_report_get_generate_field_snapshots(monkeypatch):

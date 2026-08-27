@@ -64,6 +64,12 @@ interface CoursePreset {
   id: string;
   name: string;
   description: string;
+  mode: 'assessment' | 'intervention';
+  courseSelections: Array<{
+    courseType: string;
+    itemIds: number[];
+  }>;
+  courseTypes: string[];
   courseIds: number[];
   available: boolean;
   missingCourseIds: number[];
@@ -74,27 +80,32 @@ interface CoursePreset {
 interface CoursePresetResponse {
   success: boolean;
   defaultPresetId: string | null;
+  defaultPresetIds?: {
+    assessment: string | null;
+    intervention: string | null;
+  };
   presets: CoursePreset[];
 }
 
 function selectionForPreset(preset: CoursePreset, allCourses: Course[]) {
-  const presetCourses = preset.courseIds
-    .map(courseId => allCourses.find(course => course.id === courseId))
-    .filter((course): course is Course => Boolean(course));
-  if (
-    presetCourses.length !== preset.courseIds.length
-    || presetCourses.some(course => course.items.length === 0)
-  ) {
-    return null;
-  }
   const selected = new Map<string, Set<number>>();
-  presetCourses.forEach(course => {
-    selected.set(course.id.toString(), new Set(course.items.map(item => item.id)));
-  });
+  for (const selection of preset.courseSelections || []) {
+    const course = allCourses.find(candidate => candidate.type === selection.courseType);
+    if (!course || !selection.itemIds.length) return null;
+    const availableIds = new Set(course.items.map(item => item.id));
+    if (selection.itemIds.some(itemId => !availableIds.has(itemId))) return null;
+    selected.set(course.id.toString(), new Set(selection.itemIds));
+  }
+  if (selected.size !== preset.courseSelections.length) return null;
   return selected;
 }
 
+function presetCourseTypes(preset: CoursePreset) {
+  return (preset.courseSelections || []).map(selection => selection.courseType);
+}
+
 export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPageProps) {
+  const presetMode = mode === 'assessment' ? 'assessment' : 'intervention';
   const [courses, setCourses] = useState<Course[]>([]);
   const [categories, setCategories] = useState<CourseCategory[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -142,8 +153,11 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
             presetData = null;
           }
         }
+        const matchingPresets = presetData
+          ? presetData.presets.filter(preset => (preset.mode || 'assessment') === presetMode)
+          : [];
         if (presetData) {
-          setPresets(presetData.presets);
+          setPresets(matchingPresets);
           setPresetError(null);
         } else {
           setPresets([]);
@@ -172,10 +186,10 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
         });
 
         setCategories(categoryArray);
-        if (mode === 'assessment' && presetData?.defaultPresetId) {
-          const defaultPreset = presetData.presets.find(
-            preset => preset.id === presetData?.defaultPresetId,
-          );
+        const defaultPresetId = presetData?.defaultPresetIds?.[presetMode]
+          ?? (presetMode === 'assessment' ? presetData?.defaultPresetId : null);
+        if (defaultPresetId) {
+          const defaultPreset = matchingPresets.find(preset => preset.id === defaultPresetId);
           const presetItems = defaultPreset ? selectionForPreset(defaultPreset, data) : null;
           if (defaultPreset && presetItems) {
             setSelectedItems(presetItems);
@@ -207,12 +221,23 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
         id: `${PRESET_VIEW_PREFIX}${viewedPreset.id}`,
         name: viewedPreset.name,
         icon: Sparkles,
-        courses: viewedPreset.courseIds
-          .map(courseId => courses.find(course => course.id === courseId))
+        courses: presetCourseTypes(viewedPreset)
+          .map(courseType => courses.find(course => course.type === courseType))
           .filter((course): course is Course => Boolean(course)),
       }
     : categories.find(category => category.id === selectedCategory);
   const selectedPreset = presets.find(preset => preset.id === selectedPresetId);
+  const displayGroups: CourseCategory[] = viewedPreset
+    ? presetCourseTypes(viewedPreset).map(courseType => {
+        const typeInfo = courseTypeMap[courseType] || { name: courseType, icon: DefaultIcon };
+        return {
+          id: courseType,
+          name: typeInfo.name,
+          icon: typeInfo.icon,
+          courses: courses.filter(course => course.type === courseType),
+        };
+      })
+    : currentCategory ? [currentCategory] : [];
 
   const applyPreset = (presetId: string) => {
     const preset = presets.find(candidate => candidate.id === presetId);
@@ -243,35 +268,33 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
     setSelectedItems(newSelected);
   };
 
-  // 切换整个课程的选择状态（全选/取消全选该课程的所有项）
-  const toggleCourse = (courseId: number) => {
-    const course = courses.find(c => c.id === courseId);
-    if (!course || course.items.length === 0) return;
-    const keepQuickAssessmentLayout = Boolean(
-      mode === 'assessment' && selectedPreset?.courseIds.includes(courseId),
-    );
-    if (!keepQuickAssessmentLayout) setSelectedPresetId('');
+  // 大类是唯一选择单位；内部仍保留 courseId/itemId 供课程执行链使用。
+  const toggleCategory = (category: CourseCategory) => {
+    const categoryCourses = category.courses.filter(course => course.items.length > 0);
+    if (!categoryCourses.length) return;
+    setSelectedPresetId('');
 
     const newSelected = new Map(selectedItems);
-    const courseKey = courseId.toString();
-    const itemSet = newSelected.get(courseKey);
-
-    // 如果已全选，则取消；否则全选
-    const allSelected = itemSet && itemSet.size === course.items.length;
+    const allSelected = categoryCourses.every(course => {
+      const selected = newSelected.get(course.id.toString());
+      return selected?.size === course.items.length;
+    });
     if (allSelected) {
-      newSelected.delete(courseKey);
+      categoryCourses.forEach(course => newSelected.delete(course.id.toString()));
     } else {
-      newSelected.set(courseKey, new Set(course.items.map(item => item.id)));
+      categoryCourses.forEach(course => {
+        newSelected.set(course.id.toString(), new Set(course.items.map(item => item.id)));
+      });
     }
     setSelectedItems(newSelected);
   };
 
-  // 获取课程的选择状态
-  const isCourseSelected = (courseId: number) => {
-    const course = courses.find(c => c.id === courseId);
-    if (!course || course.items.length === 0) return false;
-    const itemSet = selectedItems.get(courseId.toString());
-    return itemSet && itemSet.size === course.items.length;
+  const isCategorySelected = (category: CourseCategory) => {
+    const categoryCourses = category.courses.filter(course => course.items.length > 0);
+    return categoryCourses.length > 0 && categoryCourses.every(course => {
+      const selected = selectedItems.get(course.id.toString());
+      return selected?.size === course.items.length;
+    });
   };
 
   // 获取课程项的选择状态
@@ -335,12 +358,11 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
   // 获取图片路径
   const getImageUrl = (path?: string) => {
     if (!path) return DEFAULT_ITEM_IMAGE;
-    // 如果路径已经是完整URL，直接返回
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-      return path;
-    }
-    // 否则添加 /static/ 前缀
-    return `/static/${path}`;
+    const normalized = String(path).trim().replace(/\\/g, '/');
+    if (/^(https?:|data:|blob:)/i.test(normalized)) return normalized;
+    // /courses 同时存在 resources/...、static/resources/... 和 /static/... 旧数据。
+    // 统一成单个 /static/ 前缀，避免 /static//static/... 导致图片失败。
+    return `/static/${normalized.replace(/^\/+/, '').replace(/^(static\/)+/i, '')}`;
   };
 
   if (loading) {
@@ -381,7 +403,10 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
   }
 
   return (
-    <div className="bg-gray-50 flex h-screen overflow-hidden">
+    <div
+      className="bg-gray-50 flex h-screen overflow-hidden"
+      data-course-catalog-version="canonical-course-types-v2"
+    >
       {/* 左侧课程类别列表 */}
       <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
         <div className="p-6 border-b border-gray-200">
@@ -417,12 +442,12 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
             <option value="">手动选择课程</option>
             {presets.map(preset => (
               <option key={preset.id} value={preset.id} disabled={!preset.available}>
-                {preset.name}{preset.isDefault ? '（默认）' : ''}{!preset.available ? '（课程不完整）' : ''}
+                {preset.name}{preset.isDefault ? `（${presetMode === 'assessment' ? '评估' : '干预'}默认）` : ''}{!preset.available ? '（课点不完整）' : ''}
               </option>
             ))}
           </select>
           <p className={`mt-2 text-xs leading-5 ${presetError ? 'text-amber-700' : 'text-gray-500'}`}>
-            {presetError || selectedPreset?.description || '选择后会按 Server 中配置的顺序选中全部课点。'}
+            {presetError || selectedPreset?.description || `这里只显示${presetMode === 'assessment' ? '评估' : '干预'}预设；选择后严格勾选 Server 中配置的具体课点。`}
           </p>
         </div>
         <div className="flex-1 overflow-y-auto p-6 pt-4">
@@ -455,112 +480,107 @@ export function CourseSelectionPage({ onStart, onBack, mode }: CourseSelectionPa
       <div className="flex-1 overflow-y-auto h-full">
         <div className="p-8 pb-32">
         <h1 className="text-gray-900 mb-2">
-          {currentCategory?.name || ''} - {mode === 'assessment' ? '评估' : '训练'}内容
+          {currentCategory?.name || ''} - {mode === 'assessment' ? '评估' : '干预'}内容
         </h1>
         <p className="text-gray-600 mb-8">
           已选择 {getSelectedCount()} 项内容
         </p>
 
-        {currentCategory && currentCategory.courses.length > 0 ? (
+        {displayGroups.length > 0 ? (
           <div className="space-y-6">
-            {currentCategory.courses.map(course => {
-              const courseSelected = isCourseSelected(course.id);
-              const courseItemSet = selectedItems.get(course.id.toString());
-              const selectedCount = courseItemSet ? courseItemSet.size : 0;
-              const totalCount = course.items.length;
-              const compactQuickAssessmentCourse = Boolean(
-                mode === 'assessment'
-                && (viewedPreset || selectedPreset)?.courseIds.includes(course.id),
+            {displayGroups.map(group => {
+              const categorySelected = isCategorySelected(group);
+              const selectedCount = group.courses.reduce(
+                (sum, course) => sum + (selectedItems.get(course.id.toString())?.size || 0),
+                0,
               );
-
+              const totalCount = group.courses.reduce((sum, course) => sum + course.items.length, 0);
+              const categoryItems = group.courses.flatMap(course =>
+                course.items.map(item => ({ course, item })),
+              );
               return (
-                <div key={course.id} className="bg-white rounded-xl shadow-sm border-2 border-gray-200 overflow-hidden">
-                  {/* 课程标题栏 */}
+                <div key={group.id} className="bg-white rounded-xl shadow-sm border-2 border-gray-200 overflow-hidden">
+                  {/* 大类标题栏 */}
                   <div className="p-4 bg-gray-50 border-b border-gray-200">
                     <div className="flex items-center justify-between">
                       <button
                         type="button"
-                        onClick={() => toggleCourse(course.id)}
-                        aria-pressed={Boolean(courseSelected)}
+                        onClick={() => toggleCategory(group)}
+                        aria-pressed={Boolean(categorySelected)}
                         className="flex items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                       >
                         <span
                           className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
-                            courseSelected
+                            categorySelected
                               ? 'bg-indigo-600 border-indigo-600'
                               : 'border-gray-300 hover:border-indigo-400'
                           }`}
                         >
-                          {courseSelected && (
+                          {categorySelected && (
                             <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                             </svg>
                           )}
                         </span>
-                        <span>
-                          <span className="block text-lg font-semibold text-gray-900">{course.title}</span>
-                          {compactQuickAssessmentCourse && (
-                            <span className="mt-0.5 block text-xs text-gray-500">直接勾选整课，无需逐项打开</span>
-                          )}
-                        </span>
+                        <span className="block text-lg font-semibold text-gray-900">{group.name}</span>
                       </button>
                       <span className="text-sm text-gray-500">
-                        {compactQuickAssessmentCourse
-                          ? (courseSelected ? '已勾选' : '未勾选')
-                          : (selectedCount > 0 ? `已选 ${selectedCount}/${totalCount}` : `${totalCount} 项`)}
+                        {selectedCount > 0 ? `已选 ${selectedCount}/${totalCount}` : `${totalCount} 项`}
                       </span>
                     </div>
                   </div>
 
-                  {/* 课程项列表 */}
-                  {course.items.length > 0 && !compactQuickAssessmentCourse && (
+                  {/* 大类课点列表 */}
+                  {categoryItems.length > 0 && (
                     <div className="p-4">
                       <div className="grid grid-cols-3 gap-4">
-                        {course.items.map(item => {
+                        {categoryItems.map(({ course, item }) => {
                           const itemSelected = isItemSelected(course.id, item.id);
                           // 优先使用icon字段（具体图片文件），file字段是文件夹路径
                           const itemImage = item.icon || item.file || DEFAULT_ITEM_IMAGE;
 
                           return (
                             <button
-                              key={item.id}
+                              key={`${course.id}:${item.id}`}
+                              type="button"
                               onClick={() => toggleItem(course.id, item.id)}
+                              aria-pressed={itemSelected}
+                              aria-label={`${item.name}${itemSelected ? '，已选中' : ''}`}
                               className={`bg-gray-50 rounded-lg overflow-hidden border-2 transition-all hover:shadow-md ${
                                 itemSelected
                                   ? 'border-indigo-500 ring-2 ring-indigo-200'
                                   : 'border-gray-200'
                               }`}
                             >
-                              <div className="aspect-video overflow-hidden bg-gray-100">
+                              <div className="relative aspect-video overflow-hidden bg-gray-100">
                                 <img
                                   src={getImageUrl(itemImage)}
                                   alt={item.name}
                                   className="w-full h-full object-cover"
                                   onError={(e) => {
-                                    // 如果图片加载失败，使用默认图片
-                                    (e.target as HTMLImageElement).src = DEFAULT_ITEM_IMAGE;
+                                    const image = e.currentTarget;
+                                    image.onerror = null;
+                                    image.src = DEFAULT_ITEM_IMAGE;
                                   }}
                                 />
+                                {itemSelected && (
+                                  <span
+                                    className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white shadow-md"
+                                    aria-hidden="true"
+                                  >
+                                    <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                    </svg>
+                                  </span>
+                                )}
                               </div>
                               <div className="p-3">
                                 <h4 className="text-sm font-medium text-gray-900 text-center">{item.name}</h4>
-                                {itemSelected && (
-                                  <div className="mt-2 text-center">
-                                    <span className="inline-block px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs">
-                                      已选中
-                                    </span>
-                                  </div>
-                                )}
                               </div>
                             </button>
                           );
                         })}
                       </div>
-                    </div>
-                  )}
-                  {compactQuickAssessmentCourse && (
-                    <div className="border-t border-gray-100 bg-white px-4 py-3 text-sm text-gray-600">
-                      勾选后自动使用本课程全部 {totalCount} 个评估项目。
                     </div>
                   )}
                 </div>

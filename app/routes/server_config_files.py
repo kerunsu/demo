@@ -91,6 +91,7 @@ def put_report_scoring():
             "grade_thresholds",
             "schema_version",
             "score_boundary",
+            "course_goal_score",
         ):
             if key in incoming:
                 if key in ("weights", "interactive_course", "dimension_weights", "course_weights", "teacher_rating", "grade_thresholds") and isinstance(incoming[key], dict):

@@ -12,7 +12,7 @@
     <div class="cc-brand">
       <div class="cc-brand-mark">R</div>
       <div class="cc-brand-text">
-        <strong>Robot Training Console</strong>
+        <strong>Demo Training Console</strong>
         <span>配置中心</span>
       </div>
     </div>
@@ -21,7 +21,6 @@
       <a href="/server/config/overview" class="active">配置中心</a>
     </nav>
     <div class="cc-top-actions">
-      <a class="cc-pill" href="/robot" target="_blank" rel="noopener">打开 /robot</a>
       <a class="cc-pill primary" href="/server?view=monitor">实时监控</a>
     </div>
   </header>
@@ -61,15 +60,12 @@
     <!-- ========== 交互内容模块 ========== -->
     <div id="module-content" class="cc-module"{% if active_module|default('content') != 'content' %} hidden{% endif %}>
     <div class="cc-subnav" id="cc-subnav">
-      <button type="button" data-view="binding">行为绑定</button>
       <button type="button" data-view="courses">课程库</button>
       <button type="button" data-view="presets">课程预设</button>
       <button type="button" data-view="phrases">实时话术</button>
       <button type="button" data-view="workbench" class="active">工作台</button>
       <button type="button" data-view="media">媒资库</button>
-      <button type="button" data-view="expressions">表情库</button>
       <button type="button" data-view="animations">鼓励动画库</button>
-      <button type="button" data-view="motions">动作库</button>
       <span class="cc-subnav-hint">交互内容</span>
     </div>
 
@@ -79,24 +75,14 @@
         <div>
           <div class="cc-breadcrumb">配置中心 / 交互内容</div>
           <h1 class="cc-page-title">工作台</h1>
-          <p class="cc-page-subtitle">内容与机器人行为资产入口 · 缺项体检见下方卡片。</p>
+          <p class="cc-page-subtitle">Demo 课程、话术、儿童屏动画与媒资入口 · 缺项体检见下方卡片。</p>
         </div>
       </div>
-      <div class="cc-grid cols-4" id="workbench-metrics">
-        <a class="cc-card cc-metric-link" href="?view=expressions">
-          <div class="cc-metric-label">表情</div>
-          <div class="cc-metric-value" id="stat-emotions">—</div>
-          <div class="cc-metric-note">上传 / 设默认</div>
-        </a>
-        <a class="cc-card cc-metric-link" href="?view=motions">
-          <div class="cc-metric-label">动作</div>
-          <div class="cc-metric-value" id="stat-motions">—</div>
-          <div class="cc-metric-note">导入 / 试播</div>
-        </a>
-        <a class="cc-card cc-metric-link" href="?view=binding">
-          <div class="cc-metric-label">行为绑定</div>
-          <div class="cc-metric-value">四级</div>
-          <div class="cc-metric-note">course_map</div>
+      <div class="cc-grid cols-2" id="workbench-metrics">
+        <a class="cc-card cc-metric-link" href="?view=animations">
+          <div class="cc-metric-label">儿童屏动画</div>
+          <div class="cc-metric-value">MP4</div>
+          <div class="cc-metric-note">上传 / 预览</div>
         </a>
         <a class="cc-card cc-metric-link" href="?view=courses">
           <div class="cc-metric-label">课程</div>
@@ -107,7 +93,7 @@
       <div class="cc-grid cols-3" id="workbench-issues" style="margin-top:14px;"></div>
       <div class="cc-card" id="cc-sync-card" style="margin-top:14px;">
         <h3 class="cc-card-title">配置中心协作同步</h3>
-        <p class="cc-tiny">导出可审查的同步包，包含 YAML/CSV/JSON 配置、课程目录、动作库、绑定、InteractionProfile、表情和课程媒体。录音、报告、数据库原文件和学生个人数据不会打包。</p>
+        <p class="cc-tiny">导出可审查的 Demo 配置包，包含 YAML/CSV/JSON、三类课程目录、儿童屏动画和课程媒体；不包含机械动作、机器人 Runtime、完整版表情、录音、报告、数据库或学生个人数据。</p>
         <div class="cc-toolbar" style="margin-top:10px;">
           <button type="button" class="cc-btn soft" id="btn-sync-refresh">检查同步内容</button>
           <a class="cc-btn primary" id="btn-sync-export" href="/api/v2/config/sync/export" download>下载同步包</a>
@@ -116,76 +102,7 @@
         <pre id="cc-sync-preview" class="cc-tiny" style="white-space:pre-wrap;max-height:140px;overflow:auto;margin-top:8px;"></pre>
       </div>
       <div class="cc-notice info" style="margin-top:16px;">
-        快捷：表情 · 动作 · 媒资 · 课程 · 行为绑定。课型第一版只读。
-      </div>
-    </section>
-
-    <!-- 表情库 -->
-    <section class="cc-page" id="page-expressions" data-page="expressions" hidden>
-      <div class="cc-page-head">
-        <div>
-          <div class="cc-breadcrumb">交互内容 / 表情库</div>
-          <h1 class="cc-page-title">表情库</h1>
-          <p class="cc-page-subtitle">新表情统一使用 MP4 · 每次事件只播放一次并回到待机 · 历史 GIF 仅兼容已有课程</p>
-        </div>
-        <div class="cc-head-actions">
-          <button type="button" class="cc-btn soft" id="btn-refresh-emotions">刷新</button>
-          <label class="cc-btn primary" for="emotion-upload-input">上传 MP4</label>
-          <input type="file" id="emotion-upload-input" accept=".mp4,video/mp4" hidden />
-        </div>
-      </div>
-      <div class="cc-grid main-aside">
-        <div>
-          <div class="cc-expr-grid" id="emotion-grid"></div>
-          <p class="cc-tiny" id="emotion-empty" hidden>暂无表情，请上传 MP4。</p>
-        </div>
-        <aside class="cc-card">
-          <h3 class="cc-card-title">预览</h3>
-          <div class="cc-preview-screen" id="emotion-preview">
-            <span class="cc-preview-label">未选择</span>
-            <div class="cc-emotion-preview-filter" id="emotion-preview-filter-layer">
-              <img id="emotion-preview-img" alt="" hidden />
-              <video id="emotion-preview-video" muted playsinline preload="metadata" hidden></video>
-            </div>
-          </div>
-          <div class="cc-preview-meta" id="emotion-preview-meta">点击卡片预览</div>
-          <div class="cc-tuning-section">
-            <h4>单表情参数</h4>
-            <div class="cc-tuning-grid">
-              <label>速度倍率<input id="emotion-style-speed" class="cc-inp" type="number" min="0.25" max="4" step="0.05" /></label>
-              <label>缩放<input id="emotion-style-scale" class="cc-inp" type="number" min="0.5" max="2" step="0.05" /></label>
-              <label>色调 (°)<input id="emotion-style-hue" class="cc-inp" type="number" min="-180" max="180" step="1" /></label>
-              <label>亮度<input id="emotion-style-brightness" class="cc-inp" type="number" min="0" max="2" step="0.05" /></label>
-              <label>饱和度<input id="emotion-style-saturation" class="cc-inp" type="number" min="0" max="2" step="0.05" /></label>
-              <label>透明度<input id="emotion-style-opacity" class="cc-inp" type="number" min="0" max="1" step="0.05" /></label>
-            </div>
-            <div class="cc-form-row">
-              <button type="button" class="cc-btn primary small" id="btn-save-emotion-style" disabled>保存表情参数</button>
-              <button type="button" class="cc-btn soft small" id="btn-reset-emotion-style" disabled>恢复默认</button>
-            </div>
-          </div>
-          <div class="cc-tuning-section">
-            <h4>全局环境光滤镜</h4>
-            <label class="cc-filter-toggle"><input id="emotion-global-enabled" type="checkbox" /> 启用全局滤镜</label>
-            <div class="cc-tuning-grid">
-              <label>色调 (°)<input id="emotion-global-hue" class="cc-inp" type="number" min="-180" max="180" step="1" /></label>
-              <label>亮度<input id="emotion-global-brightness" class="cc-inp" type="number" min="0" max="2" step="0.05" /></label>
-              <label>饱和度<input id="emotion-global-saturation" class="cc-inp" type="number" min="0" max="2" step="0.05" /></label>
-              <label>对比度<input id="emotion-global-contrast" class="cc-inp" type="number" min="0" max="2" step="0.05" /></label>
-              <label>透明度<input id="emotion-global-opacity" class="cc-inp" type="number" min="0" max="1" step="0.05" /></label>
-            </div>
-            <div class="cc-form-row">
-              <button type="button" class="cc-btn primary small" id="btn-save-global-filter">保存全局滤镜</button>
-              <button type="button" class="cc-btn soft small" id="btn-reset-global-filter">恢复默认</button>
-            </div>
-          </div>
-          <div class="cc-preview-actions">
-            <button type="button" class="cc-btn soft" id="btn-set-default" disabled>加入待机池</button>
-            <button type="button" class="cc-btn soft" id="btn-trigger-emotion" disabled>试触发（本机）</button>
-            <button type="button" class="cc-btn danger" id="btn-delete-emotion" disabled>删除</button>
-          </div>
-          <p class="cc-tiny">可将多个表情加入随机待机池。待机播放会被提问、提示、表扬立即打断；事件表情完整播放后再回到随机待机。删除前检查 course_map 引用。</p>
-        </aside>
+        Demo 固定课程范围：模仿、配对、排序。儿童屏鼓励动画不属于机器人表情。
       </div>
     </section>
 
@@ -223,224 +140,13 @@
       </div>
     </section>
 
-    <!-- 行为绑定（迁自 /robot 课程映射 DOM） -->
-    <section class="cc-page" id="page-binding" data-page="binding" hidden>
-      <div class="cc-page-head">
-        <div>
-          <div class="cc-breadcrumb">交互内容 / 行为绑定</div>
-          <h1 class="cc-page-title">行为绑定</h1>
-          <p class="cc-page-subtitle">三级覆盖：全局兜底 → 课程覆盖 → 课点覆盖 · 自动触发与教师触发共用机器人状态机</p>
-        </div>
-        <div class="cc-head-actions">
-          <a class="cc-btn soft" href="/robot" target="_blank" rel="noopener">打开实时控制</a>
-          <a class="cc-btn soft" href="/robot/emotion" target="_blank" rel="noopener">打开表情显示</a>
-        </div>
-      </div>
-      <div class="cc-notice warning">试触发会向本机 Socket 发事件（可能驱动真机表情/动作）。映射已从 /robot「课程映射」迁入，该 Tab 将重定向到此页。</div>
-      <div id="behavior-test-status" class="cc-notice info" style="margin-top:10px;" role="status" aria-live="polite">
-        <strong>测试状态：尚未执行</strong>
-        <div class="cc-tiny">测试按钮只验证当前未保存绑定中的机器人动作与表情，不播放课程语音。系统会等待并显示真实命令状态；表情显示页离线时不会伪报成功。</div>
-      </div>
-      <div class="cc-binding mapping-workspace" id="binding-root">
-        <aside class="mapping-nav glass-panel">
-          <div class="profile-selector">
-            <label>配置优先级</label>
-            <select id="profile-select" disabled><option value="default">全局 → 课程 → 课点</option></select>
-          </div>
-          <div class="config-tree" id="config-tree"></div>
-        </aside>
-        <main class="action-matrix glass-panel">
-          <div class="matrix-header">
-            <h2 id="current-scope-title">全局通用配置</h2>
-            <button type="button" class="btn-save" onclick="saveCurrentMapping()">保存配置</button>
-          </div>
-          <div class="cc-notice info" style="margin-bottom:12px;">只保存本次修改的行为。课程或课点未配置时自动继承上一级；要取消覆盖，请点击对应行为的“恢复上一级”。</div>
-          <div class="action-slots">
-            <div class="action-slot">
-              <div class="slot-header">
-                <h3>吸引 (Attention)</h3>
-                <button type="button" class="btn-test-small" onclick="testAction('attention', this)">▶ 测试</button>
-              </div>
-              <div class="slot-tags" id="slot-attention"></div>
-              <button type="button" class="btn-add-tag" onclick="addMotionToSlot('attention')">+ 添加动作</button>
-              <div class="emotion-select-wrapper"><label>对应表情：</label><select id="emotion-attention" class="emotion-select" onchange="onEmotionChange('attention')"></select></div>
-              <div class="emotion-select-wrapper"><label>下屏内容（可选）：</label><select id="animation-attention" class="emotion-select" onchange="onAnimationChange('attention')"><option value="">不播放下屏动画</option></select></div>
-            </div>
-            <div class="action-slot">
-              <div class="slot-header">
-                <h3>夸奖 (Reward)</h3>
-                <button type="button" class="btn-test-small" onclick="testAction('reward', this)">▶ 测试</button>
-              </div>
-              <div class="slot-tags" id="slot-reward"></div>
-              <button type="button" class="btn-add-tag" onclick="addMotionToSlot('reward')">+ 添加动作</button>
-              <div class="emotion-select-wrapper"><label>对应表情：</label><select id="emotion-reward" class="emotion-select" onchange="onEmotionChange('reward')"></select></div>
-              <div class="emotion-select-wrapper"><label>默认下屏内容：</label><select id="animation-reward" class="emotion-select" onchange="onAnimationChange('reward')"><option value="">默认库随机</option></select></div>
-            </div>
-            <div class="action-slot">
-              <div class="slot-header">
-                <h3>表扬 (Praise)</h3>
-                <button type="button" class="btn-test-small" onclick="testAction('praise', this)">▶ 测试</button>
-              </div>
-              <div class="slot-tags" id="slot-praise"></div>
-              <button type="button" class="btn-add-tag" onclick="addMotionToSlot('praise')">+ 添加动作</button>
-              <div class="emotion-select-wrapper">
-                <label>对应表情：</label>
-                <select id="emotion-praise" class="emotion-select" onchange="onEmotionChange('praise')"></select>
-              </div>
-              <div class="emotion-select-wrapper">
-                <label>课程鼓励动画：</label>
-                <select id="animation-praise" class="emotion-select" onchange="onAnimationChange('praise')">
-                  <option value="">默认库随机</option>
-                </select>
-              </div>
-            </div>
-            <div class="action-slot">
-              <div class="slot-header">
-                <h3>提问 (Question)</h3>
-                <button type="button" class="btn-test-small" onclick="testAction('question', this)">▶ 测试</button>
-              </div>
-              <div class="slot-tags" id="slot-question"></div>
-              <button type="button" class="btn-add-tag" onclick="addMotionToSlot('question')">+ 添加动作</button>
-              <div class="emotion-select-wrapper">
-                <label>对应表情：</label>
-                <select id="emotion-question" class="emotion-select" onchange="onEmotionChange('question')"></select>
-              </div>
-            </div>
-            <div class="action-slot">
-              <div class="slot-header">
-                <h3>提示/引导 (Hint)</h3>
-                <button type="button" class="btn-test-small" onclick="testAction('hint', this)">▶ 测试</button>
-              </div>
-              <div class="slot-tags" id="slot-hint"></div>
-              <button type="button" class="btn-add-tag" onclick="addMotionToSlot('hint')">+ 添加动作</button>
-              <div class="emotion-select-wrapper">
-                <label>对应表情：</label>
-                <select id="emotion-hint" class="emotion-select" onchange="onEmotionChange('hint')"></select>
-              </div>
-            </div>
-            <div class="action-slot">
-              <div class="slot-header">
-                <h3>内容展示 (Display Only)</h3>
-                <button type="button" class="btn-test-small" onclick="testAction('silent', this)">▶ 测试</button>
-              </div>
-              <div class="slot-tags" id="slot-silent"></div>
-              <button type="button" class="btn-add-tag" onclick="addMotionToSlot('silent')">+ 添加动作</button>
-              <div class="emotion-select-wrapper">
-                <label>对应表情：</label>
-                <select id="emotion-silent" class="emotion-select" onchange="onEmotionChange('silent')"></select>
-              </div>
-            </div>
-            <div class="action-slot">
-              <div class="slot-header">
-                <h3>初见打招呼</h3>
-                <button type="button" class="btn-test-small" onclick="testAction('social_greeting_intro', this)">▶ 测试</button>
-              </div>
-              <div class="slot-tags" id="slot-social_greeting_intro"></div>
-              <button type="button" class="btn-add-tag" onclick="addMotionToSlot('social_greeting_intro')">+ 添加动作</button>
-              <div class="emotion-select-wrapper">
-                <label>对应表情：</label>
-                <select id="emotion-social_greeting_intro" class="emotion-select" onchange="onEmotionChange('social_greeting_intro')"></select>
-              </div>
-            </div>
-            <div class="action-slot">
-              <div class="slot-header">
-                <h3>一起玩耍吧</h3>
-                <button type="button" class="btn-test-small" onclick="testAction('social_greeting_play', this)">▶ 测试</button>
-              </div>
-              <div class="slot-tags" id="slot-social_greeting_play"></div>
-              <button type="button" class="btn-add-tag" onclick="addMotionToSlot('social_greeting_play')">+ 添加动作</button>
-              <div class="emotion-select-wrapper">
-                <label>对应表情：</label>
-                <select id="emotion-social_greeting_play" class="emotion-select" onchange="onEmotionChange('social_greeting_play')"></select>
-              </div>
-            </div>
-            <div class="action-slot">
-              <div class="slot-header">
-                <h3>再见</h3>
-                <button type="button" class="btn-test-small" onclick="testAction('social_farewell_bye', this)">▶ 测试</button>
-              </div>
-              <div class="slot-tags" id="slot-social_farewell_bye"></div>
-              <button type="button" class="btn-add-tag" onclick="addMotionToSlot('social_farewell_bye')">+ 添加动作</button>
-              <div class="emotion-select-wrapper">
-                <label>对应表情：</label>
-                <select id="emotion-social_farewell_bye" class="emotion-select" onchange="onEmotionChange('social_farewell_bye')"></select>
-              </div>
-            </div>
-            <div class="action-slot">
-              <div class="slot-header">
-                <h3>回应</h3>
-                <button type="button" class="btn-test-small" onclick="testAction('social_farewell_reply', this)">▶ 测试</button>
-              </div>
-              <div class="slot-tags" id="slot-social_farewell_reply"></div>
-              <button type="button" class="btn-add-tag" onclick="addMotionToSlot('social_farewell_reply')">+ 添加动作</button>
-              <div class="emotion-select-wrapper">
-                <label>对应表情：</label>
-                <select id="emotion-social_farewell_reply" class="emotion-select" onchange="onEmotionChange('social_farewell_reply')"></select>
-              </div>
-            </div>
-            <div class="action-slot idle-slot">
-              <div class="slot-header">
-                <h3>静态/复位姿势 (Static Pose)</h3>
-                <button type="button" class="btn-test-small" onclick="testAction('idle', this)">▶ 测试</button>
-              </div>
-              <select id="slot-idle" class="idle-select"></select>
-            </div>
-          </div>
-        </main>
-      </div>
-      <section class="cc-card dialogue-expression-card" id="dialogue-expression-card">
-        <div class="dialogue-expression-head">
-          <div>
-            <h2 class="cc-card-title">大模型回复表情匹配</h2>
-            <p class="cc-tiny">按回复有效字数选择 MP4 说话表情。规则按上限从小到大匹配；超过最后一档时继续使用最后一档。</p>
-          </div>
-          <label class="dialogue-expression-toggle">
-            <input type="checkbox" id="dialogue-expression-enabled" />
-            <span>启用匹配</span>
-          </label>
-        </div>
-        <div class="dialogue-expression-rules" id="dialogue-expression-rules"></div>
-        <div class="dialogue-expression-actions">
-          <button type="button" class="cc-btn soft" id="btn-add-dialogue-expression-rule">添加字数档位</button>
-          <button type="button" class="cc-btn primary" id="btn-save-dialogue-expression-rules">保存规则</button>
-          <span class="cc-tiny" id="dialogue-expression-status" role="status" aria-live="polite"></span>
-        </div>
-        <div class="dialogue-expression-tester">
-          <label for="dialogue-expression-test-text">匹配预览</label>
-          <textarea id="dialogue-expression-test-text" rows="2" placeholder="输入一段大模型回复，查看会使用哪一个表情"></textarea>
-          <div class="dialogue-expression-test-result" id="dialogue-expression-test-result">输入文字后显示匹配结果</div>
-        </div>
-      </section>
-    </section>
-
-    <!-- 动作库 -->
-    <section class="cc-page" id="page-motions" data-page="motions" hidden>
-      <div class="cc-page-head">
-        <div>
-          <div class="cc-breadcrumb">交互内容 / 动作库</div>
-          <h1 class="cc-page-title">动作库</h1>
-          <p class="cc-page-subtitle">复用 <code>/api/robot/motions*</code> · 数据 <code>doll/data/motions.json</code></p>
-        </div>
-        <div class="cc-head-actions">
-          <button type="button" class="cc-btn soft" id="btn-cc-refresh-motions">刷新</button>
-          <button type="button" class="cc-btn soft" id="btn-cc-stop-motion">停止播放</button>
-          <button type="button" class="cc-btn primary" id="btn-cc-import-motion">导入 v2 JSON</button>
-          <input type="file" id="cc-motion-import-input" accept=".json,application/json" hidden />
-          <a class="cc-btn soft" href="/robot" target="_blank" rel="noopener">打开实时录制</a>
-        </div>
-      </div>
-      <div class="cc-notice warning">新动作请在 /robot 实时控制页录制后，再回到此页导入 JSON。本页不嵌入 MediaPipe 录制栈。</div>
-      <div class="cc-motion-grid" id="cc-motion-library"></div>
-      <p class="cc-tiny" id="cc-motion-empty" hidden>暂无动作，请导入或先在 /robot 录制。</p>
-    </section>
-
     <!-- 媒资库 -->
     <section class="cc-page" id="page-media" data-page="media" hidden>
       <div class="cc-page-head">
         <div>
           <div class="cc-breadcrumb">交互内容 / 媒资库</div>
           <h1 class="cc-page-title">媒资库</h1>
-          <p class="cc-page-subtitle">浏览 / 上传 <code>static/resources/</code> · 表情 GIF 优先用语表情库管理</p>
+          <p class="cc-page-subtitle">浏览 / 上传 <code>static/resources/</code> · Demo 不在此仓库管理机器人表情</p>
         </div>
         <div class="cc-head-actions">
           <button type="button" class="cc-btn soft" id="btn-media-refresh">刷新</button>
@@ -468,7 +174,7 @@
           <p class="cc-page-subtitle">课型只读 · 课点含语音目标 speech_target · <span class="cc-tiny">课型管理（规划中）</span></p>
         </div>
         <div class="cc-head-actions">
-          <button type="button" class="cc-btn primary" id="btn-new-course">新建课程</button>
+          <button type="button" class="cc-btn primary" id="btn-new-course">补建缺失大类</button>
         </div>
       </div>
       <div id="course-list-panel">
@@ -483,13 +189,12 @@
         <div class="cc-toolbar">
           <button type="button" class="cc-btn soft" id="btn-course-back">← 返回列表</button>
           <button type="button" class="cc-btn primary" id="btn-course-save">保存课程</button>
-          <button type="button" class="cc-btn soft" id="btn-course-binding">行为绑定</button>
           <button type="button" class="cc-btn danger" id="btn-course-delete">删除课程</button>
         </div>
         <div class="cc-card" style="margin-bottom:14px;">
           <div class="cc-form-row">
-            <label>标题 <input id="cd-title" class="cc-inp" style="min-width:240px;" /></label>
-            <span>课型：<b id="cd-type"></b>（只读）</span>
+            <label>大类名称 <input id="cd-title" class="cc-inp" style="min-width:240px;" disabled /></label>
+            <span>课型：<b id="cd-type"></b>（只读且唯一）</span>
           </div>
           <p class="cc-tiny" style="margin:0 0 8px;">提问、提示和表扬统一使用实时 TTS，请到「实时话术」按课程大类调配。</p>
           <a class="cc-btn soft small" href="?view=phrases">配置实时话术</a>
@@ -507,13 +212,13 @@
 
     <!-- 课程预设 -->
     <section class="cc-page" id="page-presets" data-page="presets" hidden>
-      <div class="cc-page-head"><div><div class="cc-breadcrumb">交互内容 / 课程预设</div><h1 class="cc-page-title">教师端课程预设</h1><p class="cc-page-subtitle">维护常用课程组合与顺序；教师选择预设时会选中课程当前的全部课点。</p></div><div class="cc-head-actions"><button type="button" class="cc-btn primary" id="btn-new-course-preset">+ 新增预设</button></div></div>
-      <div class="cc-notice info">预设只保存课程 ID 与顺序，不复制课点。课程库增加或调整课点后，教师端会自动使用最新内容。</div>
+      <div class="cc-page-head"><div><div class="cc-breadcrumb">交互内容 / 课程预设</div><h1 class="cc-page-title">教师端课程预设</h1><p class="cc-page-subtitle">评估与干预分别维护默认方案；每个方案保存大类顺序和明确选中的课点。</p></div><div class="cc-head-actions"><button type="button" class="cc-btn primary" id="btn-new-course-preset">+ 新增预设</button></div></div>
+      <div class="cc-notice info">预设保存课点 ID，不复制课程内容。课程库以后新增课点不会自动混入已保存方案；删除已选课点时，该预设会标记为不可用并提示重新配置。</div>
       <div class="cc-preset-layout"><aside class="cc-card cc-preset-sidebar" aria-label="课程预设列表"><div class="cc-preset-sidebar-head"><h2>预设列表</h2><span class="cc-tiny" id="course-preset-count">0 个</span></div><div class="cc-preset-list" id="course-preset-list"></div></aside>
-        <div class="cc-card cc-preset-editor" id="course-preset-editor"><div class="cc-preset-empty" id="course-preset-empty"><strong>选择一个预设开始编辑</strong><span>也可以点击“新增预设”创建新的课程组合。</span></div><div id="course-preset-form" hidden><div class="cc-preset-editor-head"><div><div class="cc-tiny">预设详情</div><h2 id="course-preset-editor-title">编辑预设</h2></div><label class="cc-preset-default"><input type="checkbox" id="course-preset-default" /> 设为评估默认</label></div>
-          <div class="cc-form-grid cc-preset-fields"><label><span class="cc-field-label">预设名称</span><input class="cc-inp" id="course-preset-name" maxlength="80" placeholder="例如：语言能力基础评估" /></label><label><span class="cc-field-label">说明</span><input class="cc-inp" id="course-preset-description" maxlength="240" placeholder="帮助教师辨认适用场景" /></label></div>
-          <div class="cc-preset-columns"><section><div class="cc-preset-section-head"><div><h3>已选课程与顺序</h3><p>教师端会按照这里的顺序进入课程。</p></div><span class="cc-badge primary" id="course-preset-selected-count">0 门</span></div><div class="cc-preset-selected" id="course-preset-selected"></div></section><section><div class="cc-preset-section-head"><div><h3>可添加课程</h3><p>从课程库加入，已选课程不会重复显示。</p></div></div><div class="cc-preset-catalog" id="course-preset-catalog"></div></section></div>
-          <div class="cc-preset-actions"><button type="button" class="cc-btn danger" id="btn-delete-course-preset">删除预设</button><span class="cc-tiny" id="course-preset-save-hint">至少选择一门包含课点的课程。</span><button type="button" class="cc-btn primary" id="btn-save-course-preset">保存预设</button></div>
+        <div class="cc-card cc-preset-editor" id="course-preset-editor"><div class="cc-preset-empty" id="course-preset-empty"><strong>选择一个预设开始编辑</strong><span>也可以点击“新增预设”创建新的课程组合。</span></div><div id="course-preset-form" hidden><div class="cc-preset-editor-head"><div><div class="cc-tiny">预设详情</div><h2 id="course-preset-editor-title">编辑预设</h2></div><label class="cc-preset-default"><input type="checkbox" id="course-preset-default" /> <span id="course-preset-default-label">设为评估默认</span></label></div>
+          <div class="cc-form-grid cc-preset-fields"><label><span class="cc-field-label">预设用途</span><select class="cc-inp" id="course-preset-mode"><option value="assessment">评估</option><option value="intervention">干预</option></select></label><label><span class="cc-field-label">预设名称</span><input class="cc-inp" id="course-preset-name" maxlength="80" placeholder="例如：Demo 基础评估" /></label><label class="cc-preset-description-field"><span class="cc-field-label">说明</span><input class="cc-inp" id="course-preset-description" maxlength="240" placeholder="帮助教师辨认适用场景" /></label></div>
+          <div class="cc-preset-columns"><section><div class="cc-preset-section-head"><div><h3>已选大类、课点与顺序</h3><p>勾选每个大类下要使用的具体课点；教师端严格按这里的选择加载。</p></div><span class="cc-badge primary" id="course-preset-selected-count">0 类 / 0 课点</span></div><div class="cc-preset-selected" id="course-preset-selected"></div></section><section><div class="cc-preset-section-head"><div><h3>可添加大类</h3><p>添加后必须在左侧勾选至少一个具体课点。</p></div></div><div class="cc-preset-catalog" id="course-preset-catalog"></div></section></div>
+          <div class="cc-preset-actions"><button type="button" class="cc-btn danger" id="btn-delete-course-preset">删除预设</button><span class="cc-tiny" id="course-preset-save-hint">至少选择一个大类，并为每个大类勾选具体课点。</span><button type="button" class="cc-btn primary" id="btn-save-course-preset">保存预设</button></div>
         </div></div>
       </div>
     </section>
@@ -589,7 +294,7 @@
             <input id="phase5-device-index" class="cc-inp" type="number" min="0" value="1" placeholder="系统设备序号" title="操作系统中的摄像头或麦克风设备序号" />
             <select id="phase5-device-kind" class="cc-inp"><option value="video">环境摄像头</option><option value="audio">环境麦克风</option></select>
             <select id="phase5-device-role" class="cc-inp"><option value="primary_environment">主环境轨（兼容文件名）</option><option value="environment_secondary">附加环境轨</option></select>
-            <select id="phase5-device-owner" class="cc-inp"><option value="server">连接在 Server（课前检查与实时监控）</option><option value="runtime">连接在 Robot Runtime（可多轨录制）</option></select>
+            <select id="phase5-device-owner" class="cc-inp"><option value="server">连接在 Demo Server（课前检查与实时监控）</option></select>
             <label><input id="phase5-device-required" type="checkbox" /> 缺失时禁止开课</label>
             <button type="button" class="cc-btn primary small" id="phase5-device-add">添加设备</button>
           </div>
@@ -620,21 +325,21 @@
       <div class="cc-grid cols-2" style="margin-top:10px;">
         <section class="cc-card">
           <div class="cc-card-title">批量素材导入</div>
-          <p class="cc-tiny">动作选择 JSON，表情选择 MP4，也可上传 ZIP；先校验，确认后才写入素材库。</p>
+          <p class="cc-tiny">Demo 已禁用机械动作和完整版表情批量导入。</p>
           <div class="cc-form-row">
-            <select id="phase5-asset-kind" class="cc-inp"><option value="motions">motions</option><option value="emotions">emotions</option></select>
+            <select id="phase5-asset-kind" class="cc-inp" disabled><option value="disabled">disabled</option></select>
             <input id="phase5-asset-files" type="file" class="cc-inp" multiple accept=".json,.mp4,.zip" />
-            <button type="button" class="cc-btn primary small" id="phase5-asset-stage">校验并预览</button>
+            <button type="button" class="cc-btn primary small" id="phase5-asset-stage" disabled>Demo 不支持</button>
           </div>
           <pre id="phase5-asset-result" class="cc-tiny" style="white-space:pre-wrap;max-height:220px;overflow:auto;">支持多选文件或 ZIP；提交前显示逐项结果。</pre>
           <button type="button" class="cc-btn soft small" id="phase5-asset-commit" hidden>提交已通过项</button>
         </section>
         <section class="cc-card">
           <div class="cc-card-title">交互规则诊断</div>
-          <p class="cc-tiny">用于检查“某课程的某个事件”最终会匹配哪条台词、动作和表情；不用于日常开课。</p>
+          <p class="cc-tiny">用于检查课程事件最终会匹配哪条台词或儿童屏内容；机械动作和完整版表情始终禁用。</p>
           <div class="cc-form-row">
             <input id="phase5-profile-course" class="cc-inp" placeholder="courseId" />
-            <input id="phase5-profile-event" class="cc-inp" value="question.naming" placeholder="eventKey" />
+            <input id="phase5-profile-event" class="cc-inp" value="question.mimic" placeholder="eventKey" />
             <input id="phase5-profile-scene" class="cc-inp" placeholder="sceneKey（可选）" />
             <button type="button" class="cc-btn primary small" id="phase5-profile-resolve">解析</button>
           </div>
@@ -652,7 +357,7 @@
           <div>
             <div class="cc-breadcrumb">配置中心 / 配置概览</div>
             <h1 class="cc-page-title">配置概览</h1>
-            <p class="cc-page-subtitle">运行时环境可改 · 分析器摘要 · 运维动作（预设/回滚/发布范围）</p>
+            <p class="cc-page-subtitle">浏览器语音参数 · 分析器摘要 · 运维动作（预设/回滚/发布范围）</p>
           </div>
           <div class="cc-head-actions">
             <a class="cc-btn soft" href="/server/config/camera">摄像头</a>
@@ -664,25 +369,16 @@
 
         <div class="cc-card" style="margin-bottom:14px;">
           <h3 class="cc-card-title">运行时环境</h3>
-          <p class="cc-tiny">默认 agent / robot_runtime。点击「应用」写入 <code>config/runtime_modes.yaml</code>，重启后仍生效。儿童媒体与摄像头页 prefer_browser_* 相关。</p>
+          <p class="cc-tiny">儿童媒体固定使用浏览器采集；机械动作、机器人 Runtime 和完整版表情由 Demo 能力配置固定禁用。语音设置写入 <code>config/runtime_modes.yaml</code>。</p>
           <div class="cc-form-grid" style="margin-top:10px;">
             <div class="cc-field">
               <label class="cc-field-label" for="ov-child-media">儿童媒体模式</label>
-              <select class="cc-inp" id="ov-child-media">
-                <option value="agent">agent（本机 Media Agent / 生产）</option>
-                <option value="browser">browser（浏览器采集 / 联调）</option>
+              <select class="cc-inp" id="ov-child-media" disabled>
+                <option value="browser">browser（Demo 浏览器采集）</option>
               </select>
-              <div class="cc-tiny">新会话起生效；已开 /child 请刷新。可改 <a href="/server/config/camera">摄像头采样</a> 偏好。</div>
+              <div class="cc-tiny">Demo 固定值；已开 /child 请刷新。可改 <a href="/server/config/camera">摄像头采样</a> 偏好。</div>
             </div>
-            <div class="cc-field">
-              <label class="cc-field-label" for="ov-robot-mode">机械臂控制模式</label>
-              <select class="cc-inp" id="ov-robot-mode">
-                <option value="robot_runtime">robot_runtime（跨机推荐）</option>
-                <option value="server_osc">server_osc（同机 OSC）</option>
-                <option value="child_agent">child_agent（网页转发）</option>
-              </select>
-              <div class="cc-tiny">立即影响后续控制路由。</div>
-            </div>
+            <input type="hidden" id="ov-robot-mode" value="disabled" />
             <div class="cc-field">
               <label class="cc-field-label" for="ov-wake-word">智能体唤醒词</label>
               <select class="cc-inp" id="ov-wake-word">
@@ -692,7 +388,7 @@
               <div class="cc-tiny">立即生效并持久化；关闭时不会因环境语音误唤醒或突然播放确认音。</div>
             </div>
             <div class="cc-field">
-              <label class="cc-field-label" for="ov-speech-rate">机器人语速：<strong id="ov-speech-rate-value">0.88×</strong></label>
+              <label class="cc-field-label" for="ov-speech-rate">课程与智能体语速：<strong id="ov-speech-rate-value">0.88×</strong></label>
               <input class="cc-inp" id="ov-speech-rate" type="range" min="0.5" max="2" step="0.05" value="0.88" />
               <div class="cc-tiny">从下一句话开始立即生效；课程提问、命名、拟声、智能体回复、吸引和夸奖统一使用。</div>
             </div>
@@ -817,7 +513,7 @@
           <div>
             <div class="cc-breadcrumb">配置中心 / 交互延迟诊断</div>
             <h1 class="cc-page-title">交互延迟诊断</h1>
-            <p class="cc-page-subtitle">只读观测教师指令 → Server → 表情 / 动作 / 下屏 / 语音，不改变播放时序。</p>
+            <p class="cc-page-subtitle">只读观测教师指令 → Server → 儿童屏 / 语音，不改变播放时序。</p>
           </div>
           <div class="cc-head-actions">
             <button type="button" class="cc-btn soft" id="latency-refresh">刷新数据</button>
@@ -847,7 +543,7 @@
         </div>
 
         <section class="cc-card" style="margin-top:14px;">
-          <h2 class="cc-card-title">四模态端到端观测</h2>
+          <h2 class="cc-card-title">Demo 输出端到端观测</h2>
           <p class="cc-tiny">数值从 Server 收到教师指令开始，到 Server 观察到终端真实启动回执；包含同步预留和回传网络。</p>
           <div class="latency-modality-grid" id="latency-modality-grid"></div>
         </section>
@@ -876,8 +572,8 @@
           <h2 class="cc-card-title">最近交互拆解</h2>
           <div class="latency-table-wrap">
             <table class="latency-table">
-              <thead><tr><th>时间/意图</th><th>网络 RTT</th><th>Server</th><th>同步预留</th><th>表情</th><th>动作</th><th>下屏</th><th>语音</th><th>判断</th></tr></thead>
-              <tbody id="latency-interaction-body"><tr><td colspan="9">等待加载…</td></tr></tbody>
+              <thead><tr><th>时间/意图</th><th>网络 RTT</th><th>Server</th><th>同步预留</th><th>儿童屏</th><th>语音</th><th>判断</th></tr></thead>
+              <tbody id="latency-interaction-body"><tr><td colspan="7">等待加载…</td></tr></tbody>
             </table>
           </div>
         </section>
@@ -929,17 +625,6 @@
     </div>
   </main>
 
-  <div id="motion-select-modal" class="modal" style="display:none;">
-    <div class="modal-content">
-      <div class="modal-header">选择动作</div>
-      <select id="motion-picker" class="modal-select"></select>
-      <div class="modal-buttons">
-        <button type="button" class="btn-modal secondary" onclick="closeMotionPicker()">取消</button>
-        <button type="button" class="btn-modal primary" onclick="confirmMotionPick()">确认</button>
-      </div>
-    </div>
-  </div>
-
   <div id="media-picker-modal" class="modal" style="display:none;">
     <div class="modal-content" style="width:min(920px,94vw);max-height:86vh;overflow:auto;">
       <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;">
@@ -961,18 +646,12 @@
 
   <script src="/static/js/config_center.js"></script>
   <script src="/static/js/config_sync.js"></script>
-  <script src="/static/js/config_content_expressions.js"></script>
   <script src="/static/js/config_content_animations.js?v=20260823-module-guard-v1"></script>
-  <script src="/static/js/config_content_motions.js"></script>
   <script src="/static/js/config_content_media.js"></script>
   <script src="/static/js/config_content_courses.js"></script>
   <script src="/static/js/config_content_phrases.js"></script>
   <script src="/static/js/config_content_workbench.js"></script>
   <script src="/static/js/config_algo.js"></script>
-  <script src="/static/robot/js/robot_mapping.js?v=20260813-three-layer-behavior"></script>
-  <script src="/static/robot/js/robot_emotion_mapping.js?v=20260813-three-layer-behavior"></script>
-  <script src="/static/js/config_behavior_sequence.js"></script>
-  <script src="/static/js/config_dialogue_expressions.js?v=20260819-dialogue-length-v1"></script>
   <script src="/static/js/config_phase5.js"></script>
   <script src="/static/js/config_latency.js"></script>
 </body>

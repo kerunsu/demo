@@ -272,6 +272,9 @@
       transform: translate3d(var(--question-focus-x, 0), var(--question-focus-y, 0), 0) scale(1.58);
       box-shadow: 0 28px 70px rgba(28, 73, 115, 0.28);
     }
+    body.question-input-locked.question-focus-entering .target-frame {
+      animation: pairing-question-enter 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
     body.question-input-locked .options-grid {
       opacity: 0;
       transform: scale(0.98);
@@ -285,8 +288,22 @@
       transition-delay: 220ms;
     }
 
+    @keyframes pairing-question-enter {
+      from {
+        opacity: 0.2;
+        transform: translate3d(var(--question-entry-x, 0), var(--question-focus-y, 0), 0) scale(1.58);
+      }
+      to {
+        opacity: 1;
+        transform: translate3d(var(--question-focus-x, 0), var(--question-focus-y, 0), 0) scale(1.58);
+      }
+    }
+
     @media (prefers-reduced-motion: reduce) {
-      .target-frame { transform: none !important; transition: none !important; }
+      .target-frame { transition: none !important; animation: none !important; }
+      body.question-input-locked .target-frame {
+        transform: translate3d(var(--question-focus-x, 0), var(--question-focus-y, 0), 0) scale(1.58) !important;
+      }
       .options-grid {
         transform: none !important;
         transition: opacity 160ms ease !important;
@@ -402,15 +419,6 @@
       font-weight: 700;
     }
 
-    .result-content { text-align: center; display: none; }
-    .result-content.show { display: block; animation: fadeIn 0.5s ease; }
-    .result-emoji { font-size: 6em; margin-bottom: 20px; }
-    .result-text {
-      font-size: 2em;
-      color: var(--primary-color);
-      font-weight: 700;
-    }
-
     #technical-panel { display: none !important; }
 
     @media (max-width: 780px) {
@@ -451,11 +459,6 @@
       <div class="waiting-text">准备开始...</div>
     </div>
     
-    <!-- 结束内容 -->
-    <div id="resultContent" class="result-content">
-      <div class="result-emoji">🎉</div>
-      <div class="result-text">太棒了！</div>
-    </div>
   </div>
 
   <!-- 主游戏界面 -->
@@ -501,7 +504,7 @@
     <div id="gameArea"></div>
   </div>
 
-  <script src="/static/js/interactive_question_state.js?v=20260823-focus-v2"></script>
+  <script src="/static/js/interactive_question_state.js?v=20260826-direction-v1"></script>
   <script>
     // ==================== 粒子特效系统 ====================
     const canvas = document.getElementById('confetti-canvas');
@@ -617,6 +620,54 @@
     // ==================== 调试日志 ====================
     function debugLog(message) {
       console.log(`[MatchingGame] ${message}`);
+    }
+
+    function imageRetryUrl(src) {
+      const url = new URL(src, window.location.href);
+      url.searchParams.set('assetRetry', String(Date.now()));
+      return url.origin === window.location.origin
+        ? `${url.pathname}${url.search}${url.hash}`
+        : url.href;
+    }
+
+    function waitForImageAsset(src, timeoutMs = 8000) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        let settled = false;
+        const timer = window.setTimeout(() => finish(new Error(`image_timeout:${src}`)), timeoutMs);
+        const finish = (error) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          image.onload = null;
+          image.onerror = null;
+          error ? reject(error) : resolve(src);
+        };
+        image.decoding = 'async';
+        image.onload = () => {
+          if (image.naturalWidth > 0 && image.naturalHeight > 0) finish();
+          else finish(new Error(`image_empty:${src}`));
+        };
+        image.onerror = () => finish(new Error(`image_failed:${src}`));
+        image.src = src;
+        if (image.complete) {
+          Promise.resolve().then(() => image.naturalWidth > 0
+            ? finish()
+            : finish(new Error(`image_empty:${src}`)));
+        }
+      });
+    }
+
+    async function verifyImageAsset(src) {
+      try {
+        await waitForImageAsset(src);
+        return src;
+      } catch (firstError) {
+        const retrySrc = imageRetryUrl(src);
+        debugLog(`图片首次加载失败，重新请求: ${src}`);
+        await waitForImageAsset(retrySrc);
+        return retrySrc;
+      }
     }
 
     // 对齐 DemoRobot MATCHING_IMAGE_SEMANTICS / config/interactive_image_semantics.yaml
@@ -860,6 +911,7 @@
           sessionId,
           timeoutMs: 8000,
           focusElement: '#targetFrame',
+          focusScale: 1.58,
           onUnlock: () => {
             if (this.questionStartAt == null) this.questionStartAt = Date.now();
           },
@@ -882,7 +934,8 @@
         this.loadingImagesPromise = (async () => {
           try {
             debugLog('正在加载配对图片...');
-            const response = await fetch('/api/getMatchingImages', { cache: 'default' });
+            const response = await fetch('/api/getMatchingImages', { cache: 'no-store' });
+            if (!response.ok) throw new Error(`catalog_http_${response.status}`);
             const data = await response.json();
 
             if (data.error) {
@@ -890,7 +943,7 @@
               return false;
             }
 
-            this.gameImages = (data.items && data.items.length
+            const catalogItems = (data.items && data.items.length
               ? data.items
               : (data.images || []).map((src) => ({ src }))
             ).map((item, index) => {
@@ -905,16 +958,19 @@
               };
             });
 
-            this.gameImages.forEach((item) => {
-              if (!item || !item.src) return;
-              const image = new Image();
-              image.decoding = 'async';
-              image.src = item.src;
-              image.decode?.().catch(() => {});
-            });
-            this.imagesLoaded = true;
+            const verifiedItems = await Promise.all(catalogItems.map(async (item) => {
+              if (!item || !item.src) return null;
+              try {
+                return { ...item, src: await verifyImageAsset(item.src) };
+              } catch (error) {
+                debugLog(`跳过不可用图片 ${item.src}: ${error.message}`);
+                return null;
+              }
+            }));
+            this.gameImages = verifiedItems.filter(Boolean);
+            this.imagesLoaded = this.gameImages.length >= 2;
             debugLog(`加载成功: ${this.gameImages.length} 个物品类别`);
-            return true;
+            return this.imagesLoaded;
           } catch (error) {
             debugLog(`加载图片异常: ${error.message}`);
             return false;
@@ -1204,7 +1260,10 @@
           targetImg.style.opacity = '1';
         }, 50);
         
-        this.questionGate.lock(this.buildPageContext().questionId);
+        const pageContext = this.buildPageContext();
+        this.questionGate.lock(pageContext.questionId, {
+          presentationDirection: pageContext.presentationDirection,
+        });
         this.renderOptionCards();
 
         // 题目先聚焦展示；提问语音结束后才显示选项并开始反应计时。
@@ -1274,6 +1333,7 @@
           courseType: 'pairing',
           questionId: pageContext.questionId,
           questionIndex: pageContext.questionIndex,
+          presentationDirection: pageContext.presentationDirection,
           askSeq,
           pageContext,
           prompt: pageContext.prompt,
@@ -1332,6 +1392,8 @@
           optionsLeftToRight: options.map((o) => o.label),
           wrongAttempts: this.wrongAttemptsThisQuestion || 0,
           questionIndex: this.currentQuestion,
+          presentationDirection:
+            window.InteractiveQuestionState.presentationDirectionForQuestion(this.currentQuestion),
           totalQuestions: this.maxQuestions,
           // Per-item id so server hard-ask identity never collapses across items
           questionId: `${questionId || courseId || 'pairing'}_q${this.currentQuestion}`,
@@ -1439,13 +1501,14 @@
           const rect = cardElement.getBoundingClientRect();
           createExplosion(rect.left + rect.width / 2, rect.top + rect.height / 2, 3);
 
+          const courseComplete = this.currentQuestion >= this.maxQuestions;
           const token = (this._advanceToken = (this._advanceToken || 0) + 1);
           const waitPackage = this.waitForFeedbackPackage('praise', {
             minMs: 2800,
             maxMs: 20000,
             waitAnimation: true,
           });
-          this.emitStatusUpdate(!this.hasAnsweredWrong, true, true);
+          this.emitStatusUpdate(!this.hasAnsweredWrong, true, true, courseComplete);
           waitPackage.then(() => {
             if (token !== this._advanceToken) return;
             this.nextQuestion();
@@ -1468,13 +1531,17 @@
           this.wrongAttemptsThisQuestion = (this.wrongAttemptsThisQuestion || 0) + 1;
           this.publishPageContext();
           cardElement.classList.add('wrong');
+          const courseComplete =
+            this.operationMode === window.InteractiveQuestionState.MODE_ASSESSMENT &&
+            this.currentQuestion >= this.maxQuestions;
           const token = (this._advanceToken = (this._advanceToken || 0) + 1);
-          const waitSpeech = this.waitForFeedbackPackage('encourage', {
+          const waitSpeech = this.waitForFeedbackPackage(
+            courseComplete ? 'praise' : 'encourage', {
             minMs: 900,
             maxMs: 20000,
-            waitAnimation: false,
+            waitAnimation: courseComplete,
           });
-          this.emitStatusUpdate(false, false, false);
+          this.emitStatusUpdate(false, false, false, courseComplete);
           waitSpeech.then(() => {
             if (token !== this._advanceToken) return;
             if (this.operationMode === window.InteractiveQuestionState.MODE_ASSESSMENT) {
@@ -1509,21 +1576,11 @@
         
         debugLog(`游戏结束，正确率: ${accuracy}%`);
         
-        // 显示结束界面
+        // 整课完成沿用父页的完整表扬画面，不再用 iframe 结果页覆盖。
         const overlay = document.getElementById('gameOverlay');
         const waitingContent = document.getElementById('waitingContent');
-        const resultContent = document.getElementById('resultContent');
-        
-        waitingContent.style.display = 'none';
-        resultContent.classList.add('show');
-        overlay.classList.remove('hidden');
-        
-        // 满屏撒花
-        createExplosion(window.innerWidth / 2, window.innerHeight / 2);
-        setTimeout(() => {
-          createExplosion(window.innerWidth / 3, window.innerHeight / 2);
-          createExplosion(window.innerWidth * 2 / 3, window.innerHeight / 2);
-        }, 200);
+        if (waitingContent) waitingContent.style.display = 'none';
+        if (overlay) overlay.classList.add('hidden');
         
         // 发送游戏结束事件
         this.emitGameEnd(accuracy);
@@ -1534,7 +1591,12 @@
       
       // ==================== 事件发送 ====================
       
-      emitStatusUpdate(isCorrect, triggerPraise = false, selectedCorrect = isCorrect) {
+      emitStatusUpdate(
+        isCorrect,
+        triggerPraise = false,
+        selectedCorrect = isCorrect,
+        courseComplete = false,
+      ) {
         if (!socket || !socket.connected) return;
         const answered = this.currentQuestion;
         const accuracy = answered > 0
@@ -1563,7 +1625,8 @@
           lastResponseMs: this.responseTimesMs.length
             ? this.responseTimesMs[this.responseTimesMs.length - 1]
             : null,
-          isFinished: false,
+          isFinished: !!courseComplete,
+          courseComplete: !!courseComplete,
           consecutiveCorrect: this.consecutiveCorrect,
           isSimplifiedMode: this.isSimplifiedMode,
           pageContext: this.buildPageContext(),

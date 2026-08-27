@@ -7,58 +7,13 @@ import pytest
 import yaml
 
 
-def _box(kind: bytes, payload: bytes) -> bytes:
-    return (8 + len(payload)).to_bytes(4, "big") + kind + payload
-
-
-def _minimal_mp4(duration_ms: int = 2500) -> bytes:
-    ftyp = _box(b"ftyp", b"isom\x00\x00\x02\x00isommp41")
-    mvhd_payload = (
-        b"\x00\x00\x00\x00"  # version + flags
-        + (0).to_bytes(4, "big")
-        + (0).to_bytes(4, "big")
-        + (1000).to_bytes(4, "big")
-        + int(duration_ms).to_bytes(4, "big")
-    )
-    return ftyp + _box(b"moov", _box(b"mvhd", mvhd_payload))
-
-
-def test_phase5_new_emotions_are_mp4_and_legacy_gif_remains_readable(tmp_path, monkeypatch):
-    from app.robot import emotion_assets
-
-    static_root = tmp_path / "static"
-    emotion_root = static_root / "resources" / "Emotions"
-    emotion_root.mkdir(parents=True)
-    (emotion_root / "legacy.gif").write_bytes(b"GIF89a")
-    monkeypatch.setattr(emotion_assets.Config, "STATIC_DIR", str(static_root))
-    monkeypatch.setattr(emotion_assets, "EMOTIONS_META_FILE", str(tmp_path / "emotions_meta.json"))
-
-    name = emotion_assets.save_uploaded_emotion("greeting.mp4", _minimal_mp4(2500))
-    assert name == "greeting.mp4"
-    assert emotion_assets.get_expression_duration_ms(name) == 2500
-    payload = emotion_assets.get_emotions_payload()
-    by_name = {item["name"]: item for item in payload["items"]}
-    assert by_name["greeting.mp4"]["format"] == "mp4"
-    assert by_name["greeting.mp4"]["deprecated"] is False
-    assert by_name["legacy.gif"]["deprecated"] is True
-    with pytest.raises(ValueError, match="仅允许 .mp4"):
-        emotion_assets.save_uploaded_emotion("new.gif", b"GIF89a")
-
-
-def test_phase5_batch_emotion_import_accepts_mp4_and_rejects_new_gif(tmp_path):
-    from app.robot.batch_asset_import import BatchAssetImporter
-
-    importer = BatchAssetImporter(asset_index_path=str(tmp_path / "asset-index.json"))
-    stage = importer.stage(kind="emotions", items=[
-        {"filename": "hello.mp4", "content": _minimal_mp4(), "mimeType": "video/mp4"},
-        {"filename": "legacy-new.gif", "content": b"GIF89a", "mimeType": "image/gif"},
-    ])
-    by_name = {item["filename"]: item for item in stage["items"]}
-    assert by_name["hello.mp4"]["status"] == "ready"
-    assert by_name["hello.mp4"]["sourceFormat"] == "mp4"
-    assert by_name["legacy-new.gif"]["status"] == "failed"
-    assert "emotion_asset_must_be_mp4" in by_name["legacy-new.gif"]["error"]
-
+def test_phase5_demo_does_not_publish_expression_asset_controls():
+    root = Path(__file__).resolve().parents[1]
+    assert not (root / "doll/data/emotions_meta.json").exists()
+    emotion_dir = root / "static/resources/Emotions"
+    assert not emotion_dir.exists() or not any(emotion_dir.iterdir())
+    assert not (root / "static/js/config_content_expressions.js").exists()
+    assert not (root / "static/js/config_dialogue_expressions.js").exists()
 
 def test_phase5_session_catalog_groups_files_by_child(tmp_path, monkeypatch):
     from app.storage import session_catalog
@@ -128,7 +83,7 @@ def test_phase5_session_catalog_does_not_report_stale_recording_as_live(tmp_path
     assert "stale_recording_metadata" in session["degradationReasons"]
 
 
-def test_phase5_device_check_reports_runtime_offline_without_false_success(monkeypatch):
+def test_phase5_device_check_requires_browser_permission_without_runtime(monkeypatch):
     from flask import Flask
     from app.routes import control_overview
 
@@ -138,7 +93,6 @@ def test_phase5_device_check_reports_runtime_offline_without_false_success(monke
             return []
 
     monkeypatch.setattr(control_overview, "get_device_registry", lambda: EmptyRegistry())
-    monkeypatch.setattr(control_overview, "get_runtime_status", lambda: {"primary": None})
     app = Flask(__name__)
     app.register_blueprint(control_overview.control_overview_bp)
     response = app.test_client().post("/api/v2/control/devices/check", json={})
@@ -149,7 +103,8 @@ def test_phase5_device_check_reports_runtime_offline_without_false_success(monke
     assert {item["deviceId"] for item in body["checks"]} == {
         "default.child.camera", "default.child.microphone"
     }
-    assert all(item["error"] == "robot_runtime_offline" for item in body["checks"])
+    assert body["error"] == "browser_permission_required"
+    assert all(item["error"] == "browser_permission_required" for item in body["checks"])
 
 
 def test_phase5_control_overview_and_local_reveal_are_additive(monkeypatch, tmp_path):
@@ -165,9 +120,6 @@ def test_phase5_control_overview_and_local_reveal_are_additive(monkeypatch, tmp_
     folder.mkdir()
     opened = []
     monkeypatch.setattr(control_overview, "get_device_registry", lambda: EmptyRegistry())
-    monkeypatch.setattr(control_overview, "get_runtime_status", lambda: {
-        "primary": None, "onlineCount": 0, "runtimes": [], "count": 0
-    })
     monkeypatch.setattr(control_overview, "build_session_catalog", lambda limit=200: {
         "storage": {"sessionCount": 1, "totalBytes": 12}, "sessions": [], "children": []
     })
@@ -185,27 +137,12 @@ def test_phase5_control_overview_and_local_reveal_are_additive(monkeypatch, tmp_
     assert opened == [str(folder)]
 
 
-def test_phase5_emotion_page_uses_native_single_play_mp4_contract():
+def test_phase5_demo_has_no_full_version_expression_page_or_assets():
     root = Path(__file__).resolve().parents[1]
-    template = (root / "templates/robot/emotion.html").read_text(encoding="utf-8")
-    script = (root / "static/robot/js/emotion_display.js").read_text(encoding="utf-8")
-    assert 'id="emotion-idle-video"' in template
-    assert "emotionVideo.loop = false" in script
-    assert "emotionVideo.addEventListener('ended'" in script
-    assert "playDefaultEmotion();" in script
-    assert "function nextVideoBuffer()" in script
-    assert "requestVideoFrameCallback" in script
-    assert "commitMediaTransition(" in script
-    assert "activeMediaElement !== emotionVideo" in script
-    assert "activeMediaElement !== idleVideo" in script
-    assert "incoming.style.opacity = '0'" in script
-    assert "outgoing.style.opacity = '0'" in script
-    queued = script[
-        script.index("if (isPlayingNonDefault) {") :
-        script.index("pendingEmotionEvents.push(eventData)")
-    ]
-    assert "preloadVideoAsset(emotionName)" in queued
-    assert "stageEmotionReady(eventData, emotionName)" in queued
+    assert not (root / "templates/robot/emotion.html").exists()
+    assert not (root / "static/robot/js/emotion_display.js").exists()
+    emotion_dir = root / "static/resources/Emotions"
+    assert not emotion_dir.exists() or not any(emotion_dir.iterdir())
 
 
 def test_phase5_control_page_explains_device_and_recording_workflow():
@@ -295,7 +232,7 @@ def test_phase5_dynamic_track_archive_upload_updates_manifest_atomically(tmp_pat
     session_dir = tmp_path / "小明-6-20260807-1"
     session_dir.mkdir()
     (session_dir / "session_meta.json").write_text(json.dumps({"tracks": []}), encoding="utf-8")
-    monkeypatch.setattr(media_upload.Config, "CHILD_MEDIA_AGENT_KEY", "")
+    monkeypatch.setattr(media_upload.Config, "MEDIA_UPLOAD_SHARED_KEY", "")
     monkeypatch.setattr(media_upload.Config, "get_recording_path", lambda session_id: session_dir)
     monkeypatch.setattr(media_upload.Config, "get_video_file_path", lambda session_id: session_dir / "video.avi")
     monkeypatch.setattr(media_upload.Config, "get_audio_file_path", lambda session_id: session_dir / "audio.wav")

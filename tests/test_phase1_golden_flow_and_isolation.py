@@ -612,26 +612,12 @@ def test_phase1_teacher_rating_ack_is_requester_only_and_not_globally_broadcast(
     assert "teacher_rating_ack" not in _event_names(runtime, teacher_two)
 
 
-def test_phase1_busy_behavior_rejects_motion_without_visual_command(
-    monkeypatch, phase1_socket_runtime
-):
+def test_phase1_demo_does_not_register_motion_socket_command(phase1_socket_runtime):
     runtime = phase1_socket_runtime
-    from app.sockets import robot_events
-
-    class BusyRobot:
-        def play_motion(self, *_args, **_kwargs):
-            return False
-
-    monkeypatch.setattr(robot_events, "get_robot_service", lambda: BusyRobot())
     client = runtime["socketio"].test_client(runtime["app"], flask_test_client=runtime["app"].test_client())
     client.get_received()
     client.emit("robot_play_motion", {"motionName": "wave"})
-    events = _events(runtime, client)
-    assert any(
-        item["name"] == "robot_playback_status"
-        and item["args"][0] == {"isPlaying": False, "error": "Failed to play"}
-        for item in events
-    )
+    assert "robot_playback_status" not in _event_names(runtime, client)
     assert "robot_motion_command" not in _event_names(runtime, client)
 
 

@@ -1,16 +1,63 @@
 {
-  "defaultPresetId": "quick-core",
+  "defaultPresetIds": {
+    "assessment": "demo-assessment",
+    "intervention": "demo-intervention"
+  },
   "presets": [
     {
-      "courseIds": [
-        1,
-        9,
-        10
+      "courseSelections": [
+        {
+          "courseType": "mimic",
+          "itemIds": [
+            1,
+            2
+          ]
+        },
+        {
+          "courseType": "pairing",
+          "itemIds": [
+            79
+          ]
+        },
+        {
+          "courseType": "ordering",
+          "itemIds": [
+            80
+          ]
+        }
       ],
-      "description": "Demo 机使用模仿、配对和排序课程",
-      "id": "quick-core",
-      "name": "模仿、配对与排序课程方案"
+      "description": "仅评估模仿识别、配对和排序的指定课点",
+      "id": "demo-assessment",
+      "mode": "assessment",
+      "name": "Demo 评估方案"
+    },
+    {
+      "courseSelections": [
+        {
+          "courseType": "mimic",
+          "itemIds": [
+            1,
+            2
+          ]
+        },
+        {
+          "courseType": "pairing",
+          "itemIds": [
+            79
+          ]
+        },
+        {
+          "courseType": "ordering",
+          "itemIds": [
+            80
+          ]
+        }
+      ],
+      "description": "仅训练模仿识别、配对和排序的指定课点",
+      "id": "demo-intervention",
+      "mode": "intervention",
+      "name": "Demo 干预方案"
     }
   ],
-  "schemaVersion": 1
+  "schemaVersion": 3
 }

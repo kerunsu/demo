@@ -89,7 +89,7 @@ if (-not $LanHost) {
 
 $origin = "http://${LanHost}:${Port}"
 $url = "$origin/child"
-$userDataDir = Join-Path $env:TEMP "eiart-child-lan"
+$userDataDir = Join-Path $env:TEMP "eiart-child-kiosk"
 New-Item -ItemType Directory -Force -Path $userDataDir | Out-Null
 
 $browserCandidates = @(
@@ -115,7 +115,15 @@ if (-not $browser) {
 # Do not use $args — automatic/read-only in PowerShell 7+.
 $browserArgs = @(
     "--new-window",
-    "--start-fullscreen",
+    # Kiosk removes tabs/address bar and is the browser-level boundary that
+    # page JavaScript cannot provide on a touch screen.
+    "--kiosk",
+    "--edge-kiosk-type=fullscreen",
+    "--disable-pinch",
+    "--overscroll-history-navigation=0",
+    "--disable-features=OverscrollHistoryNavigation,TouchpadOverscrollHistoryNavigation,TouchscreenOverscrollHistoryNavigation",
+    "--disable-session-crashed-bubble",
+    "--noerrdialogs",
     "--unsafely-treat-insecure-origin-as-secure=$origin",
     "--user-data-dir=$userDataDir",
     "--no-first-run",
@@ -123,7 +131,7 @@ $browserArgs = @(
     $url
 )
 
-Write-Host "Launching: $browser"
+Write-Host "Launching child touch kiosk: $browser"
 Write-Host "  origin flag: $origin"
 Write-Host "  user-data:   $userDataDir"
 Write-Host "  open:        $url"

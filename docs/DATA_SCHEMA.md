@@ -1,14 +1,20 @@
 # Data schema and session dataset
 
+> Demo 数据事实：`config/demo_course_scope.json` 固定三课型；`config/demo_deployment.json` 固定禁用机械动作、Robot Runtime 和完整版表情。全新数据库仅播种模仿、配对和排序；旧数据库原地升级并保留历史行，但活动目录、预设、分析投影和新报告不会暴露其他课型。
+
 ## Persistent stores
 
 - SQLite `database/app.db`: teachers, students, course types, courses/items,
   training sessions/details and report records. Existing databases are read
   and upgraded in place; reset is never a normal deployment operation.
 - Read-only content catalog: CSV/YAML/JSON/static media and audio manifests.
-- Teacher course presets: versioned `config/course_presets.json`, containing
-  one `defaultPresetId` and ordered `courseIds` per preset. It stores no copied
-  course or item payload and is replaced atomically.
+- Teacher course presets: `config/course_presets.json` schema v3, containing
+  separate assessment/intervention defaults and ordered
+  `courseSelections[{courseType,itemIds}]`. It stores reviewed item identities,
+  validates them against the canonical Demo catalog and is replaced atomically.
+- Demo deployment capabilities: `config/demo_deployment.json` schema v1.
+  Invalid or missing data fails closed; checked-in configuration cannot enable
+  `robotMotion`, `robotExpression` or `robotRuntime`.
 - Demo course scope: `config/demo_course_scope.json` schema v1. The current
   deployment enables `mimic`, `pairing` and `ordering`; database rows and assets for
   disabled historical courses remain in place but are excluded from active
@@ -208,28 +214,17 @@ natural-dialogue stage summaries, data-isolation status, automatic findings
 and the static voice-strategy review. See
 `docs/INTERACTION_LATENCY.md` for formulas and clock-domain limits.
 
-## Robot asset display tuning
+## Demo 儿童动画映射
 
-`doll/data/motions.json` remains schema version 2. Optional
-`motionMeta.<motionName>.speedMultiplier` is a finite number in `0.25..4.0`;
-missing or invalid historical values read as `1.0`. The source frames are not
-rewritten. Runtime playback derives effective `time` and `moveMs` by dividing
-both fields by the multiplier, so Git diffs retain the original recording.
+`doll/data/course_map.json` 是儿童屏幕动画的兼容映射。发布数据只允许
+`animation` 文件名和 `sequence.audio.offsetMs`；不得写入 `motions`、
+`emotion` 或 `expression`。`static/resources/Animations/*.mp4` 是允许的
+儿童反馈资源，和分析数据中的 emotion 指标、完整版本机器人表情均无关。
 
-`doll/data/emotions_meta.json` schema version 2 contains `default`, `idlePool`,
-`styles` and `globalFilter`. `idlePool` is a non-empty ordered set of emotion
-filenames used for random, non-repeating-when-possible idle playback;
-`default` mirrors its first item for older clients. A `styles.<filename>` object has `speedMultiplier`
-(`0.25..4.0`, MP4 only), `scale` (`0.5..2.0`), `hueDeg` (`-180..180`),
-`brightness`/`saturation` (`0..2`) and `opacity` (`0..1`). Missing styles use
-identity values. `globalFilter` adds `enabled` and `contrast` (`0..2`) to the
-color/opacity fields. Rendering applies the per-emotion transform/filter to
-the media first, then the global filter on its parent layer. This layer exists
-only on the robot emotion page and cannot affect child-screen animations.
-
-Both metadata files use a same-directory temporary file, `fsync` and atomic
-replacement. Commit these JSON files together with assets so a Git pull or
-process restart restores the same effective appearance.
+`doll/data/motions.json`、`doll/data/emotions_meta.json`、`doll/Pose/` 和
+`static/resources/Emotions/` 不属于 Demo 数据 schema，不能进入发布包。
+动画重命名与映射更新必须在同一操作内完成，JSON 写入使用同目录临时
+文件、`fsync` 和原子替换。
 
 ## Server camera registry
 

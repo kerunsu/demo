@@ -20,11 +20,23 @@ _bank: Optional[Dict[str, Any]] = None
 _bank_mtime: Optional[float] = None
 _recent: Dict[str, List[str]] = {}
 
+_MIMIC_PICTURE_PROMPTS = [
+    "看一看屏幕上的动作图片，请你照着做。",
+    "仔细看看图片里的手和身体，学着做一做。",
+    "请照着这张图片，把动作做出来。",
+    "看清图片上的动作，轮到你来做了。",
+]
+
 # 文件缺失时的内置兜底（与 dialogue_phrases.yaml 对齐）
 _BUILTIN_FALLBACK_BANK: Dict[str, Any] = {
     "attention": {"global": ["看看麦麦，我们继续吧。"]},
     "reward": {"global": ["你回来得真快，真棒！"]},
-    "question": {"default": ["看一看屏幕。"]},
+    "question": {
+        "mimic": list(_MIMIC_PICTURE_PROMPTS),
+        "imitation": list(_MIMIC_PICTURE_PROMPTS),
+        "pose": list(_MIMIC_PICTURE_PROMPTS),
+        "default": ["看一看屏幕。"],
+    },
     "praise": {"default": ["真棒！"]},
     "encourage": {"default": ["没关系，再试一次。"]},
     "hint": {"default": ["再看一看。"]},

@@ -14,10 +14,8 @@ def _write_map(path):
         json.dumps(
             {
                 "defaults": {
-                    "idle": "空动作",
                     "praise": {
-                        "motions": ["03-表扬"],
-                        "emotion": "v2_happy.gif",
+                        "animation": "praise.mp4",
                         "sequence": {"audio": {"offsetMs": 320}},
                     },
                 },
@@ -40,10 +38,13 @@ def test_mapping_save_is_valid_and_leaves_no_temporary_file(tmp_path):
         ["02-提问"],
         "v2_curious.gif",
         {"motionOffsetMs": 120, "audio": {"offsetMs": 450}},
+        "question.mp4",
     )
 
     saved = json.loads(map_file.read_text(encoding="utf-8"))
-    assert saved["defaults"]["question"]["motions"] == ["02-提问"]
+    assert "motions" not in saved["defaults"]["question"]
+    assert "emotion" not in saved["defaults"]["question"]
+    assert saved["defaults"]["question"]["animation"] == "question.mp4"
     assert saved["defaults"]["question"]["sequence"]["audio"]["offsetMs"] == 450
     assert list(tmp_path.glob(".course_map.*.tmp")) == []
 
@@ -54,10 +55,12 @@ def test_full_mapping_returns_snapshot_not_live_internal_state(tmp_path):
     resolver = MappingResolver(str(map_file))
 
     snapshot = resolver.get_full_mapping()
-    snapshot["defaults"]["praise"]["motions"].append("不应写回")
+    snapshot["defaults"]["praise"]["animation"] = "不应写回.mp4"
 
     resolved = resolver.find_mapping(None, 1, None, "praise")
-    assert resolved["motions"] == ["03-表扬"]
+    assert resolved["motions"] == []
+    assert resolved["emotion"] is None
+    assert resolved["animation"] == "praise.mp4"
     assert resolved["sequence"]["audio"]["offsetMs"] == 320
 
 

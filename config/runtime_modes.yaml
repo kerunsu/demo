@@ -1,4 +1,4 @@
-child_media_mode: agent
-robot_control_mode: robot_runtime
+child_media_mode: browser
+robot_control_mode: disabled
 dialogue_wake_word_enabled: true
 browser_speech_rate: 0.7

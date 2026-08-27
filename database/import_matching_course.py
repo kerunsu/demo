@@ -11,7 +11,7 @@ from database.models import db, Course, CourseItem, CourseType
 from flask import Flask
 
 def import_matching_course(force: bool = False):
-    """导入配对课程和课程项。force=True 时覆盖已有配对课（非交互）。"""
+    """幂等补齐配对大类和课点；force 不删除稳定 ID。"""
     
     # 创建临时 Flask 应用以使用数据库
     app = Flask(__name__)
@@ -34,45 +34,42 @@ def import_matching_course(force: bool = False):
         # 2. 检查是否已存在配对课程
         existing_course = Course.query.filter_by(course_type_id=pairing_type.id).first()
         if existing_course:
-            print(f"⚠️ 配对课程已存在: id={existing_course.id}, title={existing_course.title}")
-            if not force:
-                response = input("是否覆盖？(y/n): ").strip().lower()
-                if response != 'y':
-                    print("取消导入")
-                    return False
-            
-            # 删除现有课程（级联删除课程项）
-            db.session.delete(existing_course)
-            db.session.commit()
-            print("✓ 已删除现有配对课程")
+            print(f"✓ 使用已有配对大类: id={existing_course.id}")
+            existing_course.title = '配对'
+            existing_course.entry_file = 'resources/interactive/matching.html'
         
         # 3. 创建配对课程
-        course = Course(
+        course = existing_course or Course(
             course_type_id=pairing_type.id,
-            title='配对课程',
-            icon=None,  # 暂无图标
-            question_audio=None,  # 暂无问题音频
-            praise_audio=None,  # 暂无表扬音频
+            title='配对',
+            icon=None,
+            question_audio=None,
+            praise_audio=None,
             entry_file='resources/interactive/matching.html'
         )
-        db.session.add(course)
-        db.session.flush()  # 获取生成的 course.id
+        if existing_course is None:
+            db.session.add(course)
+            db.session.flush()
         
         print(f"✓ 创建配对课程: id={course.id}, title={course.title}")
         
         # 4. 创建课程项
-        course_item = CourseItem(
+        course_item = CourseItem.query.filter_by(
+            course_id=course.id,
+            media_file='resources/images/matching/',
+        ).first() or CourseItem.query.filter_by(
             course_id=course.id,
             name='相同物品视觉配对',
-            type='interactive',
-            media_file='resources/images/matching/',  # 文件夹路径
-            icon=None,  # 暂无图标
-            hint_audio=None
-        )
-        db.session.add(course_item)
+        ).first()
+        if course_item is None:
+            course_item = CourseItem(course_id=course.id, name='相同物品视觉配对', type='interactive')
+            db.session.add(course_item)
+        course_item.name = '相同物品视觉配对'
+        course_item.type = 'interactive'
+        course_item.media_file = 'resources/images/matching/'
         db.session.commit()
         
-        print(f"✓ 创建课程项: id={course_item.id}, name={course_item.name}")
+        print(f"✓ 已同步课程项: id={course_item.id}, name={course_item.name}")
         print(f"  - type: {course_item.type}")
         print(f"  - media_file: {course_item.media_file}")
         

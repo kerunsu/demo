@@ -1,15 +1,12 @@
 schema_version: 1
-custom:
-  social_greeting_intro:
-    social:
-    - 你好，我是迈迈，很高兴认识你
+custom: {}
 enabled:
   question:
     mimic:
-    - 学一学这个动作吧。
-  social_greeting_intro:
-    social:
-    - 你好，我是迈迈，很高兴认识你
-  social_farewell_bye:
-    social:
-    - 再见啦。
+    - 看一看屏幕上的动作图片，请你照着做。
+    - 仔细看看图片里的手和身体，学着做一做。
+    - 请照着这张图片，把动作做出来。
+    - 看清图片上的动作，轮到你来做了。
+  praise:
+    mimic:
+    - 动作做得真像，太棒了！

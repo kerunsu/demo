@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>实时监控 · Robot Training Console</title>
+  <title>实时监控 · E.I.Art Demo</title>
   <link rel="stylesheet" href="/static/css/config_center.css" />
-  <link rel="stylesheet" href="/static/css/server.css">
+  <link rel="stylesheet" href="/static/css/server.css?v=20260826-dialogue-console-v1">
   <script src="/static/js/vendor/socket.io.min.js"></script>
 </head>
 <body class="cc-body mon-shell">
   <header class="cc-topbar">
     <div class="cc-brand">
-      <div class="cc-brand-mark">R</div>
+      <div class="cc-brand-mark">D</div>
       <div class="cc-brand-text">
-        <strong>Robot Training Console</strong>
+        <strong>E.I.Art Demo Console</strong>
         <span>实时监控</span>
       </div>
     </div>
@@ -23,7 +23,6 @@
     </nav>
     <div class="cc-top-actions">
       <a class="cc-pill" href="/child" target="_blank" rel="noopener">打开 /child</a>
-      <a class="cc-pill" href="/robot" target="_blank" rel="noopener">打开 /robot</a>
       <a class="cc-pill primary" href="/server/config/overview">配置中心</a>
     </div>
   </header>
@@ -44,9 +43,7 @@
           <span id="mon-badge-refresh" class="mon-badge">刷新 · —</span>
           <span id="mon-badge-mode" class="mon-badge">media · —</span>
           <span id="mon-badge-analyzer" class="mon-badge">分析器 · —</span>
-          <span id="mon-badge-agent" class="mon-badge">Agent · —</span>
           <span id="mon-badge-preview" class="mon-badge">预览 · —</span>
-          <button type="button" class="cc-btn soft" id="mon-btn-pause" title="立即停止当前机器人动作与行为">停止机器人输出</button>
           <button type="button" class="cc-btn soft" id="mon-btn-mute" title="立即停止当前会话声音">停止当前声音</button>
           <span id="mon-control-feedback" class="mon-badge">控制 · 就绪</span>
         </div>
@@ -62,12 +59,12 @@
           <div class="mon-live-block mon-remote-block">
             <div class="mon-live-subhead">
               <strong>远端注意力</strong>
-              <span class="mon-muted">机器人端 agent 上行</span>
+              <span class="mon-muted">儿童端浏览器上行</span>
             </div>
             <div class="mon-preview" id="mon-preview">
               <div class="mon-preview-placeholder" id="mon-preview-placeholder">
                 <strong>预览未启用</strong>
-                <span>agent 生产路径无本地摄像头预览；勿将占位当作真实画面</span>
+                <span>等待儿童端浏览器上行预览帧</span>
               </div>
               <img id="mon-preview-img" class="mon-preview-img hidden" alt="远端注意力预览" />
               <span id="mon-preview-stale" class="mon-tag mon-preview-stale hidden">STALE</span>
@@ -109,7 +106,7 @@
               <div class="mon-screen-bar">服务端 <span id="mon-server-online" class="mon-tag">检查中</span></div>
               <div class="mon-screen-body">
                 <strong id="mon-server-summary">正在读取服务状态…</strong>
-                <div id="mon-server-detail" class="mon-child-sub">服务端负责连接教师端、儿童端和 Robot Runtime。</div>
+                <div id="mon-server-detail" class="mon-child-sub">服务端负责连接教师端、儿童端、采集分析与报告。</div>
               </div>
             </div>
             <div class="mon-screen-card" data-connection-card="teacher">
@@ -128,16 +125,6 @@
                 <div class="mon-child-title mon-course-inline" id="mon-course-title">—</div>
                 <div class="mon-child-sub" id="mon-course-sub">课点 / 题序 / 用时</div>
                 <div class="mon-dir" id="mon-human-dir">录像目录：—</div>
-              </div>
-            </div>
-            <div class="mon-screen-card">
-              <div class="mon-screen-bar">机器人动作 Runtime <span id="mon-robot-online" class="mon-tag">未知</span></div>
-              <div class="mon-screen-body">
-                <strong id="mon-runtime-summary">正在检查动作链路…</strong>
-                <div id="mon-runtime-detail" class="mon-child-sub">Runtime 负责把动作发送到机器人硬件。</div>
-                <div id="mon-robot-state">动画 / 播放：未知</div>
-                <div id="mon-robot-command" class="mon-muted">最近命令：—</div>
-                <div id="mon-robot-targets" class="mon-muted">执行目标：—</div>
               </div>
             </div>
           </div>
@@ -165,6 +152,35 @@
               <label>表达性语言观测</label>
               <p id="mon-voice-expressive">—</p>
             </div>
+          </div>
+        </section>
+
+        <section class="mon-panel mon-dialogue" id="mon-dialogue-panel">
+          <div class="mon-panel-head">
+            <span class="mon-panel-title"><i class="accent"></i>麦麦对话控制</span>
+            <div class="mon-dialogue-head-actions">
+              <span id="mon-dialogue-state" class="mon-tag">课程未开始</span>
+              <button type="button" class="cc-btn soft small" id="mon-dialogue-collapse" aria-expanded="true">收起</button>
+            </div>
+          </div>
+          <div class="mon-dialogue-body" id="mon-dialogue-body">
+            <div class="mon-dialogue-controls">
+              <button type="button" class="cc-btn soft small" id="mon-dialogue-unlock" disabled>启用儿童端声音</button>
+              <button type="button" class="cc-btn soft small" id="mon-dialogue-listen" disabled>开始自动聆听</button>
+              <button type="button" class="cc-btn primary small" id="mon-dialogue-wake" disabled>唤醒智能体</button>
+              <label class="mon-dialogue-voice">朗读音色
+                <select id="mon-dialogue-voice" disabled><option value="">等待儿童端上报</option></select>
+              </label>
+            </div>
+            <p class="mon-dialogue-hint">教师点击开始课程后儿童端会自动聆听；这里显示运行状态，也可在当前精确会话内手动控制和发送测试文本。</p>
+            <div id="mon-dialogue-log" class="mon-dialogue-log" aria-live="polite">
+              <div class="mon-dialogue-empty">课程开始后显示儿童与麦麦的对话。</div>
+            </div>
+            <div class="mon-dialogue-compose">
+              <input id="mon-dialogue-input" type="text" maxlength="2000" placeholder="输入文字（与儿童端原打字功能相同）" disabled />
+              <button type="button" class="cc-btn primary" id="mon-dialogue-send" disabled>发送</button>
+            </div>
+            <div id="mon-dialogue-feedback" class="mon-muted" role="status" aria-live="polite">等待课程开始</div>
           </div>
         </section>
 
@@ -229,6 +245,6 @@
   </div>
 
   <script src="/static/js/common.js"></script>
-  <script src="/static/js/server_monitor.js"></script>
+  <script src="/static/js/server_monitor.js?v=20260826-dialogue-console-v1"></script>
 </body>
 </html>

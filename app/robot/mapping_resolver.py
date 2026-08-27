@@ -42,13 +42,9 @@ def _normalize_sequence(data: Any) -> Dict[str, Any]:
     }
 
 
-def _default_emotion_name() -> str:
-    """单一真相源：emotions_meta.json（缺省时回退目录内现存素材）。"""
-    try:
-        from app.robot.emotion_assets import get_default_emotion
-        return get_default_emotion()
-    except Exception:
-        return 'v3_speak_excitedly_short.mp4'
+def _default_emotion_name() -> None:
+    """Demo 不发布完整版表情；兼容 DTO 中始终返回空值。"""
+    return None
 
 
 class MappingResolver:
@@ -285,7 +281,7 @@ class MappingResolver:
         if isinstance(data, list):
             # 旧格式：数组 → 转为对象（表情走库默认）
             return {
-                "motions": data,
+                "motions": [],
                 "emotion": _default_emotion_name(),
                 "animation": "",
                 "sequence": _normalize_sequence({}),
@@ -293,8 +289,8 @@ class MappingResolver:
         elif isinstance(data, dict):
             # 新格式：确保字段完整（勿原地污染 course_map）
             out = {
-                "motions": list(data.get("motions") or []),
-                "emotion": data.get("emotion") or _default_emotion_name(),
+                "motions": [],
+                "emotion": _default_emotion_name(),
                 "animation": str(data.get("animation") or "").strip(),
                 "sequence": _normalize_sequence(data.get("sequence")),
             }
@@ -342,8 +338,6 @@ class MappingResolver:
             if 'defaults' not in self._course_map:
                 self._course_map['defaults'] = {}
             action_data = {
-                'motions': motions or [],
-                'emotion': emotion or _default_emotion_name(),
                 'animation': str(animation or '').strip(),
                 'sequence': _normalize_sequence(sequence),
             }
@@ -368,8 +362,6 @@ class MappingResolver:
             if cid not in self._course_map['courses']:
                 self._course_map['courses'][cid] = {}
             action_data = {
-                'motions': motions or [],
-                'emotion': emotion or _default_emotion_name(),
                 'animation': str(animation or '').strip(),
                 'sequence': _normalize_sequence(sequence),
             }
@@ -404,8 +396,6 @@ class MappingResolver:
             items = course.setdefault('items', {})
             item = items.setdefault(iid, {})
             item[aux_type] = {
-                'motions': motions or [],
-                'emotion': emotion or _default_emotion_name(),
                 'animation': str(animation or '').strip(),
                 'sequence': _normalize_sequence(sequence),
             }
@@ -448,8 +438,6 @@ class MappingResolver:
             if cid not in self._course_map['students'][sid]:
                 self._course_map['students'][sid][cid] = {}
             action_data = {
-                'motions': motions or [],
-                'emotion': emotion or _default_emotion_name(),
                 'animation': str(animation or '').strip(),
                 'sequence': _normalize_sequence(sequence),
             }
@@ -501,8 +489,6 @@ class MappingResolver:
             if iid not in self._course_map['students'][sid][cid]['items']:
                 self._course_map['students'][sid][cid]['items'][iid] = {}
             action_data = {
-                'motions': motions or [],
-                'emotion': emotion or _default_emotion_name(),
                 'animation': str(animation or '').strip(),
                 'sequence': _normalize_sequence(sequence),
             }

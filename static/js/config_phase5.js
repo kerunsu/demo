@@ -43,8 +43,7 @@
     if (device.captureReady) return ['已连接', 'primary'];
     if (device.connectionStatus === 'connected_not_capture_enabled') return ['已连接，未接入多轨录制', 'gray'];
     if (device.connectionStatus === 'check_failed') return ['设备检查失败', 'gray'];
-    if (device.connectionStatus === 'runtime_online_unprobed') return ['Runtime 在线，待设备自检', 'gray'];
-    if (device.connectionStatus === 'runtime_offline') return ['Runtime 未连接', 'gray'];
+    if (device.connectionStatus === 'browser_unprobed') return ['等待儿童端浏览器授权', 'gray'];
     return ['尚未验证', 'gray'];
   }
 
@@ -279,8 +278,8 @@
       const result = await api.json('/api/v2/control/devices/check', 'POST', {});
       text('phase5-device-warning', result.allConnected
         ? '设备检查完成：所有已检查设备均取得首样本。'
-        : result.error === 'robot_runtime_upgrade_required'
-          ? '机器人端在线，但版本过旧或协议不兼容，请升级 Robot Runtime 后重试。'
+        : result.error === 'browser_permission_required'
+          ? '请在儿童端浏览器允许摄像头和麦克风；Server 无法代替浏览器授予权限。'
           : '设备检查完成：存在未连接或未取得首样本的设备，请查看状态。');
       await loadOverview();
       return result;

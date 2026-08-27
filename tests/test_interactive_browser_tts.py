@@ -84,32 +84,15 @@ def test_pick_phrase_pairing_praise_from_course_pool(monkeypatch):
 
 
 def test_selected_question_ask_pools():
-    """用户选定的提问话术池：命名/拟声/模仿/配对。"""
+    """Demo 部署会使用的提问话术池：模仿、配对、排序。"""
     bank = get_phrase_bank(force_reload=True)
     q = bank["question"]
 
-    naming = [
-        "你知道这是什么吗？",
-        "告诉麦麦，这是什么？",
-        "这个是什么呀？",
-        "你会叫它的名字吗？",
-        "这张图里是什么呀？",
-    ]
-    assert q["naming"] == naming
-    assert q["speech"] == naming
-
-    onomatopoeia = [
-        "{name}会怎么叫呀？",
-        "学一学{name}的叫声。",
-        "{name}的声音是怎样的？",
-    ]
-    assert q["onomatopoeia"] == onomatopoeia
-
     mimic = [
-        "看麦麦，做一样的动作。",
-        "跟着麦麦，学这个动作。",
-        "手臂和身体，跟麦麦一样。",
-        "学一学这个动作吧。",
+        "看一看屏幕上的动作图片，请你照着做。",
+        "仔细看看图片里的手和身体，学着做一做。",
+        "请照着这张图片，把动作做出来。",
+        "看清图片上的动作，轮到你来做了。",
     ]
     assert q["mimic"] == mimic
     assert q["imitation"] == mimic
@@ -128,9 +111,8 @@ def test_selected_question_ask_pools():
     assert q["matching"] == pairing
     assert all("上面" not in line for line in pairing)
 
-    # 抽取应落在池内；排序提问未改；社交走独立 intent 非 question
+    # Demo 的三个课型均只能从对应池抽取。
     for _ in range(15):
-        assert pick_phrase("question", "naming") in naming
         assert pick_phrase("question", "pairing") in pairing
         assert pick_phrase("question", "mimic") in mimic
     assert "social" not in q

@@ -70,7 +70,7 @@ matchers:
   pose:
     mode: null
     enabled: true
-    threshold: 0.72  # 动作关节加权匹配阈值（0-1）
+    threshold: 0.50  # 动作关节加权匹配阈值（0-1），与当前部署默认一致
     min_keypoint_visibility: 0.35
     action_sigma: 0.55
     allow_mirror: true  # 左右镜像动作也可判为正确

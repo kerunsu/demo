@@ -19,9 +19,7 @@
     badgeRefresh: document.getElementById("mon-badge-refresh"),
     badgeMode: document.getElementById("mon-badge-mode"),
     badgeAnalyzer: document.getElementById("mon-badge-analyzer"),
-    badgeAgent: document.getElementById("mon-badge-agent"),
     badgePreview: document.getElementById("mon-badge-preview"),
-    stopRobot: document.getElementById("mon-btn-pause"),
     stopAudio: document.getElementById("mon-btn-mute"),
     controlFeedback: document.getElementById("mon-control-feedback"),
     preview: document.getElementById("mon-preview"),
@@ -59,18 +57,24 @@
     teacherConnections: document.getElementById("mon-teacher-connections"),
     childSummary: document.getElementById("mon-child-summary"),
     childDetail: document.getElementById("mon-child-detail"),
-    runtimeSummary: document.getElementById("mon-runtime-summary"),
-    runtimeDetail: document.getElementById("mon-runtime-detail"),
     connectionIssues: document.getElementById("mon-connection-issues"),
     childOnline: document.getElementById("mon-child-online"),
-    robotOnline: document.getElementById("mon-robot-online"),
-    robotState: document.getElementById("mon-robot-state"),
-    robotCommand: document.getElementById("mon-robot-command"),
-    robotTargets: document.getElementById("mon-robot-targets"),
     voiceActive: document.getElementById("mon-voice-active"),
     voiceTranscript: document.getElementById("mon-voice-transcript"),
     voiceMatch: document.getElementById("mon-voice-match"),
     voiceExpressive: document.getElementById("mon-voice-expressive"),
+    dialoguePanel: document.getElementById("mon-dialogue-panel"),
+    dialogueBody: document.getElementById("mon-dialogue-body"),
+    dialogueState: document.getElementById("mon-dialogue-state"),
+    dialogueCollapse: document.getElementById("mon-dialogue-collapse"),
+    dialogueUnlock: document.getElementById("mon-dialogue-unlock"),
+    dialogueListen: document.getElementById("mon-dialogue-listen"),
+    dialogueWake: document.getElementById("mon-dialogue-wake"),
+    dialogueVoice: document.getElementById("mon-dialogue-voice"),
+    dialogueLog: document.getElementById("mon-dialogue-log"),
+    dialogueInput: document.getElementById("mon-dialogue-input"),
+    dialogueSend: document.getElementById("mon-dialogue-send"),
+    dialogueFeedback: document.getElementById("mon-dialogue-feedback"),
     mediaSession: document.getElementById("mon-media-session"),
     chart: document.getElementById("mon-attn-chart"),
     emoPos: document.getElementById("mon-emo-pos"),
@@ -96,6 +100,11 @@
     pendingReviews: [],
     reviewDismissed: {},
     currentReviewId: null,
+    dialogueSessionId: null,
+    dialogueWatching: false,
+    dialogueListening: false,
+    dialogueAwake: false,
+    dialogueRequestSequence: 0,
   };
 
   const SOCKET_REFRESH_EVENTS = [
@@ -369,7 +378,6 @@
       server: [els.serverOnline, els.serverSummary, els.serverDetail],
       teacher: [els.teacherOnline, els.teacherSummary, els.teacherDetail],
       child: [els.childOnline, els.childSummary, els.childDetail],
-      runtime: [els.robotOnline, els.runtimeSummary, els.runtimeDetail],
     };
     Object.entries(targets).forEach(([id, nodes]) => {
       const card = byId[id];
@@ -405,7 +413,7 @@
     if (els.badgeMode) {
       els.badgeMode.textContent = "采集 · " + (
         health.mediaMode === "browser" ? "儿童端浏览器" :
-        health.mediaMode === "agent" ? "机器人采集程序" : "未配置"
+        "Demo 浏览器"
       );
     }
     if (els.badgeAnalyzer) {
@@ -421,12 +429,6 @@
       els.badgeAnalyzer.classList.toggle("warn", mock);
       els.badgeAnalyzer.classList.toggle("ok", !mock);
     }
-    if (els.badgeAgent) {
-      const online = !!(health.childAgentOnline || health.mediaAgentOnline);
-      els.badgeAgent.textContent = online ? "Agent · 在线" : "Agent · 离线";
-      els.badgeAgent.classList.toggle("ok", online);
-      els.badgeAgent.classList.toggle("warn", !online);
-    }
 
     // Connection diagnostics and configured camera previews remain useful
     // before a class starts, so the monitor no longer has an inactive overlay.
@@ -437,7 +439,6 @@
     const attn = data.attention || {};
     const voice = data.voice || {};
     const emotion = data.emotion || {};
-    const robot = data.robot || {};
     const clients = health.socketClients || {};
     renderConnectionSummary(health.connectionSummary || {});
     renderTeacherConnections(health.connections);
@@ -488,39 +489,11 @@
       els.childOnline.textContent = n > 0 ? "在线 (" + n + ")" : "离线";
       els.childOnline.className = "mon-tag " + (n > 0 ? "good" : "bad");
     }
-    if (els.robotOnline && !health.connectionSummary) {
-      els.robotOnline.textContent = robot.online ? "在线" : "未知/离线";
-      els.robotOnline.className = "mon-tag " + (robot.online ? "good" : "warn");
-    }
-    if (els.robotState) {
-      const command = robot.lastCommand || {};
-      els.robotState.textContent =
-        (robot.busy && robot.busy.busy ? "机器人正在执行交互。" : "机器人当前空闲。") +
-        (robot.audioPlaying ? " 声音正在播放。" : " 当前没有声音播放。") +
-        (command.phase === "failed" ? " 最近一次交互执行失败。" : "");
-    }
     if (els.stopAudio) {
       els.stopAudio.disabled = !session.mediaSessionId;
       els.stopAudio.title = session.mediaSessionId
         ? "停止会话 " + session.mediaSessionId + " 的当前声音"
         : "当前没有可定位的运行会话";
-    }
-    if (els.robotCommand) {
-      const command = robot.lastCommand || {};
-      const actual = [command.motion, command.emotion].filter(Boolean).join(" + ") || "无输出";
-      const error = command.error ? " · 错误：" + command.error : "";
-      els.robotCommand.textContent = command.commandId
-        ? "最近一次交互：" + (command.message || command.phase || "状态未知") + "；执行内容：" + actual + error
-        : "还没有执行过机器人交互。";
-      els.robotCommand.className = "mon-muted " + (
-        command.phase === "failed" ? "bad" : command.phase === "degraded" ? "warn" : command.phase === "completed" ? "good" : ""
-      );
-    }
-    if (els.robotTargets) {
-      const targets = robot.targets || {};
-      els.robotTargets.textContent = targets.robotDisplayOnline
-        ? "机器人表情显示已连接。"
-        : "机器人表情显示未连接；动作可能执行但屏幕不会同步。";
     }
 
     if (els.voiceActive) {
@@ -553,6 +526,7 @@
     state.mediaSessionId = (session && session.mediaSessionId) || null;
     state.trainingSessionId = (session && session.trainingSessionId) || null;
     state.previewEnabled = !!(data.preview && data.preview.enabled !== false);
+    syncDialogueWatch();
 
     if (els.badgePreview) {
       const pv = data.preview || {};
@@ -580,10 +554,10 @@
         const span = els.previewPlaceholder.querySelector("span");
         if (!preview || !preview.enabled) {
           if (strong) strong.textContent = "预览未启用";
-          if (span) span.textContent = "设置 MONITOR_PREVIEW_ENABLED=0 可关闭；开启时从 agent 上行帧抽稀展示";
+          if (span) span.textContent = "开启时从儿童端浏览器上行帧抽稀展示";
         } else {
           if (strong) strong.textContent = "暂无预览帧";
-          if (span) span.textContent = "等待 agent 上行；勿将占位当作真实画面";
+          if (span) span.textContent = "等待儿童端浏览器上行；勿将占位当作真实画面";
         }
       }
     }
@@ -768,6 +742,184 @@
     els.controlFeedback.classList.toggle("warn", kind === "warn");
   }
 
+  function dialogueRequestId(prefix) {
+    state.dialogueRequestSequence += 1;
+    return `${prefix}-${Date.now()}-${state.dialogueRequestSequence}`;
+  }
+
+  function dialoguePayload(prefix) {
+    return {
+      sessionId: state.dialogueSessionId || state.mediaSessionId,
+      trainingSessionId: state.trainingSessionId,
+      requestId: dialogueRequestId(prefix),
+    };
+  }
+
+  function setDialogueFeedback(text, kind) {
+    if (els.dialogueFeedback) els.dialogueFeedback.textContent = text;
+    if (els.dialogueState) {
+      els.dialogueState.classList.toggle("good", kind === "ok");
+      els.dialogueState.classList.toggle("warn", kind === "warn");
+    }
+  }
+
+  function updateDialogueControls() {
+    const available = Boolean(state.dialogueSessionId && state.active && state.socketOnline);
+    [els.dialogueUnlock, els.dialogueListen, els.dialogueWake, els.dialogueVoice,
+      els.dialogueInput, els.dialogueSend].forEach((node) => {
+      if (node) node.disabled = !available;
+    });
+    if (els.dialogueListen) {
+      els.dialogueListen.textContent = state.dialogueListening ? "停止自动聆听" : "开始自动聆听";
+    }
+    if (els.dialogueWake) {
+      els.dialogueWake.textContent = state.dialogueAwake ? "退出唤醒" : "唤醒智能体";
+    }
+    if (els.dialogueState) {
+      els.dialogueState.textContent = !state.dialogueSessionId
+        ? "课程未开始"
+        : state.dialogueListening
+          ? (state.dialogueAwake ? "已唤醒 · 正在聆听" : "正在聆听 · 等待唤醒")
+          : "聆听已停止";
+    }
+  }
+
+  function clearDialogueLog() {
+    if (!els.dialogueLog) return;
+    els.dialogueLog.innerHTML = '<div class="mon-dialogue-empty">等待当前课程的对话。</div>';
+  }
+
+  function appendDialogueMessage(payload) {
+    if (!els.dialogueLog || payload?.type !== "message") return;
+    const sessionId = String(payload.sessionId || "");
+    if (!state.dialogueSessionId || sessionId !== String(state.dialogueSessionId)) return;
+    els.dialogueLog.querySelector(".mon-dialogue-empty")?.remove();
+    const role = payload.role === "child" ? "child" : "maimai";
+    const row = document.createElement("div");
+    row.className = `mon-dialogue-message ${role}`;
+    const label = document.createElement("strong");
+    label.textContent = role === "child" ? "儿童" : "麦麦";
+    const body = document.createElement("span");
+    body.textContent = String(payload.text || "");
+    row.append(label, body);
+    els.dialogueLog.appendChild(row);
+    while (els.dialogueLog.children.length > 24) els.dialogueLog.firstChild?.remove();
+    els.dialogueLog.scrollTop = els.dialogueLog.scrollHeight;
+  }
+
+  function applyDialogueRuntime(payload) {
+    if (!payload) return;
+    const sessionId = String(payload.sessionId || "");
+    if (sessionId && state.dialogueSessionId && sessionId !== String(state.dialogueSessionId)) return;
+    if (Object.prototype.hasOwnProperty.call(payload, "listening")) {
+      state.dialogueListening = payload.listening === true;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, "awake")) {
+      state.dialogueAwake = payload.awake === true;
+    }
+    const voices = Array.isArray(payload.voices) ? payload.voices : [];
+    if (els.dialogueVoice && voices.length) {
+      const selected = String(payload.selectedVoice || "");
+      els.dialogueVoice.innerHTML = "";
+      voices.forEach((voice) => {
+        const option = document.createElement("option");
+        option.value = String(voice.name || "");
+        option.textContent = String(voice.label || voice.name || "");
+        els.dialogueVoice.appendChild(option);
+      });
+      if (selected) els.dialogueVoice.value = selected;
+    }
+    if (payload.microphoneBlocked) {
+      setDialogueFeedback("儿童端麦克风不可用，请在儿童设备允许权限或检查安全访问地址。", "warn");
+    } else if (payload.reason) {
+      setDialogueFeedback(`儿童端状态已更新：${payload.reason}`, "ok");
+    }
+    updateDialogueControls();
+  }
+
+  function syncDialogueWatch(force) {
+    const next = state.active && state.mediaSessionId ? String(state.mediaSessionId) : null;
+    if (!force && next === state.dialogueSessionId) {
+      updateDialogueControls();
+      if (next && !state.dialogueWatching && typeof socket !== "undefined" && socket?.connected) {
+        socket.emit("server_dialogue_watch", dialoguePayload("server-dialogue-watch"));
+      }
+      return;
+    }
+    const previous = state.dialogueSessionId;
+    if (previous && typeof socket !== "undefined" && socket) {
+      socket.emit("server_dialogue_unwatch", {
+        sessionId: previous,
+        requestId: dialogueRequestId("server-dialogue-unwatch"),
+      });
+    }
+    state.dialogueSessionId = next;
+    state.dialogueWatching = false;
+    state.dialogueListening = false;
+    state.dialogueAwake = false;
+    clearDialogueLog();
+    updateDialogueControls();
+    if (next && typeof socket !== "undefined" && socket?.connected) {
+      socket.emit("server_dialogue_watch", dialoguePayload("server-dialogue-watch"));
+      setDialogueFeedback("正在连接当前课程的儿童端对话运行时…", "warn");
+    } else if (!next) {
+      setDialogueFeedback("等待课程开始", "");
+    }
+  }
+
+  function emitDialogueRuntimeControl(action, extra) {
+    if (!state.dialogueSessionId || typeof socket === "undefined" || !socket) return;
+    socket.emit("server_dialogue_runtime_control", {
+      ...dialoguePayload(`server-dialogue-${action}`),
+      action,
+      ...(extra || {}),
+    });
+    setDialogueFeedback("命令已发送，等待儿童端状态回报…", "warn");
+  }
+
+  function sendDialogueText() {
+    const text = String(els.dialogueInput?.value || "").trim();
+    if (!text || !state.dialogueSessionId || typeof socket === "undefined" || !socket) return;
+    socket.emit("server_dialogue_text", {
+      ...dialoguePayload("server-dialogue-text"),
+      text,
+    });
+    els.dialogueInput.value = "";
+    setDialogueFeedback("文字已提交，正在生成回复…", "warn");
+  }
+
+  function bindDialogueControls() {
+    els.dialogueCollapse?.addEventListener("click", () => {
+      const collapsed = els.dialogueBody?.hasAttribute("hidden") === true;
+      if (collapsed) els.dialogueBody?.removeAttribute("hidden");
+      else els.dialogueBody?.setAttribute("hidden", "");
+      els.dialogueCollapse.textContent = collapsed ? "收起" : "展开";
+      els.dialogueCollapse.setAttribute("aria-expanded", collapsed ? "true" : "false");
+    });
+    els.dialogueUnlock?.addEventListener("click", () => emitDialogueRuntimeControl("unlock_audio"));
+    els.dialogueListen?.addEventListener("click", () => {
+      emitDialogueRuntimeControl(state.dialogueListening ? "listen_stop" : "listen_start");
+    });
+    els.dialogueWake?.addEventListener("click", () => {
+      if (!state.dialogueSessionId || typeof socket === "undefined" || !socket) return;
+      socket.emit(
+        state.dialogueAwake ? "teacher_dialogue_sleep" : "teacher_dialogue_wake",
+        dialoguePayload(state.dialogueAwake ? "server-dialogue-sleep" : "server-dialogue-wake"),
+      );
+      setDialogueFeedback("唤醒状态命令已发送…", "warn");
+    });
+    els.dialogueVoice?.addEventListener("change", () => {
+      emitDialogueRuntimeControl("set_voice", { voiceName: els.dialogueVoice.value });
+    });
+    els.dialogueSend?.addEventListener("click", sendDialogueText);
+    els.dialogueInput?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      sendDialogueText();
+    });
+    updateDialogueControls();
+  }
+
   async function executeControlAction(button, url, body) {
     if (!button || button.disabled) return;
     const original = button.textContent;
@@ -796,13 +948,6 @@
   }
 
   function bindOperationalControls() {
-    if (els.stopRobot) {
-      els.stopRobot.addEventListener("click", () => executeControlAction(
-        els.stopRobot,
-        "/api/v2/control/actions/stop-robot",
-        { trainingSessionId: state.trainingSessionId },
-      ));
-    }
     if (els.stopAudio) {
       els.stopAudio.addEventListener("click", () => executeControlAction(
         els.stopAudio,
@@ -818,15 +963,44 @@
     const markOnline = () => {
       state.socketOnline = true;
       updateBadges();
+      syncDialogueWatch(true);
     };
     const markOffline = () => {
       state.socketOnline = false;
+      state.dialogueWatching = false;
       updateBadges();
+      updateDialogueControls();
     };
 
     if (socket.connected) markOnline();
     socket.on("connect", markOnline);
     socket.on("disconnect", markOffline);
+    socket.on("server_dialogue_event", (payload) => {
+      if (payload?.type === "runtime") applyDialogueRuntime(payload);
+      else appendDialogueMessage(payload);
+    });
+    socket.on("server_dialogue_control_ack", (payload) => {
+      if (!payload) return;
+      if (!payload.success) {
+        if (payload.action === "watch") state.dialogueWatching = false;
+        setDialogueFeedback(`控制失败：${payload.error || "unknown"}`, "warn");
+        return;
+      }
+      if (payload.action === "watch") {
+        state.dialogueWatching = true;
+        applyDialogueRuntime(payload);
+      }
+      else setDialogueFeedback("控制命令已接受", "ok");
+    });
+    socket.on("teacher_dialogue_control_ack", (payload) => {
+      if (!payload) return;
+      if (!payload.success) {
+        setDialogueFeedback(`唤醒控制失败：${payload.error || "unknown"}`, "warn");
+        return;
+      }
+      applyDialogueRuntime(payload);
+      setDialogueFeedback(payload.awake ? "智能体已唤醒" : "智能体已退出唤醒", "ok");
+    });
 
     SOCKET_REFRESH_EVENTS.forEach((evt) => {
       socket.on(evt, () => {
@@ -1019,6 +1193,7 @@
   function init() {
     bindTabs();
     bindOperationalControls();
+    bindDialogueControls();
     bindSocket();
     bindVisibility();
     bindReviewModal();

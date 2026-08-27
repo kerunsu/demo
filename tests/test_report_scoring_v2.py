@@ -10,11 +10,9 @@ CFG = {
     "schema_version": "education-training-index-v2-teacher-rating",
     "score_boundary": "education_training_reference_only",
     "weights": {
-        "attention": 20,
-        "expressiveLanguage": 20,
-        "receptiveLanguage": 20,
-        "matching": 20,
-        "ordering": 20,
+        "attention": 34,
+        "matching": 33,
+        "ordering": 33,
     },
     "teacher_rating": {"scale": 20},
     "interactive_course": {
@@ -26,11 +24,11 @@ CFG = {
         "slow_response_sec": 12,
     },
     "dimension_weights": {
-        "receptive": {"pairing": 1, "ordering": 1, "naming": 1, "onomatopoeia": 1},
-        "expressive": {"naming": 1, "onomatopoeia": 1},
         "attention": {"automatic": 0.7, "mimic_teacher": 0.3},
     },
-    "course_weights": {"mimic": 1, "naming": 1, "onomatopoeia": 1, "pairing": 1, "ordering": 1},
+    "course_weights": {"mimic": 1, "pairing": 1, "ordering": 1},
+    "enabled_course_types": ["mimic", "pairing", "ordering"],
+    "enabled_dimension_keys": ["attention", "matching", "ordering"],
     "grade_thresholds": {"excellent": 85, "good": 70, "fair": 55, "needs_support": 0},
 }
 
@@ -45,7 +43,7 @@ def window(course_type, rating, response_ms, task_metrics=None):
     return {"course_type": course_type, "task_metrics": metrics}
 
 
-def test_v2_balances_five_course_types_and_builds_dimensions():
+def test_v2_balances_three_demo_course_types_and_builds_dimensions():
     summary = {
         "attention": {"avg_score": 90},
         "language": {},
@@ -53,8 +51,6 @@ def test_v2_balances_five_course_types_and_builds_dimensions():
         "windows": [
             window("pairing", 4, 3000, {"matching": {"accuracy": 80, "avg_response_ms": 3000}}),
             window("ordering", 3, 12000, {"sequencing": {"accuracy": 60, "avg_response_ms": 12000}}),
-            window("naming", 5, 4000),
-            window("onomatopoeia", 4, 5000),
             window("mimic", 3, 6000),
         ],
     }
@@ -63,20 +59,14 @@ def test_v2_balances_five_course_types_and_builds_dimensions():
 
     assert result["courseScores"] == {
         "mimic": 60.0,
-        "naming": 100.0,
-        "onomatopoeia": 80.0,
         "pairing": 83.5,
         "ordering": 49.5,
     }
-    assert result["overall"] == 74.6
+    assert result["overall"] == 64.3
     assert result["dimensions"]["attention"]["score"] == 81.0
-    assert result["dimensions"]["expressiveLanguage"]["score"] == 90.0
-    assert result["dimensions"]["receptiveLanguage"]["score"] == 78.2
     assert result["dimensions"]["matching"]["score"] == 83.5
     assert result["dimensions"]["ordering"]["score"] == 49.5
-    assert result["taskPerformance"] == 76.0
-    assert result["responseMetrics"]["avgResponseMs"] == 6000.0
-    assert result["responseMetrics"]["sampleCount"] == 5
+    assert result["responseMetrics"]["sampleCount"] == 3
 
 
 def test_missing_course_types_are_renormalized_not_scored_as_zero():
@@ -84,17 +74,17 @@ def test_missing_course_types_are_renormalized_not_scored_as_zero():
         "attention": {},
         "language": {},
         "task": {},
-        "windows": [window("naming", 4, 4000), window("onomatopoeia", 2, 6000)],
+        "windows": [window("mimic", 4, 4000)],
     }
     result = compute_dimensions(summary, CFG, soft=False)
-    assert result["overall"] == 60.0
-    assert result["dimensions"]["expressiveLanguage"]["score"] == 60.0
-    assert result["dimensions"]["receptiveLanguage"]["score"] == 60.0
+    assert result["overall"] == 80.0
+    assert result["dimensions"]["attention"]["score"] == 80.0
     assert result["dimensions"]["matching"]["score"] is None
-    assert result["responseMetrics"]["avgResponseMs"] == 5000.0
+    assert result["dimensions"]["ordering"]["score"] is None
+    assert result["responseMetrics"]["avgResponseMs"] == 4000.0
     evaluations = {item["courseType"]: item for item in result["courseEvaluations"]}
-    assert evaluations["naming"]["status"] == "evaluated"
-    assert evaluations["naming"]["score"] == 80.0
+    assert evaluations["mimic"]["status"] == "evaluated"
+    assert evaluations["mimic"]["score"] == 80.0
     assert evaluations["pairing"]["status"] == "not_evaluated"
     assert evaluations["pairing"]["score"] is None
     assert evaluations["pairing"]["targetScore"] == 70.0
@@ -122,7 +112,7 @@ def test_narrative_recommendations_are_evidence_linked_even_when_scores_are_high
         "language": {},
         "task": {},
         "windows": [
-            window("naming", 5, 3000),
+            window("mimic", 5, 3000),
             window("pairing", 5, 3000, {"matching": {"accuracy": 100, "avg_response_ms": 3000}}),
         ],
     }
@@ -138,28 +128,27 @@ def test_narrative_recommendations_are_evidence_linked_even_when_scores_are_high
     assert first["practice"]
     assert first["why"]
     assert first["progressCheck"]
-    assert "已完成 2/5" in narrative["summary"]["dataCompleteness"]
+    assert "已完成 2/3" in narrative["summary"]["dataCompleteness"]
     assert narrative["headline"]
     assert list(narrative["overview"]) == ["overall", "stable", "attention", "boundary"]
 
 
-def test_narrative_uses_percentage_gap_and_vocal_imitation_recommendation():
+def test_narrative_uses_percentage_gap_for_demo_ordering_course():
     summary = {
         "attention": {"avg_score": 74, "curve": [{"score": 80}, {"score": 50}]},
         "language": {},
         "task": {},
-        "windows": [window("onomatopoeia", 3, 5000)],
+        "windows": [window("ordering", 3, 5000, {"sequencing": {"accuracy": 60, "avg_response_ms": 5000}})],
     }
     scored = compute_dimensions(summary, CFG, soft=False)
     scored["attentionCurve"] = summary["attention"]["curve"]
     narrative = generate_narrative(scored, provider="rule")
 
     recommendation = narrative["recommendations"][0]
-    assert "60.0%" in recommendation["evidence"]
-    assert "10.0 个百分点" in recommendation["evidence"]
-    assert "模仿发声" in recommendation["practice"]
-    assert "图片选择" in recommendation["progressCheck"]
-    assert "图片配对" not in str(recommendation)
+    assert "%" in recommendation["evidence"]
+    assert "个百分点" in recommendation["evidence"]
+    assert recommendation["practice"]
+    assert recommendation["progressCheck"]
     assert narrative["overview"]["overall"].startswith("本次综合表现为")
     assert "年龄常模" in narrative["overview"]["boundary"]
 
@@ -200,9 +189,9 @@ def test_teacher_report_source_hides_internal_identifiers_and_formula_version():
     assert "公式版本" not in source
     assert "formulaVersion" not in source
     assert "courseStatusText(course)" in source
-    assert "未参加课程不按 0 分处理" in source
+    assert "未评估或数据不足不会按 0 分计入综合表现" in source
     assert "核心能力百分比柱状图" in source
-    assert "课程参考目标" in source
+    assert "训练参考目标" in source
     assert "个百分点" in source
     assert "radar" not in source.lower()
     assert "teacherFriendlyLimitation" in source

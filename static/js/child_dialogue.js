@@ -5,14 +5,6 @@
 (function (global) {
   const COOLDOWN_MS = 180;
 
-  const MAX_LOG_MESSAGES = 8;
-  const PANEL_COLLAPSED_KEY = "eiart.child.dialogue.collapsed";
-  const ROLE_LABELS = {
-    child: "儿童",
-    maimai: "麦麦",
-    system: "系统",
-  };
-
   let dialogueBusy = false;
   let uiBound = false;
   let resultHandlerBound = false;
@@ -26,9 +18,8 @@
   let lastChildTranscriptAt = 0;
   /** 本地唤醒状态（与服务端 session+题目指纹绑定；题目切换后清除） */
   let dialogueAwake = false;
-  let dialoguePanelVisible = true;
-  let dialoguePanelCollapsed = false;
   let wakeWordEnabled = false;
+  let activeCourseSessionId = null;
   let lastPageFingerprint = "";
   let lastFingerprintCheckAt = 0;
 
@@ -39,6 +30,8 @@
 
   let speechRec = null;
   let speechRecActive = false;
+  let speechRecRestartTimer = null;
+  let speechRecGeneration = 0;
   /** 麦克风曾被拒绝/不安全上下文：禁止无点击自动重试 */
   let micBlocked = false;
 
@@ -47,7 +40,7 @@
   }
 
   function getSessionId() {
-    return global.currentSessionId || null;
+    return activeCourseSessionId || global.currentSessionId || null;
   }
 
   function makeDialogueRequestId() {
@@ -65,34 +58,6 @@
       clientTimestamp: Date.now(),
       ...detail,
     });
-  }
-
-  function applyDialoguePanelVisibility(visible) {
-    dialoguePanelVisible = visible !== false;
-    const panel = document.getElementById("dialoguePanel");
-    if (!panel) return;
-    panel.hidden = !dialoguePanelVisible;
-    panel.classList.toggle("is-hidden", !dialoguePanelVisible);
-    panel.setAttribute("aria-hidden", dialoguePanelVisible ? "false" : "true");
-  }
-
-  function applyDialoguePanelCollapsed(collapsed, persist) {
-    dialoguePanelCollapsed = collapsed === true;
-    const panel = document.getElementById("dialoguePanel");
-    const body = document.getElementById("dialoguePanelBody");
-    const button = document.getElementById("dialogueCollapseBtn");
-    if (!panel || !body || !button) return;
-    panel.classList.toggle("is-collapsed", dialoguePanelCollapsed);
-    body.setAttribute("aria-hidden", dialoguePanelCollapsed ? "true" : "false");
-    button.setAttribute("aria-expanded", dialoguePanelCollapsed ? "false" : "true");
-    button.textContent = dialoguePanelCollapsed ? "+" : "−";
-    button.title = dialoguePanelCollapsed ? "展开语音窗口" : "收起语音窗口";
-    button.setAttribute("aria-label", button.title);
-    if (persist) {
-      try {
-        localStorage.setItem(PANEL_COLLAPSED_KEY, dialoguePanelCollapsed ? "1" : "0");
-      } catch (_) { /* storage may be disabled */ }
-    }
   }
 
   function requestDialogueControlState(sessionId) {
@@ -190,12 +155,16 @@
   function emitDialogueRuntimeState(extra) {
     const socket = getSocket();
     if (!socket || !socket.connected) return;
+    const voices = global.BrowserTts?.loadBrowserSpeechVoices?.() || [];
     socket.emit("child_dialogue_runtime_state", {
       sessionId: getSessionId(),
+      pageContext: buildPageContext(),
       awake: dialogueAwake,
       listening: autoListenEnabled && !micBlocked,
       recognitionActive: speechRecActive,
       microphoneBlocked: micBlocked,
+      voices,
+      selectedVoice: global.BrowserTts?.getPreferredBrowserSpeechVoiceName?.() || "",
       clientTimestamp: Date.now(),
       ...(extra || {}),
     });
@@ -259,31 +228,9 @@
     if (el) el.textContent = text;
   }
 
-  /**
-   * 调试用对话气泡：保留约当前 + 前 3 轮（最多 8 条）。
-   * role: "child" | "maimai" | "system"
-   */
-  function appendDialogueLog(role, text) {
-    const trimmed = String(text || "").trim();
-    if (!trimmed) return;
-    const log = document.getElementById("dialogueLog");
-    if (!log) return;
-    const key = ROLE_LABELS[role] ? role : "system";
-    const row = document.createElement("div");
-    row.className = `dialogue-panel__msg dialogue-panel__msg--${key}`;
-    const roleEl = document.createElement("span");
-    roleEl.className = "dialogue-panel__msg-role";
-    roleEl.textContent = ROLE_LABELS[key] || "系统";
-    const body = document.createElement("div");
-    body.className = "dialogue-panel__msg-body";
-    body.textContent = trimmed;
-    row.appendChild(roleEl);
-    row.appendChild(body);
-    log.appendChild(row);
-    while (log.children.length > MAX_LOG_MESSAGES) {
-      log.removeChild(log.firstChild);
-    }
-    log.scrollTop = log.scrollHeight;
+  /** 兼容 child.js 调用；可见对话日志已经迁移到 Server 房间。 */
+  function appendDialogueLog(_role, text) {
+    return Boolean(String(text || "").trim());
   }
 
   /** 儿童识别文本入对话气泡（短窗去重，避免双通路重复）。 */
@@ -470,13 +417,46 @@
   }
 
   function stopBrowserSpeechRecognition() {
-    if (!speechRec) return;
-    try {
-      speechRec.onend = null;
-      speechRec.stop();
-    } catch (_) {}
-    speechRecActive = false;
+    speechRecGeneration += 1;
+    if (speechRecRestartTimer) {
+      clearTimeout(speechRecRestartTimer);
+      speechRecRestartTimer = null;
+    }
+    const recognition = speechRec;
     speechRec = null;
+    speechRecActive = false;
+    if (!recognition) return;
+    try {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      if (typeof recognition.abort === "function") recognition.abort();
+      else recognition.stop();
+    } catch (_) {}
+  }
+
+  function scheduleSpeechRecognitionRestart(reason, delayMs = 260) {
+    if (
+      speechRecRestartTimer ||
+      !autoListenEnabled ||
+      dialogueBusy ||
+      asrPausedForTts ||
+      micBlocked
+    ) return;
+    const generation = speechRecGeneration;
+    speechRecRestartTimer = setTimeout(() => {
+      speechRecRestartTimer = null;
+      if (
+        generation !== speechRecGeneration ||
+        !autoListenEnabled ||
+        dialogueBusy ||
+        asrPausedForTts ||
+        micBlocked ||
+        speechRecActive
+      ) return;
+      console.debug("[child_dialogue] 重启浏览器识别", reason || "ended");
+      startBrowserSpeechRecognition();
+    }, Math.max(0, Number(delayMs) || 0));
   }
 
   function startBrowserSpeechRecognition() {
@@ -486,14 +466,31 @@
     }
     const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) return false;
+    if (speechRecActive) return true;
+    if (speechRecRestartTimer) {
+      clearTimeout(speechRecRestartTimer);
+      speechRecRestartTimer = null;
+    }
+    if (speechRec) {
+      const staleRecognition = speechRec;
+      speechRec = null;
+      try {
+        staleRecognition.onresult = null;
+        staleRecognition.onerror = null;
+        staleRecognition.onend = null;
+        if (typeof staleRecognition.abort === "function") staleRecognition.abort();
+      } catch (_) {}
+    }
     try {
       global.BrowserTts?.unlockBrowserSpeechOutput?.();
-      speechRec = new Ctor();
-      speechRec.lang = "zh-CN";
-      speechRec.interimResults = true;
-      speechRec.continuous = true;
+      const recognition = new Ctor();
+      speechRec = recognition;
+      recognition.lang = "zh-CN";
+      recognition.interimResults = true;
+      recognition.continuous = true;
       let finalText = "";
-      speechRec.onresult = (event) => {
+      recognition.onresult = (event) => {
+        if (speechRec !== recognition) return;
         if (!autoListenEnabled || dialogueBusy) return;
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; i += 1) {
@@ -519,12 +516,17 @@
           }
         }
       };
-      speechRec.onerror = (ev) => {
+      recognition.onerror = (ev) => {
+        if (speechRec !== recognition) return;
         console.warn("SpeechRecognition error", ev);
         speechRecActive = false;
         const code = (ev && ev.error) || "unknown";
-        // aborted / no-speech：连续模式下可忽略
-        if (code === "aborted" || code === "no-speech") return;
+        // Chrome 连续识别遇到静音或内部中止后通常还会结束当前实例；
+        // 延迟创建下一实例，避免在 onend 回调内同步 start() 的状态竞争。
+        if (code === "aborted" || code === "no-speech") {
+          scheduleSpeechRecognitionRestart(code);
+          return;
+        }
         const kind = classifyMicFailure(code);
         if (kind === "denied" || kind === "insecure") {
           stopBrowserSpeechRecognition();
@@ -539,23 +541,13 @@
           }
         }
       };
-      speechRec.onend = () => {
+      recognition.onend = () => {
+        if (speechRec !== recognition) return;
         speechRecActive = false;
-        if (
-          autoListenEnabled &&
-          !dialogueBusy &&
-          !asrPausedForTts &&
-          !micBlocked
-        ) {
-          try {
-            speechRec.start();
-            speechRecActive = true;
-          } catch (err) {
-            console.warn("重启浏览器识别失败", err);
-          }
-        }
+        speechRec = null;
+        scheduleSpeechRecognitionRestart("ended");
       };
-      speechRec.start();
+      recognition.start();
       speechRecActive = true;
       micBlocked = false;
       autoListenEnabled = true;
@@ -565,36 +557,54 @@
       return true;
     } catch (err) {
       console.warn("无法启动浏览器语音识别", err);
+      if (speechRec) {
+        try {
+          speechRec.onresult = null;
+          speechRec.onerror = null;
+          speechRec.onend = null;
+        } catch (_) {}
+      }
+      speechRec = null;
+      speechRecActive = false;
       const kind = classifyMicFailure(err);
       if (kind === "denied" || kind === "insecure") {
         failMicAndStop(kind, "无法启动浏览器语音识别", err);
+      } else if (autoListenEnabled) {
+        scheduleSpeechRecognitionRestart("start_failed", 500);
       }
       return false;
     }
   }
 
-  function startAutoListen() {
-    if (autoListenEnabled) return;
+  function startAutoListen(reason = "manual_start") {
+    if (autoListenEnabled) {
+      maybeResumeListening();
+      emitDialogueRuntimeState({ reason: `${reason}_already_listening` });
+      return true;
+    }
     if (!bindResultHandler()) {
       setStatus("未连接");
-      return;
+      return false;
     }
     // 必须由用户点击「开始自动聆听」触发，才能弹出麦克风权限框
     if (!isMicContextOk()) {
       failMicAndStop("insecure", "非安全上下文，无法请求麦克风");
-      return;
+      return false;
     }
     micBlocked = false;
     if (!getSpeechRecognitionCtor()) {
       failMicAndStop("unavailable", "当前浏览器不支持语音识别");
-      return;
+      return false;
     }
     if (!startBrowserSpeechRecognition()) {
       failMicAndStop("other", "无法启动浏览器语音识别");
+      return false;
     }
+    emitDialogueRuntimeState({ reason });
+    return true;
   }
 
-  function stopAutoListen() {
+  function stopAutoListen(reason = "manual_stop") {
     autoListenEnabled = false;
     stopBrowserSpeechRecognition();
     pendingTtsTranscript = "";
@@ -602,6 +612,8 @@
     activeTtsReferenceText = "";
     setListenButtonState();
     setStatus("已停止聆听");
+    emitDialogueRuntimeState({ reason });
+    return true;
   }
 
   function pauseAsrForTts(spokenText = "") {
@@ -651,7 +663,7 @@
 
   function maybeResumeListening() {
     if (!autoListenEnabled || dialogueBusy || asrPausedForTts || micBlocked) return;
-    if (!speechRecActive) startBrowserSpeechRecognition();
+    if (!speechRecActive) scheduleSpeechRecognitionRestart("resume", 0);
     else setStatus(listenIdleStatus());
   }
 
@@ -760,13 +772,9 @@
         });
       }
     });
-    socket.on("child_dialogue_visibility", (data) => {
-      applyDialoguePanelVisibility(!data || data.visible !== false);
-    });
     socket.on("child_dialogue_control_state", (data) => {
       if (!data) return;
       wakeWordEnabled = data.wakeWordEnabled === true;
-      applyDialoguePanelVisibility(data.visible !== false);
       setDialogueAwake(data.awake === true, { updateStatus: false });
       if (data.awake === true) {
         ensureListeningAfterTeacherWake(data.requestId);
@@ -800,104 +808,26 @@
     setTimeout(() => waitForSocketAndBind(retries - 1), 200);
   }
 
-  function bindDialogueUi() {
-    if (uiBound) return;
-    const panel = document.getElementById("dialoguePanel");
-    const btn = document.getElementById("dialogueHoldBtn");
-    const unlockBtn = document.getElementById("dialogueUnlockBtn");
-    const collapseBtn = document.getElementById("dialogueCollapseBtn");
-    const sleepBtn = document.getElementById("dialogueSleepBtn");
-    const voiceSelect = document.getElementById("dialogueVoiceSelect");
-    const sendBtn = document.getElementById("dialogueSendBtn");
-    const textInput = document.getElementById("dialogueTextInput");
-    if (!panel || !btn) {
-      console.warn("[child_dialogue] dialoguePanel 未找到");
-      return;
-    }
-    uiBound = true;
-    applyDialoguePanelVisibility(dialoguePanelVisible);
-    try {
-      dialoguePanelCollapsed = localStorage.getItem(PANEL_COLLAPSED_KEY) === "1";
-    } catch (_) { /* storage may be disabled */ }
-    applyDialoguePanelCollapsed(dialoguePanelCollapsed, false);
-    panel.style.zIndex = "5000";
-    setListenButtonState();
-    updateSleepButton();
-    lastPageFingerprint = pageContextFingerprint(buildPageContext());
+  function beginCourseListening(payload, reason) {
+    const sessionId = String(payload?.sessionId || payload?.session_id || "").trim();
+    if (sessionId) activeCourseSessionId = sessionId;
+    requestDialogueControlState(sessionId || getSessionId());
+    startAutoListen(reason || "course_started");
+    window.setTimeout(() => emitDialogueRuntimeState({ reason: reason || "course_started" }), 0);
+  }
 
-    if (unlockBtn) {
-      unlockBtn.addEventListener("click", () => {
-        global.BrowserTts?.unlockBrowserSpeechOutput?.();
-        setStatus("声音已启用");
-      });
-    }
-    if (collapseBtn) {
-      collapseBtn.addEventListener("click", () => {
-        applyDialoguePanelCollapsed(!dialoguePanelCollapsed, true);
-      });
-    }
-    if (sleepBtn) {
-      sleepBtn.addEventListener("click", () => {
-        emitDialogueSleep("manual_sleep");
-        setStatus("请说：麦麦");
-      });
-    }
-    btn.addEventListener("click", async (ev) => {
-      ev.preventDefault();
-      if (!bindResultHandler()) {
-        setStatus("未连接");
-        return;
-      }
-      global.BrowserTts?.unlockBrowserSpeechOutput?.();
-      if (autoListenEnabled) {
-        stopAutoListen();
-        return;
-      }
-      // 用户手势内请求麦克风（Chrome 权限弹窗要求）
-      setStatus("正在请求麦克风权限…");
-      await startAutoListen();
-    });
-    if (sendBtn) {
-      sendBtn.addEventListener("click", () => {
-        if (!bindResultHandler()) {
-          setStatus("未连接");
-          return;
-        }
-        global.BrowserTts?.unlockBrowserSpeechOutput?.();
-        sendTextFromInput();
-      });
-    }
-    if (textInput) {
-      textInput.addEventListener("keydown", (ev) => {
-        if (ev.key !== "Enter") return;
-        ev.preventDefault();
-        if (!bindResultHandler()) {
-          setStatus("未连接");
-          return;
-        }
-        global.BrowserTts?.unlockBrowserSpeechOutput?.();
-        sendTextFromInput();
-      });
-    }
-    if (voiceSelect && global.BrowserTts) {
-      const fill = () => {
-        const options = global.BrowserTts.loadBrowserSpeechVoices();
-        voiceSelect.innerHTML = "";
-        options.forEach((opt) => {
-          const el = document.createElement("option");
-          el.value = opt.name;
-          el.textContent = opt.label;
-          voiceSelect.appendChild(el);
-        });
-        const preferred = global.BrowserTts.getPreferredBrowserSpeechVoiceName();
-        if (preferred) voiceSelect.value = preferred;
-      };
-      fill();
-      global.BrowserTts.subscribeBrowserSpeechVoiceChanges(fill);
-      voiceSelect.addEventListener("change", () => {
-        global.BrowserTts.setPreferredBrowserSpeechVoice(voiceSelect.value);
-      });
-    }
+  function endCourseListening(payload, reason) {
+    const sessionId = String(payload?.sessionId || payload?.session_id || "").trim();
+    if (sessionId && activeCourseSessionId && sessionId !== activeCourseSessionId) return;
+    stopAutoListen(reason || "course_ended");
+    if (dialogueAwake) emitDialogueSleep(reason || "course_ended");
+    activeCourseSessionId = null;
+  }
+
+  function bindDialogueRuntime() {
+    if (uiBound) return;
+    uiBound = true;
+    lastPageFingerprint = pageContextFingerprint(buildPageContext());
 
     // 课点 / 互动页切换时同步退出唤醒
     window.addEventListener("message", (event) => {
@@ -910,19 +840,47 @@
     const socket = getSocket();
     if (socket) {
       socket.on("play_resource", (payload) => {
-        requestDialogueControlState(payload && (payload.sessionId || payload.session_id));
+        beginCourseListening(payload, "course_resource_active");
         setTimeout(() => syncAwakeForPageContext(), 50);
       });
       socket.on("training_prepare", (payload) => {
-        requestDialogueControlState(payload && (payload.sessionId || payload.session_id));
+        beginCourseListening(payload, "course_started");
+      });
+      socket.on("training_prepare_cancel", (payload) => {
+        endCourseListening(payload, "course_cancelled");
+      });
+      socket.on("stop_recording", (payload) => {
+        endCourseListening(payload, payload?.reason || "course_ended");
       });
       socket.on("interactive_page_context", () => {
         setTimeout(() => syncAwakeForPageContext(), 0);
       });
+      socket.on("child_dialogue_runtime_control", (payload) => {
+        const sessionId = String(payload?.sessionId || "").trim();
+        if (sessionId && getSessionId() && sessionId !== String(getSessionId())) return;
+        const action = String(payload?.action || "");
+        if (action === "listen_start") startAutoListen("server_listen_start");
+        else if (action === "listen_stop") stopAutoListen("server_listen_stop");
+        else if (action === "unlock_audio") {
+          global.BrowserTts?.unlockBrowserSpeechOutput?.();
+          emitDialogueRuntimeState({ requestId: payload?.requestId, reason: "server_audio_unlock" });
+        } else if (action === "set_voice") {
+          global.BrowserTts?.setPreferredBrowserSpeechVoice?.(payload?.voiceName || "");
+          emitDialogueRuntimeState({ requestId: payload?.requestId, reason: "server_voice_changed" });
+        }
+      });
+      socket.on("connect", () => {
+        if (activeCourseSessionId) startAutoListen("socket_reconnected");
+        emitDialogueRuntimeState({ reason: "socket_connected" });
+      });
     }
 
+    global.BrowserTts?.subscribeBrowserSpeechVoiceChanges?.(() => {
+      emitDialogueRuntimeState({ reason: "voices_changed" });
+    });
+
     waitForSocketAndBind(50);
-    console.log("[child_dialogue] UI 已绑定：浏览器语音识别 → 唤醒词/课程关键词 → LLM");
+    console.log("[child_dialogue] 运行时已绑定：课程生命周期 → 浏览器语音识别 → 唤醒词/课程关键词 → LLM");
   }
 
   global.ChildDialogue = {
@@ -930,7 +888,8 @@
     stopAutoListen,
     pauseAsrForTts,
     resumeAsrAfterTts,
-    bindDialogueUi,
+    bindDialogueRuntime,
+    bindDialogueUi: bindDialogueRuntime,
     buildPageContext,
     emitDialogueText,
     emitDialogueLatency,
@@ -944,8 +903,8 @@
   };
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", bindDialogueUi);
+    document.addEventListener("DOMContentLoaded", bindDialogueRuntime);
   } else {
-    setTimeout(bindDialogueUi, 0);
+    setTimeout(bindDialogueRuntime, 0);
   }
 })(window);

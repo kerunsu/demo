@@ -65,9 +65,12 @@
     ['attention', 'reward', 'praise'].forEach((auxType) => {
       const select = document.getElementById(`animation-${auxType}`);
       if (!select) return;
+      const isGlobal = window.currentScope?.type === 'default';
       select.innerHTML = auxType === 'attention'
         ? '<option value="">不播放下屏动画</option>'
-        : '<option value="">默认库随机</option>';
+        : auxType === 'praise'
+          ? `<option value="">${isGlobal ? '不播放下屏动画' : '继承全局固定动画'}</option>`
+          : '<option value="">默认库随机</option>';
       items
         .filter((item) => item.validationStatus === 'compatible' || item.validationStatus === 'degraded')
         .forEach((item) => {
