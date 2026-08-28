@@ -10,24 +10,25 @@ from app.course_scope import enabled_course_dimensions, enabled_course_types
 
 
 DEFAULT_WEIGHTS = {
-    "attention": 34,
-    "matching": 33,
-    "ordering": 33,
+    "attention": 25,
+    "expressiveLanguage": 25,
+    "receptiveLanguage": 25,
+    "ordering": 25,
 }
 DEFAULT_COURSE_WEIGHTS = {
-    "pairing": 1,
+    "naming": 1,
     "ordering": 1,
 }
 DEFAULT_MIN_EFFECTIVE_SAMPLES = {
-    "pairing": 5,
+    "naming": 2,
     "ordering": 5,
 }
 COURSE_SAMPLE_UNITS = {
-    "pairing": "answered_question",
+    "naming": "rated_item",
     "ordering": "answered_question",
 }
 COURSE_LABELS = {
-    "pairing": "配对",
+    "naming": "命名",
     "ordering": "排序",
 }
 
@@ -39,8 +40,8 @@ COURSE_ALIASES = {
     "pose": "mimic",
 }
 COURSE_TYPE_EXPECTATIONS = {
-    "pairing": ["matching"],
-    "ordering": ["ordering"],
+    "naming": ["expressiveLanguage", "receptiveLanguage"],
+    "ordering": ["ordering", "receptiveLanguage"],
     "mimic": ["attention"],
 }
 SCORING_FINGERPRINT_KEYS = (
@@ -111,7 +112,7 @@ def validate_scoring_config(cfg: Dict[str, Any]) -> List[str]:
         except (TypeError, ValueError):
             errors.append(f"权重 {k} 必须为数字")
     if abs(total - 100.0) > 0.01:
-        errors.append(f"Demo 三维 weights 之和必须为 100（当前 {total:.2f}）")
+        errors.append(f"Demo 四维 weights 之和必须为 100（当前 {total:.2f}）")
     np_ = cfg.get("narrative_provider")
     if np_ is not None and np_ not in ("rule", "mock"):
         errors.append("narrative_provider 仅为 rule|mock")
@@ -358,6 +359,7 @@ def build_course_metrics(summary: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[s
         elif teacher_score is not None:
             course_points[course_type].append(teacher_score)
             performance_points[course_type].append(teacher_score)
+            evidence_counts[course_type] += 1
 
         # 历史命名训练可用旧 receptive 指标兜底，但不伪造教师评分。
         if course_type in ("naming", "onomatopoeia") and teacher_score is None:
@@ -369,6 +371,7 @@ def build_course_metrics(summary: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[s
             if historical is not None:
                 course_points[course_type].append(historical)
                 performance_points[course_type].append(historical)
+                evidence_counts[course_type] += 1
 
         if response_ms is not None:
             try:

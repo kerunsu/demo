@@ -1,55 +1,169 @@
 {
   "courses": {
-    "10": {},
-    "9": {}
+    "10": {
+      "question": {
+        "animation": "",
+        "emotion": "v3_speak_lookdown_sort.mp4",
+        "sequence": {
+          "audio": {
+            "offsetMs": 0
+          },
+          "expressionDurationMs": 0,
+          "expressionMediaId": ""
+        }
+      }
+    },
+    "7": {
+      "hint": {
+        "animation": "",
+        "emotion": "v3_speak_bye.mp4",
+        "sequence": {
+          "audio": {
+            "offsetMs": 0
+          },
+          "expressionDurationMs": 0,
+          "expressionMediaId": ""
+        }
+      },
+      "items": {
+        "16": {
+          "praise": {
+            "animation": "",
+            "emotion": "v3_speak_excitedly_long.mp4",
+            "sequence": {
+              "audio": {
+                "offsetMs": 0
+              },
+              "expressionDurationMs": 0,
+              "expressionMediaId": ""
+            }
+          }
+        },
+        "20": {
+          "praise": {
+            "animation": "",
+            "emotion": "v3_idle_sleepy2.mp4",
+            "sequence": {
+              "audio": {
+                "offsetMs": 0
+              },
+              "expressionDurationMs": 0,
+              "expressionMediaId": ""
+            }
+          }
+        }
+      },
+      "praise": {
+        "animation": "",
+        "emotion": "v3_speak_excitedly_short.mp4",
+        "sequence": {
+          "audio": {
+            "offsetMs": 0
+          },
+          "expressionDurationMs": 0,
+          "expressionMediaId": ""
+        }
+      },
+      "question": {
+        "animation": "",
+        "emotion": "v3_speak_lookdown_namecall.mp4",
+        "sequence": {
+          "audio": {
+            "offsetMs": 0
+          },
+          "expressionDurationMs": 0,
+          "expressionMediaId": ""
+        }
+      },
+      "silent": {
+        "animation": "",
+        "emotion": "v3_speak_bye.mp4",
+        "sequence": {
+          "audio": {
+            "offsetMs": 0
+          },
+          "expressionDurationMs": 0,
+          "expressionMediaId": ""
+        }
+      }
+    }
   },
   "defaults": {
     "attention": {
       "animation": "",
+      "emotion": "v3_speak_excitedly_short.mp4",
       "sequence": {
         "audio": {
           "offsetMs": 0
-        }
+        },
+        "expressionDurationMs": 0,
+        "expressionMediaId": ""
+      }
+    },
+    "dialogue_wake_ack": {
+      "animation": "",
+      "emotion": "v3_speak_excitedly_short.mp4",
+      "sequence": {
+        "audio": {
+          "offsetMs": 0
+        },
+        "expressionDurationMs": 0,
+        "expressionMediaId": ""
       }
     },
     "hint": {
       "animation": "",
+      "emotion": "v3_speak_excitedly_short.mp4",
       "sequence": {
         "audio": {
           "offsetMs": 0
-        }
+        },
+        "expressionDurationMs": 0,
+        "expressionMediaId": ""
       }
     },
     "praise": {
       "animation": "勾勾.mp4",
+      "emotion": "v3_speak_excitedly_short.mp4",
       "sequence": {
         "audio": {
           "offsetMs": 0
-        }
+        },
+        "expressionDurationMs": 0,
+        "expressionMediaId": ""
       }
     },
     "question": {
       "animation": "",
+      "emotion": "v3_speak_lookdown_namecall.mp4",
       "sequence": {
         "audio": {
-          "offsetMs": 0
-        }
+          "offsetMs": 300
+        },
+        "expressionDurationMs": 0,
+        "expressionMediaId": ""
       }
     },
     "reward": {
-      "animation": "",
+      "animation": "勾勾.mp4",
+      "emotion": "v3_speak_excitedly_short.mp4",
       "sequence": {
         "audio": {
           "offsetMs": 0
-        }
+        },
+        "expressionDurationMs": 0,
+        "expressionMediaId": ""
       }
     },
     "silent": {
       "animation": "",
+      "emotion": "v3_speak_lookdown_namecall.mp4",
       "sequence": {
         "audio": {
           "offsetMs": 0
-        }
+        },
+        "expressionDurationMs": 0,
+        "expressionMediaId": ""
       }
     }
   },

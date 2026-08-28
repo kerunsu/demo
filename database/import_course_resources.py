@@ -19,6 +19,7 @@ sys.path.insert(0, str(project_root))
 
 from database.models import db, Course, CourseItem, CourseType
 from app.config import Config
+from app.course_scope import is_course_type_enabled
 from app.utils.resource_utils import folder_exists, get_first_file_from_folder, count_files_in_folder
 from flask import Flask
 
@@ -44,6 +45,9 @@ def read_csv_mapping(csv_path: Path) -> list:
     with open(csv_path, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
+            canonical_type = 'onomatopoeia' if row['course_type'].strip() == 'voice' else row['course_type'].strip()
+            if not is_course_type_enabled(canonical_type):
+                continue
             items.append({
                 'course_type': row['course_type'].strip(),
                 'folder_id': row['folder_id'].strip(),
@@ -126,9 +130,11 @@ def import_to_database(items: list, dry_run: bool = False):
             
             # 查找或创建课程
             course_title = f"{course_type_cn}课程"
+            # Course identity is the unique CourseType, not a mutable title.
+            # migrate_courses creates the canonical row as “命名”; looking for
+            # “命名课程” would attempt a duplicate and violate the DB constraint.
             course = Course.query.filter_by(
                 course_type_id=course_type_obj.id,
-                title=course_title
             ).first()
             
             if not course:

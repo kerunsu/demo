@@ -1,13 +1,13 @@
 [
   {
-    "id": 9,
-    "title": "配对",
-    "type": "pairing",
-    "question": "resources/audios/a_question_pairing.mp3",
-    "praise": "resources/audios/a_praise_pairing.mp3",
-    "file": "resources/interactive/matching.html",
+    "id": 7,
+    "title": "命名",
+    "type": "naming",
+    "question": "resources/audios/naming/naming_question.mp3",
+    "praise": "resources/audios/mimic/mimic_praise.mp3",
     "items": [
-      {"id": 79, "name": "相同物品视觉配对", "type": "interactive", "file": "resources/images/matching/"}
+      {"id": 1, "name": "猫", "type": "image", "file": "resources/images/naming/cat_1.png", "hint": "resources/audios/naming/naming_hint_cat.mp3"},
+      {"id": 2, "name": "狗", "type": "image", "file": "resources/images/naming/dog_1.png", "hint": "resources/audios/naming/naming_hint_dog.mp3"}
     ]
   },
   {
@@ -18,7 +18,10 @@
     "praise": "resources/audios/a_praise_ordering.mp3",
     "file": "resources/interactive/sequencing.html",
     "items": [
-      {"id": 80, "name": "排序", "type": "interactive", "file": "resources/images/paixu/"}
+      {"id": 1, "name": "大小", "type": "interactive", "difficulty": "easy", "config": {"itemCount": 3, "category": "size", "timeLimit": 30}},
+      {"id": 2, "name": "多少", "type": "interactive", "difficulty": "medium", "config": {"itemCount": 4, "category": "quantity", "timeLimit": 45}},
+      {"id": 3, "name": "高矮", "type": "interactive", "difficulty": "medium", "config": {"itemCount": 4, "category": "height", "timeLimit": 45}},
+      {"id": 4, "name": "长短", "type": "interactive", "difficulty": "hard", "config": {"itemCount": 5, "category": "length", "timeLimit": 60}}
     ]
   }
 ]

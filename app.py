@@ -102,7 +102,7 @@ from app.facade.routes.server_status import execute_server_status
 from app.facade.sockets import register_legacy_socket_events
 from app.facade.use_cases.server_status import ServerStatusInputs
 
-# 导入 Demo 课程输出协调模块（机械动作和完整版表情已禁用）
+# 导入 Demo 课程输出协调模块（屏幕表情启用；机械动作已禁用）
 from app.robot.routes import robot_bp
 from app.robot import robot_service
 
@@ -121,7 +121,8 @@ from app.sockets.audio_events import register_audio_events
 
 DEMO_ABILITY_LABELS = {
     "attention": "注意力",
-    "matching": "配对",
+    "expressiveLanguage": "表达性语言",
+    "receptiveLanguage": "接收性语言",
     "ordering": "排序",
 }
 
@@ -174,7 +175,7 @@ db.init_app(app)
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# 注册行为协调与儿童屏动画 Blueprint；机械动作/表情/Runtime 路由由
+# 注册行为协调、屏幕表情与儿童屏动画 Blueprint；机械动作/Runtime 路由由
 # Demo 能力闸门返回 410，不属于本部署的可用接口。
 app.register_blueprint(robot_bp)
 logger.info("Demo 行为协调模块已注册 (Blueprint: /api/robot)")
@@ -498,7 +499,7 @@ def robot_page():
 
 @app.route("/robot/emotion")
 def robot_emotion_page():
-    return jsonify({"success": False, "error": "demo_robot_expression_disabled"}), 410
+    return render_template("robot/emotion.html")
 
 
 @app.route("/robot/download")
@@ -1023,7 +1024,7 @@ def put_runtime_modes():
         if robot not in (None, "disabled"):
             return jsonify({
                 "success": False,
-                "error": "Demo 机固定禁用机械动作、机器人 Runtime 和完整版表情",
+                "error": "Demo 机固定禁用机械动作和 Robot Runtime；屏幕表情保持启用",
             }), 400
         if child not in (None, "browser"):
             return jsonify({
@@ -1868,7 +1869,12 @@ def get_student_reports(student_id):
 def get_course_types():
     """获取课程类型字典表"""
     try:
-        course_types = CourseType.query.order_by(CourseType.id).all()
+        enabled_labels = _enabled_demo_course_labels()
+        course_types = [
+            course_type
+            for course_type in CourseType.query.order_by(CourseType.id).all()
+            if course_type.name in enabled_labels
+        ]
         return jsonify({
             "success": True,
             "course_types": [ct.to_dict() for ct in course_types]
@@ -1881,7 +1887,12 @@ def get_course_types():
 def get_ability_types():
     """获取能力类型字典表"""
     try:
-        ability_types = AbilityType.query.order_by(AbilityType.id).all()
+        enabled_labels = _enabled_demo_ability_labels()
+        ability_types = [
+            ability_type
+            for ability_type in AbilityType.query.order_by(AbilityType.id).all()
+            if ability_type.name in enabled_labels
+        ]
         return jsonify({
             "success": True,
             "ability_types": [at.to_dict() for at in ability_types]

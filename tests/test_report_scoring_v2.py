@@ -10,9 +10,10 @@ CFG = {
     "schema_version": "education-training-index-v2-teacher-rating",
     "score_boundary": "education_training_reference_only",
     "weights": {
-        "attention": 34,
-        "matching": 33,
-        "ordering": 33,
+        "attention": 25,
+        "expressiveLanguage": 25,
+        "receptiveLanguage": 25,
+        "ordering": 25,
     },
     "teacher_rating": {"scale": 20},
     "interactive_course": {
@@ -25,17 +26,20 @@ CFG = {
     },
     "dimension_weights": {
         "attention": {"automatic": 1.0},
+        "expressive": {"naming": 1.0},
+        "receptive": {"naming": 1.0, "ordering": 1.0},
     },
-    "course_weights": {"pairing": 1, "ordering": 1},
-    "enabled_course_types": ["pairing", "ordering"],
-    "enabled_dimension_keys": ["attention", "matching", "ordering"],
+    "course_weights": {"naming": 1, "ordering": 1},
+    "enabled_course_types": ["naming", "ordering"],
+    "enabled_dimension_keys": ["attention", "expressiveLanguage", "receptiveLanguage", "ordering"],
+    "sample_sufficiency": {"minimum_effective_samples": {"naming": 2, "ordering": 5}},
     "grade_thresholds": {"excellent": 85, "good": 70, "fair": 55, "needs_support": 0},
 }
 
 
 def window(course_type, rating, response_ms, task_metrics=None):
     metrics = dict(task_metrics or {})
-    objective_key = "matching" if course_type == "pairing" else "sequencing" if course_type == "ordering" else None
+    objective_key = "sequencing" if course_type == "ordering" else None
     if objective_key and isinstance(metrics.get(objective_key), dict):
         metrics[objective_key] = {**metrics[objective_key]}
         metrics[objective_key].setdefault("answered", 5)
@@ -53,7 +57,8 @@ def test_v2_balances_two_demo_course_types_and_builds_dimensions():
         "language": {},
         "task": {},
         "windows": [
-            window("pairing", 4, 3000, {"matching": {"accuracy": 80, "avg_response_ms": 3000}}),
+            window("naming", 4, 3000),
+            window("naming", 5, 2500),
             window("ordering", 3, 12000, {"sequencing": {"accuracy": 60, "avg_response_ms": 12000}}),
             window("mimic", 3, 6000),
         ],
@@ -62,14 +67,15 @@ def test_v2_balances_two_demo_course_types_and_builds_dimensions():
     result = compute_dimensions(summary, CFG, soft=False)
 
     assert result["courseScores"] == {
-        "pairing": 83.5,
+        "naming": 90.0,
         "ordering": 49.5,
     }
-    assert result["overall"] == 66.5
+    assert result["overall"] == 69.8
     assert result["dimensions"]["attention"]["score"] == 90.0
-    assert result["dimensions"]["matching"]["score"] == 83.5
+    assert result["dimensions"]["expressiveLanguage"]["score"] == 90.0
+    assert result["dimensions"]["receptiveLanguage"]["score"] == 69.8
     assert result["dimensions"]["ordering"]["score"] == 49.5
-    assert result["responseMetrics"]["sampleCount"] == 10
+    assert result["responseMetrics"]["sampleCount"] == 7
 
 
 def test_missing_course_types_are_renormalized_not_scored_as_zero():
@@ -77,32 +83,32 @@ def test_missing_course_types_are_renormalized_not_scored_as_zero():
         "attention": {"avg_score": 80},
         "language": {},
         "task": {},
-        "windows": [window("pairing", 4, 4000, {"matching": {"accuracy": 80, "avg_response_ms": 4000}})],
+        "windows": [window("naming", 4, 4000), window("naming", 4, 3500)],
     }
     result = compute_dimensions(summary, CFG, soft=False)
-    assert result["overall"] == pytest.approx(81.6, abs=0.1)
+    assert result["overall"] == 80.0
     assert result["dimensions"]["attention"]["score"] == 80.0
-    assert result["dimensions"]["matching"]["score"] == pytest.approx(81.6, abs=0.1)
+    assert result["dimensions"]["expressiveLanguage"]["score"] == 80.0
     assert result["dimensions"]["ordering"]["score"] is None
-    assert result["responseMetrics"]["avgResponseMs"] == 4000.0
+    assert result["responseMetrics"]["avgResponseMs"] == 3750.0
     evaluations = {item["courseType"]: item for item in result["courseEvaluations"]}
-    assert evaluations["pairing"]["status"] == "evaluated"
-    assert evaluations["pairing"]["score"] == pytest.approx(81.6, abs=0.1)
-    assert evaluations["pairing"]["targetScore"] == 70.0
+    assert evaluations["naming"]["status"] == "evaluated"
+    assert evaluations["naming"]["score"] == 80.0
+    assert evaluations["naming"]["targetScore"] == 70.0
 
 
 def test_historical_interactive_training_without_teacher_rating_still_scores():
     summary = {
         "attention": {"avg_score": 70},
         "language": {"avg_speech_ratio": 0.4, "total_word_count": 20},
-        "task": {"matching_accuracy": 85},
+        "task": {"sequencing_accuracy": 85},
         "windows": [{
-            "course_type": "pairing",
-            "task_metrics": {"matching": {"accuracy": 85, "avg_response_ms": 3000, "answered": 5}},
+            "course_type": "ordering",
+            "task_metrics": {"sequencing": {"accuracy": 85, "avg_response_ms": 3000, "answered": 5}},
         }],
     }
     result = compute_dimensions(summary, CFG, soft=False)
-    assert result["courseScores"]["pairing"] == pytest.approx(88.8, abs=0.1)
+    assert result["courseScores"]["ordering"] == pytest.approx(88.8, abs=0.1)
     assert result["overall"] == pytest.approx(88.8, abs=0.1)
     assert "TEACHER_RATING_MISSING" in result["limitations"]
 
@@ -113,22 +119,22 @@ def test_interactive_score_stays_provisional_below_minimum_sample_count():
         "language": {},
         "task": {},
         "windows": [window(
-            "pairing",
+            "ordering",
             4,
             3000,
-            {"matching": {"accuracy": 80, "avg_response_ms": 3000, "answered": 2}},
+            {"sequencing": {"accuracy": 80, "avg_response_ms": 3000, "answered": 2}},
         )],
     }
     result = compute_dimensions(summary, CFG, soft=False)
-    pairing = next(item for item in result["courseEvaluations"] if item["courseType"] == "pairing")
+    ordering = next(item for item in result["courseEvaluations"] if item["courseType"] == "ordering")
 
     assert result["overall"] is None
-    assert result["courseScores"]["pairing"] is None
-    assert pairing["status"] == "insufficient_data"
-    assert pairing["provisionalScore"] == 83.5
-    assert pairing["validSampleCount"] == 2
-    assert pairing["requiredSampleCount"] == 5
-    assert pairing["contributesToOverall"] is False
+    assert result["courseScores"]["ordering"] is None
+    assert ordering["status"] == "insufficient_data"
+    assert ordering["provisionalScore"] == 83.5
+    assert ordering["validSampleCount"] == 2
+    assert ordering["requiredSampleCount"] == 5
+    assert ordering["contributesToOverall"] is False
     assert "COURSE_SAMPLE_INSUFFICIENT" in result["limitations"]
 
 
@@ -138,7 +144,8 @@ def test_narrative_recommendations_are_evidence_linked_even_when_scores_are_high
         "language": {},
         "task": {},
         "windows": [
-            window("pairing", 5, 3000, {"matching": {"accuracy": 100, "avg_response_ms": 3000}}),
+            window("naming", 5, 2500),
+            window("naming", 5, 2500),
             window("ordering", 5, 3000, {"sequencing": {"accuracy": 100, "avg_response_ms": 3000}}),
         ],
     }
@@ -195,11 +202,11 @@ def test_manual_course_score_sync_updates_teacher_chart_without_faking_missing_z
     _sync_course_evaluations(report)
     evaluations = {item["courseType"]: item for item in report["courseEvaluations"]}
 
-    assert evaluations["pairing"]["gapToTarget"] == -9.0
+    assert evaluations["naming"]["gapToTarget"] == 14.0
     assert evaluations["ordering"]["score"] is None
     assert evaluations["ordering"]["status"] == "insufficient_data"
-    assert set(evaluations) == {"pairing", "ordering"}
-    assert set(report["courseScores"]) == {"pairing", "ordering"}
+    assert set(evaluations) == {"naming", "ordering"}
+    assert set(report["courseScores"]) == {"naming", "ordering"}
 
 
 def test_teacher_report_source_hides_internal_identifiers_and_formula_version():

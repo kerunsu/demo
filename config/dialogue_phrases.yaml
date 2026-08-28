@@ -1,6 +1,6 @@
 ﻿# 浏览器 TTS 话术库（挂在 aux.question / praise / hint / 社交打招呼再见 上）
 # 课型未命中时回退 default
-# 配对/排序表扬与鼓励对齐 DemoRobot App.tsx：
+# 活动课型为命名/排序；以下旧课型话术只作历史兼容。
 #   MATCHING_CORRECT_FEEDBACK_LINES / ORDERING_CORRECT_FEEDBACK_LINES
 #   MATCHING_WRONG_FEEDBACK_LINES / ORDERING_WRONG_FEEDBACK_LINES
 #   MATCHING_WRONG_FEEDBACK_WITH_HINT_LINES / ORDERING_WRONG_FEEDBACK_WITH_HINT_LINES

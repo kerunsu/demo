@@ -1841,7 +1841,12 @@ class RobotService:
             startDelayMs=max(0, int(round((start_at - time.monotonic()) * 1000.0))),
             restart=True,
             **(
-                {'dialogueReply': True, 'source': 'dialogue'}
+                {
+                    'dialogueReply': True,
+                    'dialogueReplyLoop': True,
+                    'dialogueReplyTimeoutMs': plan.get('dialogueReplyTimeoutMs'),
+                    'source': 'dialogue',
+                }
                 if plan.get('dialogueReply') else {}
             ),
         )
@@ -2079,7 +2084,7 @@ class RobotService:
 
         audio_offset_ms = self._as_ms(audio.get('offsetMs'))
         aux = source.get('aux') if isinstance(source.get('aux'), dict) else {}
-        if duration_ms and any(bool(aux.get(key)) for key in (
+        if any(bool(aux.get(key)) for key in (
             'question', 'praise', 'hint', 'socialGreetingIntro',
             'socialGreetingPlay', 'socialFarewellBye', 'socialFarewellReply',
         )) and audio_offset_ms >= duration_ms:
@@ -2087,6 +2092,9 @@ class RobotService:
 
         session_id = source.get('sessionId') or source.get('session_id')
         motion_end_ms = motion_offset_ms + motion_duration_ms if motion else 0
+        dialogue_reply_timeout_ms = self._as_ms(source.get('dialogueReplyTimeoutMs'))
+        if source.get('dialogueReply') and dialogue_reply_timeout_ms:
+            duration_ms = max(duration_ms, dialogue_reply_timeout_ms)
         event_duration_ms = max(duration_ms, motion_end_ms)
         behavior_id = (
             source.get('behaviorId')
@@ -2114,6 +2122,7 @@ class RobotService:
             'audioOffsetMs': audio_offset_ms,
             'sessionId': str(session_id) if session_id else None,
             'dialogueReply': bool(source.get('dialogueReply')),
+            'dialogueReplyTimeoutMs': dialogue_reply_timeout_ms,
             'startLeadMs': (
                 BEHAVIOR_FEEDBACK_START_LEAD_MS if fast_feedback else None
             ),
@@ -2549,14 +2558,24 @@ class RobotService:
         resolver = self._build_interaction_resolver(store=store, catalog=catalog) if store is not None or catalog is not None else None
         return self._resolve_interaction_plan(payload, resolver=resolver)
 
+    def _select_mapping_emotion(self, mapping: Any) -> str:
+        """Use the current main-version praise-pool behavior with legacy fallback."""
+        selector = getattr(self._mapping_resolver, 'select_emotion', None)
+        if callable(selector):
+            return selector(mapping)
+        data = mapping if isinstance(mapping, dict) else {}
+        return str(data.get('emotion') or self.get_default_emotion()).strip()
+
     def preview_behavior_sequence(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """控制端试播：使用传入的未保存绑定，仍走与正式触发相同的调度器。"""
         motions = data.get('motions') if isinstance(data.get('motions'), list) else []
         selected_motion = self._mapping_resolver.select_motion(motions)
         if not getattr(self, '_motion_output_enabled', True):
             selected_motion = None
-        if not getattr(self, '_expression_output_enabled', True):
-            emotion = ''
+        selected_emotion = self._select_mapping_emotion({
+            'emotion': data.get('emotion'),
+            'emotions': data.get('emotions'),
+        })
         aux_type = str(data.get('auxType') or '')
         aux_keys = {
             'question': 'question', 'praise': 'praise', 'hint': 'hint',
@@ -2581,7 +2600,7 @@ class RobotService:
         targets = control.get('targets') or {}
         preview_sequence = data.get('sequence') if isinstance(data.get('sequence'), dict) else {}
         expression = str(
-            data.get('emotion')
+            selected_emotion
             or preview_sequence.get('expressionMediaId')
             or self.get_default_emotion()
         ).strip()
@@ -2612,7 +2631,7 @@ class RobotService:
         try:
             plan = self._build_sequence_plan(
                 motion=selected_motion,
-                emotion=str(data.get('emotion') or self.get_default_emotion()),
+                emotion=selected_emotion or self.get_default_emotion(),
                 sequence=data.get('sequence'),
                 event_data=preview_data,
             )
@@ -2716,14 +2735,14 @@ class RobotService:
         # 查找匹配的动作、表情与偏移配置
         mapping = self._mapping_resolver.find_mapping(student_id, course_id, item_id, aux_type)
         motions = mapping.get('motions', [])
-        emotion = mapping.get('emotion') or self.get_default_emotion()
+        emotion = self._select_mapping_emotion(mapping) or self.get_default_emotion()
         # Interactive iframe feedback can arrive without a course-specific
         # mapping. Always fall back to the configured global behavior profile
         # so praise/question never silently becomes audio-only.
         if not motions:
             fallback = self._mapping_resolver.find_mapping(None, -1, None, aux_type)
             motions = fallback.get('motions', []) or motions
-            emotion = emotion or fallback.get('emotion')
+            emotion = emotion or self._select_mapping_emotion(fallback)
         sequence_config = mapping.get('sequence') if isinstance(mapping.get('sequence'), dict) else {}
         # 课程机器人表现只有 course_map 的全局→课程→课点三级配置是执行真相。
         # InteractionProfileV2 仍可用于独立预演/迁移，但不再暗中覆盖配置中心。
@@ -2762,6 +2781,8 @@ class RobotService:
             }
         # 无动作时仍允许纯表情 / 语音行为。
         selected_motion = self._mapping_resolver.select_motion(motions)
+        if not getattr(self, '_motion_output_enabled', True):
+            selected_motion = None
         try:
             plan = self._build_sequence_plan(
                 motion=selected_motion,
@@ -2811,17 +2832,17 @@ class RobotService:
         """设置静态姿势"""
         self._mapping_resolver.set_idle_pose(motion_name)
     
-    def update_default_motions(self, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None) -> None:
+    def update_default_motions(self, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None) -> None:
         """更新通用动作"""
-        self._mapping_resolver.update_default_motions(aux_type, motions, emotion, sequence, animation)
+        self._mapping_resolver.update_default_motions(aux_type, motions, emotion, sequence, animation, emotions)
     
     def delete_default_motions(self, aux_type: str) -> None:
         """删除通用动作"""
         self._mapping_resolver.delete_default_motions(aux_type)
     
-    def update_course_motions(self, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None) -> None:
+    def update_course_motions(self, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None) -> None:
         """更新课程级动作"""
-        self._mapping_resolver.update_course_motions(course_id, aux_type, motions, emotion, sequence, animation)
+        self._mapping_resolver.update_course_motions(course_id, aux_type, motions, emotion, sequence, animation, emotions)
     
     def delete_course_motions(self, course_id: int, aux_type: str) -> None:
         """删除课程级动作"""
@@ -2830,32 +2851,32 @@ class RobotService:
     def update_course_item_motions(
         self, course_id: int, item_id: int, aux_type: str, motions: List[str],
         emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None,
-        animation: Optional[str] = None,
+        animation: Optional[str] = None, emotions: Optional[List[str]] = None,
     ) -> None:
         self._mapping_resolver.update_course_item_motions(
-            course_id, item_id, aux_type, motions, emotion, sequence, animation,
+            course_id, item_id, aux_type, motions, emotion, sequence, animation, emotions,
         )
 
     def delete_course_item_motions(self, course_id: int, item_id: int, aux_type: str) -> None:
         self._mapping_resolver.delete_course_item_motions(course_id, item_id, aux_type)
     
     def update_student_course_motions(
-        self, student_id: int, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None
+        self, student_id: int, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None
     ) -> None:
         """更新学生-课程级动作"""
-        self._mapping_resolver.update_student_course_motions(student_id, course_id, aux_type, motions, emotion, sequence, animation)
+        self._mapping_resolver.update_student_course_motions(student_id, course_id, aux_type, motions, emotion, sequence, animation, emotions)
     
     def delete_student_course_motions(self, student_id: int, course_id: int, aux_type: str) -> None:
         """删除学生-课程级动作"""
         self._mapping_resolver.delete_student_course_motions(student_id, course_id, aux_type)
     
     def update_item_motions(
-        self, student_id: int, course_id: int, item_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None
+        self, student_id: int, course_id: int, item_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None
     ) -> None:
         """更新项目级动作"""
         self._mapping_resolver.update_item_motions(
             student_id, course_id, item_id, aux_type,
-            motions=motions, emotion=emotion, sequence=sequence, animation=animation,
+            motions=motions, emotion=emotion, sequence=sequence, animation=animation, emotions=emotions,
         )
 
     def resolve_encouragement_animation(self, data: Dict[str, Any]) -> Optional[str]:
@@ -2885,24 +2906,30 @@ class RobotService:
     def start_dialogue_reply_behavior(
         self,
         *,
-        emotion: str,
+        emotion: Optional[str],
+        motion: Optional[str] = None,
+        sequence: Optional[Dict[str, Any]] = None,
         behavior_id: str,
         request_id: str,
         session_id: str,
+        speech_timeout_ms: int = 30000,
     ) -> Optional[Dict[str, Any]]:
         """Attach a configured expression to an already reserved dialogue turn."""
         if not getattr(self, '_expression_output_enabled', True):
             return None
+        if motion:
+            logger.warning("Demo ignored dialogue motion while keeping screen expression")
         try:
             plan = self._build_sequence_plan(
                 motion=None,
                 emotion=emotion,
-                sequence={},
+                sequence=sequence or {},
                 event_data={
                     'behaviorId': behavior_id,
                     'requestId': request_id,
                     'sessionId': session_id,
                     'dialogueReply': True,
+                    'dialogueReplyTimeoutMs': speech_timeout_ms,
                 },
             )
         except (ValueError, FileNotFoundError) as exc:
@@ -2913,6 +2940,7 @@ class RobotService:
         return {
             'behaviorId': plan['id'],
             'emotion': plan['emotion'],
+            'motion': None,
             'durationMs': plan['durationMs'],
             'scheduledDelayMs': plan.get('scheduledDelayMs', 0),
             'startAtEpochMs': plan.get('startAtEpochMs'),
@@ -2993,6 +3021,23 @@ class RobotService:
         from app.robot.emotion_assets import select_dialogue_reply_emotion
         return select_dialogue_reply_emotion(text)
 
+    def select_dialogue_wake_behavior(self) -> Optional[Dict[str, Any]]:
+        """Resolve only the configured screen expression for “我在这里”."""
+        if not getattr(self, '_expression_output_enabled', True):
+            return None
+        mapping = self._mapping_resolver.find_mapping(
+            None, -1, None, 'dialogue_wake_ack'
+        )
+        emotion = self._select_mapping_emotion(mapping) or None
+        if not emotion:
+            return None
+        return {
+            'auxType': 'dialogue_wake_ack',
+            'emotion': emotion,
+            'motion': None,
+            'sequence': mapping.get('sequence') or {},
+        }
+
     def get_emotion_style(self, name: str) -> Dict[str, Any]:
         from app.robot.emotion_assets import get_emotion_style
         return get_emotion_style(name)
@@ -3054,7 +3099,7 @@ class RobotService:
         global _socketio
 
         if not getattr(self, '_expression_output_enabled', True):
-            logger.debug("Demo 已禁用完整版机器人表情，忽略触发请求")
+            logger.debug("Demo 屏幕表情能力不可用，忽略触发请求")
             return False
         
         if _socketio is None:

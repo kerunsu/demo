@@ -40,9 +40,7 @@ def _iter_sync_files() -> Iterable[tuple[Path, str]]:
                 continue
             if root == _ROOT / "doll" / "data" and path.name in _EXCLUDED_DOLL_DATA:
                 continue
-            if path.name in {"motions.json", "emotions_meta.json"}:
-                continue
-            if any(part.casefold() == "emotions" for part in path.parts):
+            if path.name == "motions.json":
                 continue
             if any(part in {"recordings", "results", "temp", ".runtime"} for part in path.parts):
                 continue
@@ -114,7 +112,6 @@ def build_sync_manifest() -> dict[str, Any]:
             "static/recordings, static/results, static/temp",
             "doll/data/students.json (student personal data)",
             "robot motion/runtime files (Demo has no mechanical structure)",
-            "static/resources/Emotions and emotions_meta.json (Demo expression system is external)",
         ],
     }
 

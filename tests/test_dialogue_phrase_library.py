@@ -75,8 +75,8 @@ def test_phrase_config_api_lists_ordering_and_saves(monkeypatch, tmp_path):
             return self
 
         def all(self):
-            if self.course_type_id == "配对":
-                return [type("CourseRow", (), {"id": 9, "title": "配对课程"})()]
+            if self.course_type_id == "命名":
+                return [type("CourseRow", (), {"id": 7, "title": "命名课程"})()]
             return []
 
     monkeypatch.setattr(
@@ -101,16 +101,16 @@ def test_phrase_config_api_lists_ordering_and_saves(monkeypatch, tmp_path):
     assert payload["success"] is True
     ordering = next(x for x in payload["courseTypes"] if x["type"] == "ordering")
     assert len(ordering["slots"]) == 11
-    pairing = next(x for x in payload["courseTypes"] if x["type"] == "pairing")
-    assert pairing["courseCount"] == 1
-    assert pairing["courses"] == [{"id": 9, "title": "配对课程"}]
+    naming = next(x for x in payload["courseTypes"] if x["type"] == "naming")
+    assert naming["courseCount"] == 1
+    assert naming["courses"] == [{"id": 7, "title": "命名课程"}]
     assert {item["type"] for item in payload["courseTypes"]} == {
-        "global", "pairing", "ordering"
+        "global", "naming", "ordering"
     }
-    selected = pairing["slots"][0]["library"][:1]
+    selected = naming["slots"][0]["library"][:1]
 
     saved = client.put(
-        "/api/config/phrases/question/pairing", json={"selected": selected}
+        "/api/config/phrases/question/naming", json={"selected": selected}
     )
     assert saved.status_code == 200
     assert saved.get_json()["slot"]["selected"] == selected
@@ -144,6 +144,10 @@ def test_demo_disables_legacy_audio_entry_configuration():
         assert response.get_json()["code"] == "demo_capability_disabled"
 
     response = client.get("/api/config/audio/course-defaults/naming")
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+
+    response = client.get("/api/config/audio/course-defaults/pairing")
     assert response.status_code == 400
     assert "Demo 版仅允许" in response.get_json()["error"]
 

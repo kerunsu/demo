@@ -1,6 +1,6 @@
 """
-课程动作映射解析器
-负责从三层配置中查找匹配的动作和表情
+课程表情映射解析器
+负责从三层配置中查找匹配的表情和儿童屏幕动画。
 
 查找优先级：课点级 > 课程级 > 全局默认级
 """
@@ -35,16 +35,31 @@ def _normalize_sequence(data: Any) -> Dict[str, Any]:
         'expressionMediaId': str(raw.get('expressionMediaId') or '').strip(),
         # 0 表示由 GIF / 导入 JSON 元数据推断；MP4 请在控制端填写实际时长。
         'expressionDurationMs': _as_ms(raw.get('expressionDurationMs')),
-        'motionOffsetMs': _as_ms(raw.get('motionOffsetMs')),
         'audio': {
             'offsetMs': _as_ms(audio.get('offsetMs')),
         },
     }
 
 
-def _default_emotion_name() -> None:
-    """Demo 不发布完整版表情；兼容 DTO 中始终返回空值。"""
-    return None
+def _default_emotion_name() -> str:
+    """Use the same reviewed expression default as the main product."""
+    try:
+        from app.robot.emotion_assets import get_default_emotion
+        return get_default_emotion()
+    except Exception:
+        return 'v4_idle.mp4'
+
+
+def _normalize_emotion_pool(value: Any) -> List[str]:
+    """Return a stable, duplicate-free list of expression filenames."""
+    if not isinstance(value, list):
+        return []
+    normalized: List[str] = []
+    for raw_name in value:
+        name = str(raw_name or '').strip()
+        if name and name not in normalized:
+            normalized.append(name)
+    return normalized
 
 
 class MappingResolver:
@@ -69,6 +84,27 @@ class MappingResolver:
         self._course_map_file = course_map_file
         self._map_lock = threading.RLock()
         self._course_map: Dict[str, Any] = self._load_course_map()
+        self._course_map_signature = self._file_signature()
+
+    def _file_signature(self) -> Optional[Tuple[int, int]]:
+        try:
+            stat = os.stat(self._course_map_file)
+            return (int(stat.st_mtime_ns), int(stat.st_size))
+        except OSError:
+            return None
+
+    def _refresh_from_disk_if_changed(self) -> None:
+        """Refresh a long-lived resolver after an atomic config deployment."""
+        with self._map_lock:
+            signature = self._file_signature()
+            if signature is None or signature == self._course_map_signature:
+                return
+            loaded = self._load_course_map()
+            if not isinstance(loaded, dict):
+                raise ValueError('invalid_course_map')
+            self._course_map = loaded
+            self._course_map_signature = signature
+            logger.info('course_map.json changed on disk; refreshed mapping snapshot')
     
     def _load_course_map(self) -> Dict[str, Any]:
         """加载映射配置"""
@@ -101,6 +137,7 @@ class MappingResolver:
                 os.fsync(f.fileno())
             os.replace(temp_path, self._course_map_file)
             temp_path = None
+            self._course_map_signature = self._file_signature()
         except Exception as e:
             logger.error(f"保存 course_map.json 失败: {e}")
             raise
@@ -116,6 +153,7 @@ class MappingResolver:
         loaded = self._load_course_map()
         with self._map_lock:
             self._course_map = loaded
+            self._course_map_signature = self._file_signature()
     
     def parse_aux_type(self, aux: Optional[Dict[str, bool]]) -> str:
         """
@@ -190,6 +228,7 @@ class MappingResolver:
         Returns:
             {"motions": [...], "emotion": "...", "sequence": {...}}
         """
+        self._refresh_from_disk_if_changed()
         with self._map_lock:
             course_map = copy.deepcopy(self._course_map)
 
@@ -204,7 +243,7 @@ class MappingResolver:
             )
             if self._layer_has_config(data):
                 logger.debug(f"✓ 找到课点级映射: course={cid}, item={iid}, type={aux_type}")
-                return self._normalize_action_data(data)
+                return self._normalize_action_data(data, aux_type)
 
         # 2. 课程级
         data = self._get_nested(
@@ -213,7 +252,7 @@ class MappingResolver:
         )
         if self._layer_has_config(data):
             logger.debug(f"✓ 找到课程级映射: course={cid}, type={aux_type}")
-            return self._normalize_action_data(data)
+            return self._normalize_action_data(data, aux_type)
         
         # 3. 全局默认级（允许 silent：无动作但有 emotion）
         data = self._get_nested(
@@ -222,12 +261,13 @@ class MappingResolver:
         )
         if self._layer_has_config(data):
             logger.debug(f"✓ 找到默认级映射: type={aux_type}")
-            return self._normalize_action_data(data)
+            return self._normalize_action_data(data, aux_type)
         
         logger.warning(f"⚠️ 未找到匹配映射: course={cid}, item={iid}, type={aux_type}")
         return {
             "motions": [],
             "emotion": _default_emotion_name(),
+            "emotions": [],
             "animation": "",
             "sequence": _normalize_sequence({}),
         }
@@ -250,6 +290,9 @@ class MappingResolver:
             emotion = data.get('emotion')
             if isinstance(emotion, str) and emotion.strip():
                 return True
+            emotions = data.get('emotions')
+            if isinstance(emotions, list) and any(str(item or '').strip() for item in emotions):
+                return True
             animation = data.get('animation')
             if isinstance(animation, str) and animation.strip():
                 return True
@@ -265,7 +308,7 @@ class MappingResolver:
             current = current[key]
         return current
     
-    def _normalize_action_data(self, data: Any) -> Dict[str, Any]:
+    def _normalize_action_data(self, data: Any, aux_type: str = '') -> Dict[str, Any]:
         """
         归一化动作数据格式（向下兼容）
         
@@ -283,20 +326,29 @@ class MappingResolver:
             return {
                 "motions": [],
                 "emotion": _default_emotion_name(),
+                "emotions": [],
                 "animation": "",
                 "sequence": _normalize_sequence({}),
             }
         elif isinstance(data, dict):
             # 新格式：确保字段完整（勿原地污染 course_map）
+            emotion_pool = (
+                _normalize_emotion_pool(data.get('emotions'))
+                if aux_type == 'praise' else []
+            )
             out = {
                 "motions": [],
-                "emotion": _default_emotion_name(),
+                "emotion": (
+                    str(data.get('emotion') or '').strip()
+                    or (emotion_pool[0] if emotion_pool else _default_emotion_name())
+                ),
+                "emotions": emotion_pool,
                 "animation": str(data.get("animation") or "").strip(),
                 "sequence": _normalize_sequence(data.get("sequence")),
             }
             return out
         else:
-            return {"motions": [], "emotion": _default_emotion_name(), "animation": "", "sequence": _normalize_sequence({})}
+            return {"motions": [], "emotion": _default_emotion_name(), "emotions": [], "animation": "", "sequence": _normalize_sequence({})}
     
     def select_motion(self, motions: List[str]) -> Optional[str]:
         """
@@ -308,44 +360,70 @@ class MappingResolver:
         Returns:
             选中的动作名称
         """
-        if not motions or len(motions) == 0:
-            return None
-        if len(motions) == 1:
-            return motions[0]
-        
-        return random.choice(motions)
+        # Demo 没有机械结构；保留兼容方法但绝不选择动作。
+        return None
+
+    def select_emotion(self, mapping: Any) -> str:
+        """表扬事件从配置池随机取一个，其他事件保持固定表情。"""
+        data = mapping if isinstance(mapping, dict) else {}
+        pool = _normalize_emotion_pool(data.get('emotions'))
+        if pool:
+            return random.choice(pool)
+        return str(data.get('emotion') or _default_emotion_name()).strip()
+
+    @staticmethod
+    def _build_action_data(
+        aux_type: str,
+        emotion: Optional[str],
+        sequence: Optional[Dict[str, Any]],
+        animation: Optional[str],
+        emotions: Optional[List[str]],
+    ) -> Dict[str, Any]:
+        """只落盘表情/儿童动画绑定，丢弃所有机械动作输入。"""
+        if emotions is not None and not isinstance(emotions, list):
+            raise ValueError('emotions must be an array')
+        pool = _normalize_emotion_pool(emotions)
+        if pool and aux_type != 'praise':
+            raise ValueError('random emotion pool is only supported for praise')
+        if pool and len(pool) < 2:
+            raise ValueError('praise random emotion pool must contain at least two emotions')
+        fixed = str(emotion or '').strip()
+        if pool and fixed not in pool:
+            fixed = pool[0]
+        action_data = {
+            'emotion': fixed or _default_emotion_name(),
+            'animation': str(animation or '').strip(),
+            'sequence': _normalize_sequence(sequence),
+        }
+        if pool:
+            action_data['emotions'] = pool
+        return action_data
     
     # ========== 静态姿势 ==========
     
     def get_idle_pose(self) -> Optional[str]:
         """获取静态姿势动作名称"""
-        with self._map_lock:
-            return self._course_map.get('defaults', {}).get('idle')
+        return None
     
     def set_idle_pose(self, motion_name: str) -> None:
         """设置静态姿势"""
-        with self._map_lock:
-            if 'defaults' not in self._course_map:
-                self._course_map['defaults'] = {}
-            self._course_map['defaults']['idle'] = motion_name
-            self._save_course_map()
+        return None
     
     # ========== 通用动作 CRUD ==========
     
-    def update_default_motions(self, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None) -> None:
-        """更新通用动作（支持新格式：motions + emotion）"""
+    def update_default_motions(self, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None) -> None:
+        """更新通用表情；motions 参数仅为旧调用方兼容且始终被忽略。"""
+        self._refresh_from_disk_if_changed()
         with self._map_lock:
             if 'defaults' not in self._course_map:
                 self._course_map['defaults'] = {}
-            action_data = {
-                'animation': str(animation or '').strip(),
-                'sequence': _normalize_sequence(sequence),
-            }
+            action_data = self._build_action_data(aux_type, emotion, sequence, animation, emotions)
             self._course_map['defaults'][aux_type] = action_data
             self._save_course_map()
     
     def delete_default_motions(self, aux_type: str) -> None:
-        """删除通用动作"""
+        """删除通用表情绑定。"""
+        self._refresh_from_disk_if_changed()
         with self._map_lock:
             if 'defaults' in self._course_map and aux_type in self._course_map['defaults']:
                 del self._course_map['defaults'][aux_type]
@@ -353,24 +431,23 @@ class MappingResolver:
     
     # ========== 课程级动作 CRUD ==========
     
-    def update_course_motions(self, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None) -> None:
-        """更新课程级动作（支持新格式：motions + emotion）"""
+    def update_course_motions(self, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None) -> None:
+        """更新课程级表情绑定。"""
         cid = str(course_id)
+        self._refresh_from_disk_if_changed()
         with self._map_lock:
             if 'courses' not in self._course_map:
                 self._course_map['courses'] = {}
             if cid not in self._course_map['courses']:
                 self._course_map['courses'][cid] = {}
-            action_data = {
-                'animation': str(animation or '').strip(),
-                'sequence': _normalize_sequence(sequence),
-            }
+            action_data = self._build_action_data(aux_type, emotion, sequence, animation, emotions)
             self._course_map['courses'][cid][aux_type] = action_data
             self._save_course_map()
     
     def delete_course_motions(self, course_id: int, aux_type: str) -> None:
-        """删除课程级动作"""
+        """删除课程级表情绑定。"""
         cid = str(course_id)
+        self._refresh_from_disk_if_changed()
         with self._map_lock:
             if self._get_nested(self._course_map, ['courses', cid, aux_type]):
                 del self._course_map['courses'][cid][aux_type]
@@ -387,18 +464,19 @@ class MappingResolver:
         emotion: Optional[str] = None,
         sequence: Optional[Dict[str, Any]] = None,
         animation: Optional[str] = None,
+        emotions: Optional[List[str]] = None,
     ) -> None:
         """更新课程课点覆盖；未配置字段继续由课程/全局层兜底。"""
         cid, iid = str(course_id), str(item_id)
+        self._refresh_from_disk_if_changed()
         with self._map_lock:
             courses = self._course_map.setdefault('courses', {})
             course = courses.setdefault(cid, {})
             items = course.setdefault('items', {})
             item = items.setdefault(iid, {})
-            item[aux_type] = {
-                'animation': str(animation or '').strip(),
-                'sequence': _normalize_sequence(sequence),
-            }
+            item[aux_type] = self._build_action_data(
+                aux_type, emotion, sequence, animation, emotions,
+            )
             self._save_course_map()
 
     def delete_course_item_motions(
@@ -408,6 +486,7 @@ class MappingResolver:
         aux_type: str,
     ) -> None:
         cid, iid = str(course_id), str(item_id)
+        self._refresh_from_disk_if_changed()
         with self._map_lock:
             item = self._get_nested(self._course_map, ['courses', cid, 'items', iid])
             if isinstance(item, dict) and aux_type in item:
@@ -425,11 +504,13 @@ class MappingResolver:
         emotion: Optional[str] = None,
         sequence: Optional[Dict[str, Any]] = None,
         animation: Optional[str] = None,
+        emotions: Optional[List[str]] = None,
     ) -> None:
-        """更新学生-课程级动作（支持新格式：motions + emotion）"""
+        """更新学生-课程级表情绑定。"""
         sid = str(student_id)
         cid = str(course_id)
-        
+
+        self._refresh_from_disk_if_changed()
         with self._map_lock:
             if 'students' not in self._course_map:
                 self._course_map['students'] = {}
@@ -437,10 +518,7 @@ class MappingResolver:
                 self._course_map['students'][sid] = {}
             if cid not in self._course_map['students'][sid]:
                 self._course_map['students'][sid][cid] = {}
-            action_data = {
-                'animation': str(animation or '').strip(),
-                'sequence': _normalize_sequence(sequence),
-            }
+            action_data = self._build_action_data(aux_type, emotion, sequence, animation, emotions)
             self._course_map['students'][sid][cid][aux_type] = action_data
             self._save_course_map()
     
@@ -450,10 +528,11 @@ class MappingResolver:
         course_id: int, 
         aux_type: str
     ) -> None:
-        """删除学生-课程级动作"""
+        """删除学生-课程级表情绑定。"""
         sid = str(student_id)
         cid = str(course_id)
-        
+
+        self._refresh_from_disk_if_changed()
         with self._map_lock:
             if self._get_nested(self._course_map, ['students', sid, cid, aux_type]):
                 del self._course_map['students'][sid][cid][aux_type]
@@ -471,12 +550,14 @@ class MappingResolver:
         emotion: Optional[str] = None,
         sequence: Optional[Dict[str, Any]] = None,
         animation: Optional[str] = None,
+        emotions: Optional[List[str]] = None,
     ) -> None:
-        """更新项目级动作（支持新格式：motions + emotion）"""
+        """更新项目级表情绑定。"""
         sid = str(student_id)
         cid = str(course_id)
         iid = str(item_id)
-        
+
+        self._refresh_from_disk_if_changed()
         with self._map_lock:
             if 'students' not in self._course_map:
                 self._course_map['students'] = {}
@@ -488,10 +569,7 @@ class MappingResolver:
                 self._course_map['students'][sid][cid]['items'] = {}
             if iid not in self._course_map['students'][sid][cid]['items']:
                 self._course_map['students'][sid][cid]['items'][iid] = {}
-            action_data = {
-                'animation': str(animation or '').strip(),
-                'sequence': _normalize_sequence(sequence),
-            }
+            action_data = self._build_action_data(aux_type, emotion, sequence, animation, emotions)
             self._course_map['students'][sid][cid]['items'][iid][aux_type] = action_data
             self._save_course_map()
     
@@ -502,11 +580,12 @@ class MappingResolver:
         item_id: int, 
         aux_type: str
     ) -> None:
-        """删除项目级动作"""
+        """删除项目级表情绑定。"""
         sid = str(student_id)
         cid = str(course_id)
         iid = str(item_id)
-        
+
+        self._refresh_from_disk_if_changed()
         with self._map_lock:
             if self._get_nested(self._course_map, ['students', sid, cid, 'items', iid, aux_type]):
                 del self._course_map['students'][sid][cid]['items'][iid][aux_type]
@@ -534,7 +613,7 @@ class MappingResolver:
             表情文件名（如 "003_Happy.gif"）
         """
         mapping = self.find_mapping(student_id, course_id, item_id, aux_type)
-        return mapping.get('emotion', _default_emotion_name())
+        return self.select_emotion(mapping)
     
     def get_available_emotions(self) -> List[str]:
         """
@@ -562,5 +641,6 @@ class MappingResolver:
     
     def get_full_mapping(self) -> Dict[str, Any]:
         """获取完整配置（用于前端显示）"""
+        self._refresh_from_disk_if_changed()
         with self._map_lock:
             return copy.deepcopy(self._course_map)

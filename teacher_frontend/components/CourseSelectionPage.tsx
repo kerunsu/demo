@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Puzzle, Blocks, Brain, ArrowLeft, Sparkles } from 'lucide-react';
+import { MessageCircle, Blocks, Brain, ArrowLeft, Sparkles } from 'lucide-react';
 
 interface CourseSelectionPageProps {
   onStart: (payload: {
@@ -17,7 +17,7 @@ interface CourseSelectionPageProps {
 
 // 课程类型映射（英文 -> 中文名称和图标）
 const courseTypeMap: Record<string, { name: string; icon: typeof Brain }> = {
-  'pairing': { name: '配对', icon: Puzzle },
+  'naming': { name: '命名', icon: MessageCircle },
   'ordering': { name: '排序', icon: Blocks },
 };
 

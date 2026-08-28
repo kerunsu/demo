@@ -3,7 +3,7 @@
   "deployment": "demo-machine",
   "capabilities": {
     "robotMotion": false,
-    "robotExpression": false,
+    "robotExpression": true,
     "robotRuntime": false,
     "childAnimation": true,
     "browserSpeech": true

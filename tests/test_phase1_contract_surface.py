@@ -73,7 +73,7 @@ def test_phase1_demo_http_surface_keeps_core_routes_and_removes_hardware_routes(
     }
     assert expected <= routes
     assert ("POST", "/api/robot/motions/import") not in routes
-    assert ("POST", "/api/robot/emotions/upload") not in routes
+    assert ("POST", "/api/robot/emotions/upload") in routes
 
 
 def test_phase1_demo_socket_surface_keeps_core_events_and_removes_robot_events():
@@ -104,11 +104,13 @@ def test_phase1_demo_socket_surface_keeps_core_events_and_removes_robot_events()
     }
     # readiness_complete is a server-emitted event rather than a decorator.
     assert expected - {"readiness_complete"} <= events
-    assert not {
-        "robot_play_motion",
-        "robot_stop_playback",
+    assert not {"robot_play_motion", "robot_stop_playback"} & events
+    assert {
+        "robot_emotion_ready",
+        "robot_emotion_started",
+        "robot_emotion_ended",
         "robot_emotion_auto_random",
-    } & events
+    } <= events
 
 
 def test_phase1_existing_recording_timeline_columns_are_frozen():
@@ -139,7 +141,10 @@ def test_phase1_mapping_resolver_uses_global_course_item_precedence(tmp_path):
                 },
                 "courses": {"7": {
                     "question": {"animation": "course-question.mp4"},
-                    "items": {"11": {"question": {"animation": "item-question.mp4"}}},
+                    "items": {"11": {"question": {
+                        "animation": "item-question.mp4",
+                        "emotion": "v3_speak_lookdown_namecall.mp4",
+                    }}},
                 }},
                 "students": {
                     "3": {
@@ -167,7 +172,7 @@ def test_phase1_mapping_resolver_uses_global_course_item_precedence(tmp_path):
     assert resolver.find_mapping(4, 7, 12, "question")["animation"] == "course-question.mp4"
     assert resolver.find_mapping(4, 8, 12, "question")["animation"] == "default-question.mp4"
     assert resolver.find_mapping(3, 7, 11, "question")["motions"] == []
-    assert resolver.find_mapping(3, 7, 11, "question")["emotion"] is None
+    assert resolver.find_mapping(3, 7, 11, "question")["emotion"] == "v3_speak_lookdown_namecall.mp4"
 
 
 def test_behavior_event_ownership_separates_social_from_ordering():

@@ -1,6 +1,6 @@
 # Demo 接口与行为契约
 
-本文是独立 Demo 仓库的现行外部契约。课程只有 `pairing`、`ordering`；机械动作、Robot Runtime 和完整版本表情固定禁用。历史字段名只作兼容，不扩大产品能力。
+本文是独立 Demo 仓库的现行外部契约。课程只有 `naming`、`ordering`；屏幕表情与完整版本保持一致，机械动作和 Robot Runtime 固定禁用。历史字段名只作兼容，不扩大产品能力。
 
 ## 稳定身份字段
 
@@ -44,7 +44,7 @@ Socket 只投递到明确房间：
 
 唯一有效课型来自 `config/demo_course_scope.json`：
 
-- `pairing`：相同/配对互动。
+- `naming`：物体认知与口语命名。
 - `ordering`：大小、长短、高矮、多少等规则排序。
 
 课程目录、预设、配置 API、首次数据库、教师端选择、分析投影和新报告都必须按同一范围过滤。旧数据库其他课程行可保留用于历史数据，不得进入新训练或报告。
@@ -62,11 +62,11 @@ Socket 只投递到明确房间：
 
 视频、图片、互动 iframe 和儿童屏动画遵守同一身份相关规则。互动 iframe 只能通过授权父页面桥接发送题目/点击事件。
 
-## 配对与排序
+## 命名与排序
 
-配对/排序题目通过稳定 question ID 保持幂等。答案反馈不得截断正在朗读的题目；正确反馈完成后才能进入相应教师评分流程。
+命名课点以稳定 item ID 进入教师评分；排序题目通过稳定 question ID 保持幂等。答案反馈不得截断正在朗读的题目；正确反馈完成后才能进入相应教师评分流程。
 
-配对提问使用对应话术池。排序问题优先使用八类规则句，规则未知时才使用通用兜底。互动页面反馈、Server 状态、教师端评分和报告统计必须使用同一题目身份。
+命名使用稳定的课点和提示内容。排序问题优先使用八类规则句，规则未知时才使用通用兜底。互动页面反馈、Server 状态、教师端评分和报告统计必须使用同一题目身份。
 
 ## 语音与对话
 
@@ -94,19 +94,19 @@ Server 监控页通过 `server_dialogue_watch` / `server_dialogue_unwatch` 订�
 
 这些路径只管理儿童屏动画。引用中的动画拒绝普通删除；重命名同时更新 `course_map.json` 引用。随机回退只选择通过有界 MP4 检查的素材。
 
-`course_map.json` 的 Demo 发布结构只允许 `animation` 和音频偏移，不允许 motion/emotion/expression。
+`course_map.json` 的 Demo 发布结构允许 `animation`、固定 `emotion`/`expressionMediaId`、表扬事件专用的 `emotions` 随机表情池和音频偏移；`emotions` 至少含两个去重后的表情文件名。发布结构不允许 `motion`、`motions` 或 `motionOffsetMs`。
 
 ## 禁用硬件契约
 
 `config/demo_deployment.json` 中：
 
 - `robotMotion=false`
-- `robotExpression=false`
+- `robotExpression=true`
 - `robotRuntime=false`
 - `childAnimation=true`
 - `browserSpeech=true`
 
-代码对前三项 fail-closed；修改 JSON 不能启用。机械动作、完整版本表情、Runtime 下载/控制等兼容 HTTP 路径返回 HTTP 410 和：
+代码对机械动作和 Runtime fail-closed，对屏幕表情按已审核安全默认启用。机械动作、Runtime 下载/控制等兼容 HTTP 路径返回 HTTP 410 和：
 
 ```json
 {
@@ -115,7 +115,11 @@ Server 监控页通过 `server_dialogue_watch` / `server_dialogue_unwatch` 订�
 }
 ```
 
-`/robot`、`/robot/emotion`、`/robot/download` 同样不可用。机械和表情 Socket 装饰器不注册，`app/sockets/robot_events.py` 不进入 Demo。
+`/robot`、`/robot/download` 不可用；`/robot/emotion` 是表情屏播放页。机械 Socket 装饰器不注册，Demo 只注册 `robot_emotion_ready`、`robot_emotion_started`、`robot_emotion_ended`、`robot_emotion_auto_random` 四个屏幕表情回执事件，不注册 pose/motion/recording/playback 事件。
+
+表情管理面包含 `/api/robot/emotions`、`/emotions/default`、`/emotions/global-filter`、`/emotions/idle-pool`、`/emotions/dialogue-reply-rules`、`/emotions/<name>/style`、`/emotions/upload`、`/emotions/<name>` 和 `/emotions/trigger`。播放只读取 Server 的 `static/resources/Emotions/`，不请求 19091。
+
+课程表情绑定保留主版本的全局、课程、课点三级覆盖：`GET /api/robot/mapping/full`，以及 `PUT|DELETE /api/robot/mapping/defaults/<event>`、`/mapping/course/<courseId>/<event>`、`/mapping/course/<courseId>/item/<itemId>/<event>`。只允许 `attention`、`reward`、`praise`、`question`、`hint`、`silent` 六类事件和表情 schema；非 Demo 课程返回 404，任何非空机械动作字段返回 400。`POST /api/robot/sequence/preview` 只试播表情时间轴，响应不暴露动作计划。
 
 `GET /api/robot/control/status` 可返回只读禁用状态，便于旧客户端识别能力；它不会暴露或连接硬件。
 
@@ -138,12 +142,13 @@ Server 监控页通过 `server_dialogue_watch` / `server_dialogue_unwatch` 订�
 报告课程投影只按两课型计算；跨课程注意力证据继续显示：
 
 - 注意力 `attention`
-- 配对 `matching`
+- 表达性语言 `expressiveLanguage`
+- 接收性语言 `receptiveLanguage`
 - 排序 `ordering`
 
-默认权重 34/33/33。缺失数据保持 null/数据不足，不把缺失当 0。报告生成是幂等读取准备；教师提交审核后状态稳定，不因轮询重复生成。
+默认权重 25/25/25/25。缺失数据保持 null/数据不足，不把缺失当 0。报告生成是幂等读取准备；教师提交审核后状态稳定，不因轮询重复生成。
 
-配对/排序的完成反馈进入评分。旧课程历史数据可以读，但不进入 Demo 新报告课程投影或课程列表。
+命名课点评分和排序完成反馈进入报告。旧课程历史数据可以读，但不进入 Demo 新报告课程投影或课程列表。
 
 ## 现行 HTTP 面
 
@@ -159,7 +164,7 @@ Server 监控页通过 `server_dialogue_watch` / `server_dialogue_unwatch` 订�
 - `/api/v2/capture/*`：额外 Server 设备配置。
 - `/api/v2/control/*`：浏览器设备提示、录制目录和安全运维动作。
 - `/api/v2/interaction/*`：InteractionProfileV2 草稿、发布和解析预览；未发布/非法/未命中回退 legacy。
-- `/api/v2/config/sync/*`：不含敏感/禁用内容的可审查配置清单和导出。
+- `/api/v2/config/sync/*`：不含敏感/机械内容的可审查配置清单和导出，包含屏幕表情元数据与资产。
 - `/api/v2/timeline/*`：交互时间线和延迟诊断。
 - `/api/report/*`：两课程报告与审核；跨课程注意力证据继续保留。
 

@@ -7,13 +7,13 @@ import pytest
 import yaml
 
 
-def test_phase5_demo_does_not_publish_expression_asset_controls():
+def test_phase5_demo_publishes_screen_expression_asset_controls():
     root = Path(__file__).resolve().parents[1]
-    assert not (root / "doll/data/emotions_meta.json").exists()
+    assert (root / "doll/data/emotions_meta.json").is_file()
     emotion_dir = root / "static/resources/Emotions"
-    assert not emotion_dir.exists() or not any(emotion_dir.iterdir())
-    assert not (root / "static/js/config_content_expressions.js").exists()
-    assert not (root / "static/js/config_dialogue_expressions.js").exists()
+    assert len(list(emotion_dir.glob("*.mp4"))) == 14
+    assert (root / "static/js/config_content_expressions.js").is_file()
+    assert (root / "static/js/config_dialogue_expressions.js").is_file()
 
 def test_phase5_session_catalog_groups_files_by_child(tmp_path, monkeypatch):
     from app.storage import session_catalog
@@ -137,12 +137,14 @@ def test_phase5_control_overview_and_local_reveal_are_additive(monkeypatch, tmp_
     assert opened == [str(folder)]
 
 
-def test_phase5_demo_has_no_full_version_expression_page_or_assets():
+def test_phase5_demo_has_screen_expression_page_and_server_assets():
     root = Path(__file__).resolve().parents[1]
-    assert not (root / "templates/robot/emotion.html").exists()
-    assert not (root / "static/robot/js/emotion_display.js").exists()
+    assert (root / "templates/robot/emotion.html").is_file()
+    assert (root / "static/robot/js/emotion_display.js").is_file()
     emotion_dir = root / "static/resources/Emotions"
-    assert not emotion_dir.exists() or not any(emotion_dir.iterdir())
+    assert len(list(emotion_dir.glob("*.mp4"))) == 14
+    display = (root / "static/robot/js/emotion_display.js").read_text(encoding="utf-8")
+    assert "19091" not in display
 
 
 def test_phase5_control_page_explains_device_and_recording_workflow():

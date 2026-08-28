@@ -1,6 +1,6 @@
 # E.I.Art Demo 机独立版
 
-这是可独立拉取和部署的 Demo 机版本，只提供配对和排序课程，以及这两门课程的分析与报告。Demo 机没有机械结构，不提供机械动作、Robot Runtime 或完整版表情；儿童屏幕动画和浏览器语音仍正常使用。
+这是可独立拉取和部署的 Demo 机版本，只提供命名和排序课程，以及这两门课程的分析与报告。Demo 机保留与完整版本一致的屏幕表情、儿童动画和浏览器语音；没有机械结构，不提供机械动作或 Robot Runtime。
 
 协作前先阅读 [`AGENTS.md`](AGENTS.md) 和 [Demo 同步与部署规范](docs/DEMO_SYNC.md)。两份文件共同规定从完整版本吸收更新时必须保留的 Demo 边界。
 
@@ -10,7 +10,7 @@
 .\start_server.ps1
 ```
 
-`start_server.ps1` 会校验并补齐 Python/npm 依赖，在首次拉取且没有 `database/app.db` 时自动建立只含三门 Demo 课程的数据库，然后构建教师端并启动唯一一个后端实例。只读环境检查使用 `.\start_server.ps1 -CheckOnly`；该命令不会建库，首次部署应直接运行正常启动命令。
+`start_server.ps1` 会校验并补齐 Python/npm 依赖，在首次拉取且没有 `database/app.db` 时自动建立只含两门 Demo 课程的数据库，然后构建教师端并启动唯一一个后端实例。只读环境检查使用 `.\start_server.ps1 -CheckOnly`；该命令不会建库，首次部署应直接运行正常启动命令。
 
 默认端点：后端 `http://127.0.0.1:8080`，教师端 `http://127.0.0.1:8080/teacher/`，儿童端 `/child`，监控/配置台 `/server`。Demo 不启动 19091 Robot Runtime。
 `START_TEACHER_FRONTEND=0` 与 `START_VOICE_SERVICE=0` 可保留原有启动控制。
@@ -48,15 +48,15 @@
 |---|---|
 | `app.py` | 应用入口与启动装配 |
 | `app/routes/` | HTTP API（V2 控制台、时间线、素材库、设备检查等） |
-| `app/sockets/` | Socket 事件：`events.py`（play_resource 等）和处理器；Demo 不注册 `robot_events.py` 的机械/表情事件 |
-| `app/robot/` | 兼容命名的课程输出协调器；只允许浏览器语音与儿童屏幕动画，不允许机械动作或完整版表情 |
+| `app/sockets/` | Socket 事件：`events.py`（play_resource 等）和 `expression_events.py`（屏幕表情回执）；Demo 不注册机械动作事件 |
+| `app/robot/` | 兼容命名的课程输出协调器；允许浏览器语音、儿童屏幕动画和屏幕表情，不允许机械动作或 Runtime |
 | `app/storage/`、`app/services/`、`app/facade/`、`app/contracts/` | 数据层、服务层、门面与契约 |
 | `app/config.py`、`config/`、`database/`、`scripts/`、`tests/` | 配置、数据模型与 seed、运维脚本、测试 |
 
 ### 其他（所有角色共享）
 
 - `robot_runtime/` 中尚存的上游兼容测试源码不是 Demo 部署入口；Demo 已删除 Runtime/DollSer 打包入口，且不得启动、配置或发布这些源码。
-- `static/resources/Animations/` 是儿童屏幕动画库，允许保留；`static/resources/Emotions/`、`doll/Pose/` 和动作/完整版表情清单不得出现在 Demo 发布内容中。
+- `static/resources/Animations/` 是儿童屏幕动画库；`static/resources/Emotions/` 和 `doll/data/emotions_meta.json` 是屏幕表情库，两者都必须发布。`doll/Pose/`、`motions.json` 和机械动作资产不得进入 Demo 发布。
 - `docs/`：项目文档（新增/修改功能时同步更新对应指南）
 
 **协作约定**：功能改动后运行 `python -m pytest tests -q` 与本模块相关用例；接口变更通知"整合与后端开发"角色同步契约（`docs/CONTRACT.md`）；素材新增通知前端与语音角色更新清单。

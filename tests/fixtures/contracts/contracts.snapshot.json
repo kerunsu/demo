@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-27",
-  "sourceCommit": "working-tree: hardware-free Demo sync",
+  "generatedAt": "2026-08-28",
+  "sourceCommit": "working-tree: naming-ordering Demo with screen expressions",
   "generation": "Python AST scan of app.py and app/**/*.py; methods omitted by decorators default to GET; blueprint prefixes applied.",
-  "routeCount": 155,
+  "routeCount": 177,
   "runtimeImplicitRouteCount": 1,
-  "runtimeUrlRuleCountObserved": 156,
+  "runtimeUrlRuleCountObserved": 178,
   "runtimeImplicitRoutes": [
     "GET /static/<path:filename>"
   ],
-  "socketDecoratorCount": 67,
+  "socketDecoratorCount": 70,
   "blueprintPrefixes": {
     "robot_bp": "/api/robot",
     "media_bp": "/api/media",
@@ -31,6 +31,10 @@
     "DELETE /api/config/media",
     "DELETE /api/robot/<path:disabled_path>",
     "DELETE /api/robot/animations/<path:name>",
+    "DELETE /api/robot/emotions/<name>",
+    "DELETE /api/robot/mapping/course/<int:course_id>/<aux_type>",
+    "DELETE /api/robot/mapping/course/<int:course_id>/item/<int:item_id>/<aux_type>",
+    "DELETE /api/robot/mapping/defaults/<aux_type>",
     "DELETE /api/v2/capture/devices/<device_id>",
     "DELETE /api/v2/control/recordings/<folder_name>",
     "GET /",
@@ -61,6 +65,13 @@
     "GET /api/robot/animations",
     "GET /api/robot/control/status",
     "GET /api/robot/courses",
+    "GET /api/robot/emotions",
+    "GET /api/robot/emotions/<name>/style",
+    "GET /api/robot/emotions/default",
+    "GET /api/robot/emotions/dialogue-reply-rules",
+    "GET /api/robot/emotions/global-filter",
+    "GET /api/robot/emotions/idle-pool",
+    "GET /api/robot/mapping/full",
     "GET /api/robot/sequence/status/<command_id>",
     "GET /api/robot/students",
     "GET /api/server/child-media-mode",
@@ -139,6 +150,9 @@
     "POST /api/robot/<path:disabled_path>",
     "POST /api/robot/animations/upload",
     "POST /api/robot/course-event",
+    "POST /api/robot/emotions/trigger",
+    "POST /api/robot/emotions/upload",
+    "POST /api/robot/sequence/preview",
     "POST /api/saveResult",
     "POST /api/server/config/apply",
     "POST /api/server/config/reset-defaults",
@@ -173,6 +187,14 @@
     "PUT /api/report/<training_session_id>/manual",
     "PUT /api/robot/<path:disabled_path>",
     "PUT /api/robot/animations/<path:name>/rename",
+    "PUT /api/robot/emotions/<name>/style",
+    "PUT /api/robot/emotions/default",
+    "PUT /api/robot/emotions/dialogue-reply-rules",
+    "PUT /api/robot/emotions/global-filter",
+    "PUT /api/robot/emotions/idle-pool",
+    "PUT /api/robot/mapping/course/<int:course_id>/<aux_type>",
+    "PUT /api/robot/mapping/course/<int:course_id>/item/<int:item_id>/<aux_type>",
+    "PUT /api/robot/mapping/defaults/<aux_type>",
     "PUT /api/server/child-media-mode",
     "PUT /api/server/config",
     "PUT /api/server/config/camera-analysis",
@@ -224,7 +246,10 @@
     "request_question_speak",
     "resource_ready",
     "resource_transition_failed",
-    "robot_motion_ack",
+    "robot_emotion_auto_random",
+    "robot_emotion_ended",
+    "robot_emotion_ready",
+    "robot_emotion_started",
     "robot_speak_ended",
     "sequencing_game_end",
     "sequencing_hint",
@@ -342,8 +367,8 @@
     "generatedBy": "tests/test_phase1_runtime_contracts.py",
     "observedAt": "2026-08-27",
     "urlMap": {
-      "sourceRouteCount": 155,
-      "runtimeRuleCountExcludingHeadOptions": 156,
+      "sourceRouteCount": 169,
+      "runtimeRuleCountExcludingHeadOptions": 170,
       "implicitRules": [
         "GET /static/<path:filename>"
       ],
@@ -353,10 +378,10 @@
       ]
     },
     "socket": {
-      "decoratedEventCount": 63,
-      "runtimeRegisteredEventCount": 63,
+      "decoratedEventCount": 70,
+      "runtimeRegisteredEventCount": 70,
       "decoratedEqualsRuntimeRegistered": true,
-      "literalServerEmitCount": 74,
+      "literalServerEmitCount": 77,
       "literalServerEmitEqualsSnapshot": true,
       "note": "�ͻ��˽���װ����������������� emit �����ǲ�ͬ�������Լ������Ҫ������������ȡ�"
     },
@@ -370,7 +395,7 @@
   "knownNonContractualObservations": [
     "HTTP response fields and error branches are covered by dedicated Flask fixtures.",
     "External voice-provider and physical camera behavior require deployment-environment validation.",
-    "Demo robot motion, Robot Runtime, and full-version expression routes/events are intentionally absent.",
+    "Demo robot motion and Robot Runtime routes/events are intentionally absent; browser screen-expression routes/events are part of the contract.",
     "The current snapshot records source-level route/event presence for the independent Demo repository."
   ]
 }

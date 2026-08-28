@@ -35,7 +35,7 @@ def init_database():
         # Existing deployments are upgraded in place: historical inactive rows
         # are retained for data safety but never exposed by Demo APIs.
         missing_types = [
-            name for name in ('配对', '排序')
+            name for name in ('命名', '排序')
             if not CourseType.query.filter_by(name=name).first()
         ]
         if missing_types:
@@ -48,7 +48,8 @@ def init_database():
         if AbilityType.query.count() == 0:
             ability_types = [
                 AbilityType(name='注意力'),
-                AbilityType(name='配对'),
+                AbilityType(name='表达性语言'),
+                AbilityType(name='接收性语言'),
                 AbilityType(name='排序'),
             ]
             db.session.add_all(ability_types)

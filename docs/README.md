@@ -14,4 +14,4 @@
 - `OPERATIONS.md`：启动、监控、备份、升级与排障。
 - `TESTING.md`：测试与发布门禁。
 
-历史阶段、机械动作、Robot Runtime、完整版本表情和社交课程计划由完整版本的 Git 历史保存，不在 Demo 文档树重复保留。当前边界以 `DEMO_SYNC.md` 为准。
+历史阶段、机械动作、Robot Runtime 和社交课程计划由完整版本的 Git 历史保存，不在 Demo 文档树重复保留。屏幕表情已作为 Demo 正式能力恢复；当前边界以 `DEMO_SYNC.md` 为准。

@@ -27,9 +27,9 @@ storage -> contracts
 ```
 
 Legacy `app.py`, `app/sockets`, `app/services`, `app/robot` and `app/recorder`
-remain compatibility owners. In Demo, `app/robot` is only a historical name for
-speech/child-animation coordination; the hard capability policy prevents any
-mechanical, Runtime or full-version expression output. New modules must
+remain compatibility owners. In Demo, `app/robot` coordinates speech,
+child animation and browser screen expressions; the hard capability policy prevents
+all mechanical and Runtime output. New modules must
 be lazy on import: no thread, camera, microphone, file or DB mutation at import
 time. The composition root is `app.py` plus `app/facade/bootstrap.py` until a
 later release proves a complete application factory.
@@ -39,5 +39,5 @@ later release proves a complete application factory.
 `prepare_training` reserves a session and verifies browser permission/device
 readiness. A successful path starts one continuous recording, verifies required
 first samples and rolls back partial resources on failure. Course changes append
-timeline segments and never restart the session recording. Only pairing and
+timeline segments and never restart the session recording. Only naming and
 ordering can enter this flow; reports project the same fixed course scope.

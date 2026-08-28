@@ -179,7 +179,7 @@ def test_phase1_golden_flow_freezes_current_warmup_and_continuous_recording(
     monkeypatch.setattr(
         config_content_mod,
         "_course_admin_dict",
-        lambda _course, _mapped: {"id": 9, "title": "Pairing", "type": "pairing"},
+        lambda _course, _mapped: {"id": 7, "title": "Naming", "type": "naming"},
     )
     http = runtime["app"].test_client()
     login = http.post(
@@ -192,7 +192,7 @@ def test_phase1_golden_flow_freezes_current_warmup_and_continuous_recording(
     assert students.get_json()["students"][0]["id"] == student_id
     courses = http.get("/api/config/courses")
     assert courses.status_code == 200
-    assert courses.get_json()["courses"][0]["type"] == "pairing"
+    assert courses.get_json()["courses"][0]["type"] == "naming"
 
     # The class-start barrier owns only formal recording and server video
     # evidence. Resource, audio and analyzer checks are not part of this path.

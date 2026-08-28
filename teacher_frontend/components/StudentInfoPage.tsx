@@ -165,20 +165,21 @@ interface InterventionData {
   overall_score?: number | null;
 }
 
-const COURSE_SERIES = ['配对', '排序'] as const;
+const COURSE_SERIES = ['命名', '排序'] as const;
 
 const API_BASE_URL = '';
 
 // 能力类型颜色配置
 const ABILITY_COLORS = [
   '#4f46e5', // 注意力 - indigo
-  '#f59e0b', // 配对 - amber
+  '#f59e0b', // 表达性语言 - amber
+  '#0ea5e9', // 接受性语言 - sky
   '#ef4444', // 排序 - red
 ];
 
 // 课程类型颜色配置
 const COURSE_COLORS = [
-  '#ef4444', // 配对 - red
+  '#ef4444', // 命名 - red
   '#8b5cf6', // 排序 - purple
 ];
 

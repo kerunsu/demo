@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Lightbulb, Award, ArrowRight, ArrowLeft, ChevronDown, ChevronRight, Eye, Target, BarChart3, X, HelpCircle } from 'lucide-react';
-import { Puzzle, Blocks, Brain, Users } from 'lucide-react';
+import { MessageCircle, Blocks, Brain, Users } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { TeacherRatingDialog } from './TeacherRatingDialog';
 
@@ -77,7 +77,7 @@ interface ControlPageProps {
 
 // 课程类型映射（与CourseSelectionPage保持一致）
 const courseTypeMap: Record<string, { name: string; icon: typeof Brain }> = {
-  'pairing': { name: '配对', icon: Puzzle },
+  'naming': { name: '命名', icon: MessageCircle },
   'ordering': { name: '排序', icon: Blocks },
 };
 

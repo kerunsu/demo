@@ -1,9 +1,8 @@
-"""Reviewed, fail-closed deployment capabilities for the Demo machine.
+"""Reviewed deployment capabilities for the Demo machine.
 
-The Demo build shares the teaching, speech, analysis, and reporting stack with
-the full product, but it has no mechanical structure and does not consume the
-full product's robot-expression protocol.  This checked-in fact source keeps
-those differences explicit and reproducible after a fresh clone.
+The Demo build has no mechanical structure: motion output and Robot Runtime
+must remain disabled.  Its browser-based expression display is an independent
+screen capability and intentionally stays enabled.
 """
 from __future__ import annotations
 
@@ -18,7 +17,7 @@ CAPABILITIES_PATH = (
 
 SAFE_DEFAULT_CAPABILITIES = {
     "robotMotion": False,
-    "robotExpression": False,
+    "robotExpression": True,
     "robotRuntime": False,
     "childAnimation": True,
     "browserSpeech": True,
@@ -34,11 +33,13 @@ def _normalize_capabilities(value: Any) -> dict[str, bool]:
         if not isinstance(raw, bool):
             raise ValueError(f"demo_capability_must_be_boolean:{key}")
         normalized[key] = raw
-    # This repository is the hardware-free Demo product. A copied full-product
-    # file must never be able to turn robot output back on through this JSON.
-    for key in ("robotMotion", "robotExpression", "robotRuntime"):
+    # A copied full-product file must never turn mechanical output or Robot
+    # Runtime back on. Screen expressions are reviewed and allowed.
+    for key in ("robotMotion", "robotRuntime"):
         if normalized[key]:
             raise ValueError(f"demo_forbidden_capability:{key}")
+    if not normalized["robotExpression"]:
+        raise ValueError("demo_required_capability:robotExpression")
     return normalized
 
 

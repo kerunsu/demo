@@ -10,6 +10,7 @@ class _Robot:
         self.accepted = accepted
         self.commit = commit
         self.reservations = []
+        self.expression_starts = []
         self.expected = []
         self.aborted = []
 
@@ -23,6 +24,18 @@ class _Robot:
         return {
             "accepted": True,
             "behaviorId": kwargs["behavior_id"],
+        }
+
+    def reserve_behavior(self, **kwargs):
+        return self.reserve_audio_only_behavior(**kwargs)
+
+    def start_dialogue_reply_behavior(self, **kwargs):
+        self.expression_starts.append(kwargs)
+        return {
+            "behaviorId": kwargs["behavior_id"],
+            "emotion": kwargs["emotion"],
+            "motion": None,
+            "scheduledDelayMs": 700,
         }
 
     def set_behavior_audio_expected(self, *args, **kwargs):
@@ -73,20 +86,12 @@ def test_emit_speak_reserves_audio_only_and_sends_exactly_once(monkeypatch):
         assert robot.expected[0][0][0] == payload["behaviorId"]
 
 
-def test_emit_speak_ignores_full_product_expression_hooks(monkeypatch):
+def test_emit_speak_uses_screen_expression_without_motion(monkeypatch):
     robot = _install_robot(monkeypatch)
     robot.select_dialogue_reply_emotion = lambda text: {
         "emotion": "happy.mp4",
         "charCount": len(text),
         "maxChars": 20,
-    }
-    robot.reserve_behavior = lambda **_kwargs: (_ for _ in ()).throw(
-        AssertionError("Demo must not reserve mechanical/expression behavior")
-    )
-    robot.start_dialogue_reply_behavior = lambda **kwargs: {
-        "behaviorId": kwargs["behavior_id"],
-        "emotion": kwargs["emotion"],
-        "scheduledDelayMs": 700,
     }
     with patch("app.dialogue.sockets.emit") as emit:
         assert _emit_speak(
@@ -97,10 +102,11 @@ def test_emit_speak_ignores_full_product_expression_hooks(monkeypatch):
             source="dialogue",
         )
     payload = emit.call_args.args[1]
-    assert "expression" not in payload
+    assert payload["expression"] == "happy.mp4"
     assert "expressionMatch" not in payload
-    assert payload["delayMs"] == 0
+    assert payload["delayMs"] == 700
     assert len(robot.reservations) == 1
+    assert robot.expression_starts[0]["motion"] is None
 
 
 def test_emit_speak_busy_queues_dialogue_without_emitting(monkeypatch):

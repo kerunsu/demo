@@ -3678,19 +3678,6 @@ def register_socket_events(socketio):
             return
         socketio.emit('freeze_course_frame', payload, to=child_sid)
 
-    @socketio.on('robot_motion_ack')
-    def handle_robot_motion_ack(data):
-        """
-        机器人端网页对动作命令的执行确认。
-        """
-        logger.info(
-            "robot_motion_ack: sid=%s, command=%s, ok=%s, error=%s",
-            request.sid,
-            data.get('commandId') if data else None,
-            data.get('ok') if data else None,
-            data.get('error') if data else None,
-        )
-
     @socketio.on('teacher_enter_control')
     def handle_teacher_enter_control(data):
         """
@@ -6051,4 +6038,7 @@ def register_socket_events(socketio):
     #     timestamp: float
     # }
     
-    logger.info("WebSocket事件处理器已注册（包含分析反馈事件支持）")
+    from app.sockets.expression_events import register_expression_events
+
+    register_expression_events(socketio)
+    logger.info("WebSocket事件处理器已注册（包含分析反馈和屏幕表情事件支持）")

@@ -1,6 +1,6 @@
 # Data schema and session dataset
 
-> Demo 数据事实：`config/demo_course_scope.json` 固定两课型；`config/demo_deployment.json` 固定禁用机械动作、Robot Runtime 和完整版表情。全新数据库仅播种配对和排序；旧数据库原地升级并保留历史行，但活动目录、预设、分析投影和新报告不会暴露其他课型。
+> Demo 数据事实：`config/demo_course_scope.json` 固定两课型；`config/demo_deployment.json` 固定禁用机械动作和 Robot Runtime、启用屏幕表情。全新数据库仅播种命名和排序；旧数据库原地升级并保留历史行，但活动目录、预设、分析投影和新报告不会暴露其他课型。
 
 ## Persistent stores
 
@@ -13,10 +13,10 @@
   `courseSelections[{courseType,itemIds}]`. It stores reviewed item identities,
   validates them against the canonical Demo catalog and is replaced atomically.
 - Demo deployment capabilities: `config/demo_deployment.json` schema v1.
-  Invalid or missing data fails closed; checked-in configuration cannot enable
-  `robotMotion`, `robotExpression` or `robotRuntime`.
+  Invalid or missing data falls back to the reviewed Demo capability set:
+  `robotMotion=false`, `robotExpression=true`, `robotRuntime=false`.
 - Demo course scope: `config/demo_course_scope.json` schema v1. The current
-  deployment enables `pairing` and `ordering`; database rows and assets for
+  deployment enables `naming` and `ordering`; database rows and assets for
   disabled historical courses remain in place but are excluded from active
   catalogs, presets, sync catalog exports and newly generated report projections.
 - Session directory: `static/recordings/sessions/<human-dir>/` when the
@@ -37,7 +37,7 @@
   `label`, `status`, nullable `score`/`gapToTarget`, `targetScore`, `itemCount`
   and `teacherRatingCount`; an unassessed enabled course stores null scores,
   never zero. On the demo machine the array and course-score maps contain only
-  pairing and ordering.
+  naming and ordering.
   Rule-generated recommendations are structured as `priority`, `title`,
   `evidence`, `practice`, `why` and `progressCheck`. These fields explain the
   observed session and do not represent population norms. New narratives add
@@ -215,16 +215,15 @@ natural-dialogue stage summaries, data-isolation status, automatic findings
 and the static voice-strategy review. See
 `docs/INTERACTION_LATENCY.md` for formulas and clock-domain limits.
 
-## Demo 儿童动画映射
+## Demo 屏幕媒体映射
 
-`doll/data/course_map.json` 是儿童屏幕动画的兼容映射。发布数据只允许
-`animation` 文件名和 `sequence.audio.offsetMs`；不得写入 `motions`、
-`emotion` 或 `expression`。`static/resources/Animations/*.mp4` 是允许的
-儿童反馈资源，和分析数据中的 emotion 指标、完整版本机器人表情均无关。
+`doll/data/course_map.json` 是儿童屏幕动画与屏幕表情的兼容映射。发布数据允许
+`animation`、`emotion`/`expressionMediaId`、表扬事件专用且至少含两个文件名的 `emotions` 随机表情池和 `sequence.audio.offsetMs`；不得写入 `motion`、`motions` 或 `motionOffsetMs`。
+`static/resources/Animations/*.mp4` 是儿童反馈资源；`static/resources/Emotions/*.mp4` 和
+`doll/data/emotions_meta.json` 是屏幕表情资源与元数据。
 
-`doll/data/motions.json`、`doll/data/emotions_meta.json`、`doll/Pose/` 和
-`static/resources/Emotions/` 不属于 Demo 数据 schema，不能进入发布包。
-动画重命名与映射更新必须在同一操作内完成，JSON 写入使用同目录临时
+`doll/data/motions.json`、`doll/Pose/` 和机械动作资产不属于 Demo 发布 schema。
+动画/表情重命名与映射更新必须在同一操作内完成，JSON 写入使用同目录临时
 文件、`fsync` 和原子替换。
 
 ## Server camera registry

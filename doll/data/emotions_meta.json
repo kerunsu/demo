@@ -1,0 +1,133 @@
+{
+  "version": 2,
+  "default": "v4_idle.mp4",
+  "idlePool": [
+    "v4_idle.mp4"
+  ],
+  "styles": {
+    "v3_speak_bye.mp4": {
+      "speedMultiplier": 1.2,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
+    },
+    "v3_speak_byenext.mp4": {
+      "speedMultiplier": 1.2,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
+    },
+    "v3_speak_excitedly_long.mp4": {
+      "speedMultiplier": 1.0,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
+    },
+    "v3_speak_excitedly_short.mp4": {
+      "speedMultiplier": 1.0,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
+    },
+    "v3_speak_hi.mp4": {
+      "speedMultiplier": 1.2,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
+    },
+    "v3_speak_hinext.mp4": {
+      "speedMultiplier": 1.2,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
+    },
+    "v3_speak_lookdown_match.mp4": {
+      "speedMultiplier": 1.0,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
+    },
+    "v3_speak_lookdown_namecall.mp4": {
+      "speedMultiplier": 1.0,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
+    },
+    "v3_speak_lookdown_sort.mp4": {
+      "speedMultiplier": 1.0,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
+    },
+    "v3_speak_lookdown_sound.mp4": {
+      "speedMultiplier": 1.0,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
+    },
+    "v3_idle_sleepy2.mp4": {
+      "speedMultiplier": 1.0,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
+    },
+    "v4_idle.mp4": {
+      "speedMultiplier": 1.0,
+      "scale": 1.25,
+      "hueDeg": 0.0,
+      "brightness": 1.0,
+      "saturation": 1.0,
+      "opacity": 1.0
+    }
+  },
+  "globalFilter": {
+    "enabled": false,
+    "hueDeg": 0.0,
+    "brightness": 1.0,
+    "saturation": 1.0,
+    "contrast": 1.0,
+    "opacity": 1.0
+  },
+  "dialogueReplyExpressions": {
+    "enabled": true,
+    "rules": [
+      {
+        "tier": "short",
+        "maxChars": 8,
+        "emotion": "Teddy_bear_speaking_202608261550.mp4"
+      },
+      {
+        "tier": "medium",
+        "maxChars": 20,
+        "emotion": "White_teddy_bear_speaking_cartoon_202608261550.mp4"
+      },
+      {
+        "tier": "long",
+        "maxChars": 1000,
+        "emotion": "v3_speak_lookdown_namecall.mp4"
+      }
+    ]
+  }
+}

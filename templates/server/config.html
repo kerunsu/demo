@@ -65,6 +65,8 @@
       <button type="button" data-view="phrases">实时话术</button>
       <button type="button" data-view="workbench" class="active">工作台</button>
       <button type="button" data-view="media">媒资库</button>
+      <button type="button" data-view="expressions">表情库</button>
+      <button type="button" data-view="expression-bindings">表情绑定</button>
       <button type="button" data-view="animations">鼓励动画库</button>
       <span class="cc-subnav-hint">交互内容</span>
     </div>
@@ -78,7 +80,12 @@
           <p class="cc-page-subtitle">Demo 课程、话术、儿童屏动画与媒资入口 · 缺项体检见下方卡片。</p>
         </div>
       </div>
-      <div class="cc-grid cols-2" id="workbench-metrics">
+      <div class="cc-grid cols-3" id="workbench-metrics">
+        <a class="cc-card cc-metric-link" href="?view=expressions">
+          <div class="cc-metric-label">屏幕表情</div>
+          <div class="cc-metric-value" id="stat-emotions">—</div>
+          <div class="cc-metric-note">上传 / 预览 / 待机</div>
+        </a>
         <a class="cc-card cc-metric-link" href="?view=animations">
           <div class="cc-metric-label">儿童屏动画</div>
           <div class="cc-metric-value">MP4</div>
@@ -93,7 +100,7 @@
       <div class="cc-grid cols-3" id="workbench-issues" style="margin-top:14px;"></div>
       <div class="cc-card" id="cc-sync-card" style="margin-top:14px;">
         <h3 class="cc-card-title">配置中心协作同步</h3>
-        <p class="cc-tiny">导出可审查的 Demo 配置包，包含 YAML/CSV/JSON、两类课程目录、儿童屏动画和课程媒体；不包含机械动作、机器人 Runtime、完整版表情、录音、报告、数据库或学生个人数据。</p>
+        <p class="cc-tiny">导出可审查的 Demo 配置包，包含 YAML/CSV/JSON、两类课程目录、屏幕表情、儿童屏动画和课程媒体；不包含机械动作、Robot Runtime、录音、报告、数据库或学生个人数据。</p>
         <div class="cc-toolbar" style="margin-top:10px;">
           <button type="button" class="cc-btn soft" id="btn-sync-refresh">检查同步内容</button>
           <a class="cc-btn primary" id="btn-sync-export" href="/api/v2/config/sync/export" download>下载同步包</a>
@@ -102,8 +109,130 @@
         <pre id="cc-sync-preview" class="cc-tiny" style="white-space:pre-wrap;max-height:140px;overflow:auto;margin-top:8px;"></pre>
       </div>
       <div class="cc-notice info" style="margin-top:16px;">
-        Demo 固定课程范围：配对、排序。儿童屏鼓励动画不属于机器人表情。
+        Demo 固定课程范围：命名、排序。屏幕表情与儿童屏鼓励动画均启用；机械动作和 Robot Runtime 固定禁用。
       </div>
+    </section>
+
+    <!-- 屏幕表情库（与机械动作完全独立） -->
+    <section class="cc-page" id="page-expressions" data-page="expressions" hidden>
+      <div class="cc-page-head">
+        <div>
+          <div class="cc-breadcrumb">交互内容 / 表情库</div>
+          <h1 class="cc-page-title">屏幕表情库</h1>
+          <p class="cc-page-subtitle">与主版本一致的 MP4 表情 · 普通事件单次播放，对话表情循环到语音结束 · 不包含机械动作</p>
+        </div>
+        <div class="cc-head-actions">
+          <a class="cc-btn soft" href="/robot/emotion" target="_blank" rel="noopener">打开表情屏</a>
+          <button type="button" class="cc-btn soft" id="btn-refresh-emotions">刷新</button>
+          <label class="cc-btn primary" for="emotion-upload-input">上传 MP4</label>
+          <input type="file" id="emotion-upload-input" accept=".mp4,video/mp4" hidden />
+        </div>
+      </div>
+      <div class="cc-grid main-aside">
+        <div>
+          <div class="cc-expr-grid" id="emotion-grid"></div>
+          <p class="cc-tiny" id="emotion-empty" hidden>暂无表情，请上传 MP4。</p>
+        </div>
+        <aside class="cc-card">
+          <h3 class="cc-card-title">预览</h3>
+          <div class="cc-preview-screen" id="emotion-preview">
+            <span class="cc-preview-label">未选择</span>
+            <div class="cc-emotion-preview-filter" id="emotion-preview-filter-layer">
+              <img id="emotion-preview-img" alt="" hidden />
+              <video id="emotion-preview-video" muted playsinline preload="metadata" hidden></video>
+            </div>
+          </div>
+          <div class="cc-preview-meta" id="emotion-preview-meta">点击卡片预览</div>
+          <div class="cc-tuning-section">
+            <h4>单表情参数</h4>
+            <div class="cc-tuning-grid">
+              <label>速度倍率<input id="emotion-style-speed" class="cc-inp" type="number" min="0.25" max="4" step="0.05" /></label>
+              <label>缩放<input id="emotion-style-scale" class="cc-inp" type="number" min="0.5" max="2" step="0.05" /></label>
+              <label>色调 (°)<input id="emotion-style-hue" class="cc-inp" type="number" min="-180" max="180" step="1" /></label>
+              <label>亮度<input id="emotion-style-brightness" class="cc-inp" type="number" min="0" max="2" step="0.05" /></label>
+              <label>饱和度<input id="emotion-style-saturation" class="cc-inp" type="number" min="0" max="2" step="0.05" /></label>
+              <label>透明度<input id="emotion-style-opacity" class="cc-inp" type="number" min="0" max="1" step="0.05" /></label>
+            </div>
+            <div class="cc-form-row">
+              <button type="button" class="cc-btn primary small" id="btn-save-emotion-style" disabled>保存表情参数</button>
+              <button type="button" class="cc-btn soft small" id="btn-reset-emotion-style" disabled>恢复默认</button>
+            </div>
+          </div>
+          <div class="cc-tuning-section">
+            <h4>全局环境光滤镜</h4>
+            <label class="cc-filter-toggle"><input id="emotion-global-enabled" type="checkbox" /> 启用全局滤镜</label>
+            <div class="cc-tuning-grid">
+              <label>色调 (°)<input id="emotion-global-hue" class="cc-inp" type="number" min="-180" max="180" step="1" /></label>
+              <label>亮度<input id="emotion-global-brightness" class="cc-inp" type="number" min="0" max="2" step="0.05" /></label>
+              <label>饱和度<input id="emotion-global-saturation" class="cc-inp" type="number" min="0" max="2" step="0.05" /></label>
+              <label>对比度<input id="emotion-global-contrast" class="cc-inp" type="number" min="0" max="2" step="0.05" /></label>
+              <label>透明度<input id="emotion-global-opacity" class="cc-inp" type="number" min="0" max="1" step="0.05" /></label>
+            </div>
+            <div class="cc-form-row">
+              <button type="button" class="cc-btn primary small" id="btn-save-global-filter">保存全局滤镜</button>
+              <button type="button" class="cc-btn soft small" id="btn-reset-global-filter">恢复默认</button>
+            </div>
+          </div>
+          <div class="cc-preview-actions">
+            <button type="button" class="cc-btn soft" id="btn-set-default" disabled>加入待机池</button>
+            <button type="button" class="cc-btn soft" id="btn-trigger-emotion" disabled>试触发（本机）</button>
+            <button type="button" class="cc-btn danger" id="btn-delete-emotion" disabled>删除</button>
+          </div>
+          <p class="cc-tiny">待机表情会被命名提问、排序提问、提示或表扬表情抢占；事件表情结束后回到随机待机。</p>
+        </aside>
+      </div>
+      <section class="cc-card dialogue-expression-card" id="dialogue-expression-card">
+        <div class="dialogue-expression-head">
+          <div>
+            <h2 class="cc-card-title">大模型回复表情匹配</h2>
+            <p class="cc-tiny">固定配置短、中、长三个 MP4 说话表情，按回复有效字数匹配，并循环到浏览器语音结束。</p>
+          </div>
+          <label class="dialogue-expression-toggle"><input type="checkbox" id="dialogue-expression-enabled" /><span>启用匹配</span></label>
+        </div>
+        <div class="dialogue-expression-rules" id="dialogue-expression-rules"></div>
+        <div class="dialogue-expression-actions">
+          <button type="button" class="cc-btn primary" id="btn-save-dialogue-expression-rules">保存规则</button>
+          <span class="cc-tiny" id="dialogue-expression-status" role="status" aria-live="polite"></span>
+        </div>
+        <div class="dialogue-expression-tester">
+          <label for="dialogue-expression-test-text">匹配预览</label>
+          <textarea id="dialogue-expression-test-text" rows="2" placeholder="输入一段大模型回复，查看会使用哪一个表情"></textarea>
+          <div class="dialogue-expression-test-result" id="dialogue-expression-test-result">输入文字后显示匹配结果</div>
+        </div>
+      </section>
+    </section>
+
+    <!-- 表情绑定：保留主版本的三级表情配置，不包含任何机械动作。 -->
+    <section class="cc-page" id="page-expression-bindings" data-page="expression-bindings" hidden>
+      <div class="cc-page-head">
+        <div>
+          <div class="cc-breadcrumb">交互内容 / 表情绑定</div>
+          <h1 class="cc-page-title">课程表情绑定</h1>
+          <p class="cc-page-subtitle">全局 → 课程 → 课点三级覆盖 · 固定表情、表扬随机池、儿童屏动画和语音偏移 · 无机械动作</p>
+        </div>
+        <div class="cc-head-actions">
+          <a class="cc-btn soft" href="/robot/emotion" target="_blank" rel="noopener">打开表情屏</a>
+          <button type="button" class="cc-btn soft" id="btn-refresh-expression-bindings">刷新</button>
+        </div>
+      </div>
+      <div class="cc-notice info">Demo 只显示命名、排序课程。保存接口会拒绝 motion、motions 和 motionOffsetMs。</div>
+      <div class="cc-card expression-binding-scope">
+        <label>配置层级
+          <select id="expression-binding-scope" class="cc-inp">
+            <option value="default">全局通用</option>
+            <option value="course">课程</option>
+            <option value="item">课点</option>
+          </select>
+        </label>
+        <label id="expression-binding-course-wrap" hidden>课程
+          <select id="expression-binding-course" class="cc-inp"></select>
+        </label>
+        <label id="expression-binding-item-wrap" hidden>课点
+          <select id="expression-binding-item" class="cc-inp"></select>
+        </label>
+        <span class="cc-tiny" id="expression-binding-scope-note">正在加载表情配置…</span>
+      </div>
+      <div class="expression-binding-grid" id="expression-binding-grid"></div>
     </section>
 
     <!-- 鼓励动画库 -->
@@ -146,7 +275,7 @@
         <div>
           <div class="cc-breadcrumb">交互内容 / 媒资库</div>
           <h1 class="cc-page-title">媒资库</h1>
-          <p class="cc-page-subtitle">浏览 / 上传 <code>static/resources/</code> · Demo 不在此仓库管理机器人表情</p>
+          <p class="cc-page-subtitle">浏览 / 上传 <code>static/resources/</code> · 表情 MP4 请使用表情库管理</p>
         </div>
         <div class="cc-head-actions">
           <button type="button" class="cc-btn soft" id="btn-media-refresh">刷新</button>
@@ -325,7 +454,7 @@
       <div class="cc-grid cols-2" style="margin-top:10px;">
         <section class="cc-card">
           <div class="cc-card-title">批量素材导入</div>
-          <p class="cc-tiny">Demo 已禁用机械动作和完整版表情批量导入。</p>
+          <p class="cc-tiny">Demo 不导入机械动作；表情 MP4 请在「表情库」逐项上传和预览。</p>
           <div class="cc-form-row">
             <select id="phase5-asset-kind" class="cc-inp" disabled><option value="disabled">disabled</option></select>
             <input id="phase5-asset-files" type="file" class="cc-inp" multiple accept=".json,.mp4,.zip" />
@@ -336,10 +465,10 @@
         </section>
         <section class="cc-card">
           <div class="cc-card-title">交互规则诊断</div>
-          <p class="cc-tiny">用于检查课程事件最终会匹配哪条台词或儿童屏内容；机械动作和完整版表情始终禁用。</p>
+          <p class="cc-tiny">用于检查课程事件最终会匹配哪条台词、屏幕表情或儿童屏内容；机械动作始终禁用。</p>
           <div class="cc-form-row">
             <input id="phase5-profile-course" class="cc-inp" placeholder="courseId" />
-            <input id="phase5-profile-event" class="cc-inp" value="question.pairing" placeholder="eventKey" />
+            <input id="phase5-profile-event" class="cc-inp" value="question.naming" placeholder="eventKey" />
             <input id="phase5-profile-scene" class="cc-inp" placeholder="sceneKey（可选）" />
             <button type="button" class="cc-btn primary small" id="phase5-profile-resolve">解析</button>
           </div>
@@ -369,7 +498,7 @@
 
         <div class="cc-card" style="margin-bottom:14px;">
           <h3 class="cc-card-title">运行时环境</h3>
-          <p class="cc-tiny">儿童媒体固定使用浏览器采集；机械动作、机器人 Runtime 和完整版表情由 Demo 能力配置固定禁用。语音设置写入 <code>config/runtime_modes.yaml</code>。</p>
+          <p class="cc-tiny">儿童媒体固定使用浏览器采集；屏幕表情启用，机械动作与 Robot Runtime 固定禁用。语音设置写入 <code>config/runtime_modes.yaml</code>。</p>
           <div class="cc-form-grid" style="margin-top:10px;">
             <div class="cc-field">
               <label class="cc-field-label" for="ov-child-media">儿童媒体模式</label>
@@ -390,7 +519,7 @@
             <div class="cc-field">
               <label class="cc-field-label" for="ov-speech-rate">课程与智能体语速：<strong id="ov-speech-rate-value">0.88×</strong></label>
               <input class="cc-inp" id="ov-speech-rate" type="range" min="0.5" max="2" step="0.05" value="0.88" />
-              <div class="cc-tiny">从下一句话开始立即生效；课程提问、命名、拟声、智能体回复、吸引和夸奖统一使用。</div>
+              <div class="cc-tiny">从下一句话开始立即生效；命名、排序课程提问、智能体回复、吸引和夸奖统一使用。</div>
             </div>
           </div>
           <div class="cc-toolbar" style="margin-top:12px;">
@@ -607,7 +736,7 @@
           <div>
             <div class="cc-breadcrumb">配置中心 / 报告与评分</div>
             <h1 class="cc-page-title">报告与评分</h1>
-            <p class="cc-page-subtitle">五维权重和必须 =100 · 仅影响新报告 · schema_version 只读</p>
+            <p class="cc-page-subtitle">四维权重和必须 =100 · 仅影响新报告 · schema_version 只读</p>
           </div>
         </div>
         <div class="cc-notice info">改权重不会回写已落盘报告。详见 REPORT_SCORING.md。</div>
@@ -646,11 +775,14 @@
 
   <script src="/static/js/config_center.js"></script>
   <script src="/static/js/config_sync.js"></script>
+  <script src="/static/js/config_content_expressions.js?v=20260828-demo-screen-expression-v1"></script>
+  <script src="/static/robot/js/robot_emotion_mapping.js?v=20260828-demo-expression-bindings-v1"></script>
   <script src="/static/js/config_content_animations.js?v=20260823-module-guard-v1"></script>
   <script src="/static/js/config_content_media.js"></script>
   <script src="/static/js/config_content_courses.js"></script>
   <script src="/static/js/config_content_phrases.js"></script>
   <script src="/static/js/config_content_workbench.js"></script>
+  <script src="/static/js/config_dialogue_expressions.js?v=20260828-demo-screen-expression-v1"></script>
   <script src="/static/js/config_algo.js"></script>
   <script src="/static/js/config_phase5.js"></script>
   <script src="/static/js/config_latency.js"></script>

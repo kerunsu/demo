@@ -1,6 +1,6 @@
 # Demo 环境与配置
 
-Demo 版只运行 Flask 后端、同源教师端、儿童端和 Server 控制台。儿童摄像头与麦克风由 `/child` 页面直接采集；不启动 Robot Runtime，不连接 DollSer/OSC，也不使用完整版表情目录。
+Demo 版只运行 Flask 后端、同源教师端、儿童端、Server 控制台和屏幕表情页。儿童摄像头与麦克风由 `/child` 页面直接采集；屏幕表情从 8080 的 `static/resources/Emotions/` 加载；不启动 Robot Runtime，不连接 DollSer/OSC。
 
 ## 首次拉取
 
@@ -11,7 +11,7 @@ Copy-Item .env.example .env
 .\start_server.ps1
 ```
 
-启动脚本会安装缺失依赖、构建教师端，并在数据库不存在时创建只含配对、排序的标准数据。`.env`、`database/app.db`、录制、日志、`.runtime/`、`node_modules/` 和构建压缩包均为本机数据，不得提交。
+启动脚本会安装缺失依赖、构建教师端，并在数据库不存在时创建只含命名、排序的标准数据。`.env`、`database/app.db`、录制、日志、`.runtime/`、`node_modules/` 和构建压缩包均为本机数据，不得提交。
 
 ## 可配置项
 
@@ -30,13 +30,14 @@ Copy-Item .env.example .env
 - `ENABLE_HTTPS`、`SSL_CERTFILE`、`SSL_KEYFILE`：局域网安全上下文。
 - `LOG_LEVEL`：日志级别。
 
-`CHILD_MEDIA_MODE` 与 `ROBOT_CONTROL_MODE` 即使由旧环境变量传入，也会分别收敛为 `browser` 和 `disabled`。任何环境变量都不能开启机械动作、Robot Runtime 或完整版表情。
+`CHILD_MEDIA_MODE` 与 `ROBOT_CONTROL_MODE` 即使由旧环境变量传入，也会分别收敛为 `browser` 和 `disabled`。任何环境变量都不能开启机械动作或 Robot Runtime；屏幕表情由 Demo 能力事实源固定开启。
 
 ## 页面地址
 
 - 教师端：`http://<server-ip>:8080/teacher/`
 - 儿童端：`http://<server-ip>:8080/child`
 - Server：`http://<server-ip>:8080/server`
+- 表情屏：`http://<server-ip>:8080/robot/emotion`
 
 局域网 HTTP 下若浏览器拒绝麦克风/摄像头权限，优先配置 HTTPS；临时现场部署可运行 `scripts/Open-ChildLanMic.ps1 -LanHost <后端IP>` 打开受限儿童端窗口。
 

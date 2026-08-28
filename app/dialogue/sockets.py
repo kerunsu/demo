@@ -496,11 +496,35 @@ def _emit_speak(
 
     behavior_id = f"dialogue-{uuid.uuid4().hex[:12]}"
     request_id = f"dialogue-request-{uuid.uuid4().hex[:12]}"
+    expression_timeout_ms = min(
+        30000,
+        max(5000, len(spoken) * 360 + max(0, int(delay_ms or 0)) + 2500),
+    )
     try:
         from app.robot import get_robot_service
 
         robot_service = get_robot_service()
-        reservation = robot_service.reserve_audio_only_behavior(
+        expression_match = None
+        if intent == "dialogue" and source == "dialogue":
+            selector = getattr(robot_service, "select_dialogue_reply_emotion", None)
+            if callable(selector):
+                expression_match = selector(spoken)
+        elif intent == "wake_ack":
+            wake_selector = getattr(robot_service, "select_dialogue_wake_behavior", None)
+            if callable(wake_selector):
+                wake_behavior = wake_selector() or {}
+                if wake_behavior.get("emotion"):
+                    expression_match = {
+                        "emotion": wake_behavior["emotion"],
+                        "sequence": wake_behavior.get("sequence") or {},
+                    }
+
+        reserve = (
+            robot_service.reserve_behavior
+            if expression_match
+            else robot_service.reserve_audio_only_behavior
+        )
+        reservation = reserve(
             behavior_id=behavior_id,
             request_id=request_id,
             session_id=resolved_session_id,
@@ -533,6 +557,45 @@ def _emit_speak(
             return False
         behavior_id = str(reservation.get("behaviorId") or behavior_id)
         behavior_result = None
+        if expression_match:
+            starter = getattr(robot_service, "start_dialogue_reply_behavior", None)
+            if callable(starter):
+                behavior_result = starter(
+                    emotion=expression_match.get("emotion"),
+                    motion=None,
+                    sequence=expression_match.get("sequence") or {},
+                    behavior_id=behavior_id,
+                    request_id=request_id,
+                    session_id=resolved_session_id,
+                    speech_timeout_ms=expression_timeout_ms,
+                )
+            if not behavior_result:
+                robot_service.abort_behavior(behavior_id)
+                expression_match = None
+                reservation = robot_service.reserve_audio_only_behavior(
+                    behavior_id=behavior_id,
+                    request_id=request_id,
+                    session_id=resolved_session_id,
+                )
+                if not reservation.get("accepted"):
+                    _queue_pending_dialogue_speak(
+                        resolved_session_id,
+                        {
+                            "room": room,
+                            "text": spoken,
+                            "intent": intent,
+                            "delay_ms": delay_ms,
+                            "source": source,
+                            "session_id": resolved_session_id,
+                            "dialogue_request_id": dialogue_request_id,
+                            "page_context": dict(page_context or {}),
+                            "context_identity": _dialogue_context_identity(page_context),
+                            "queued_at": _queued_at,
+                            "expires_at": _expires_at,
+                            "dialogue_generation": dialogue_generation,
+                        },
+                    )
+                    return False
     except Exception as exc:
         logger.error("对话语音预占失败: %s", exc, exc_info=True)
         return False
@@ -572,6 +635,8 @@ def _emit_speak(
         "speechRate": float(Config.BROWSER_SPEECH_RATE),
 
     }
+    if expression_match:
+        payload["expression"] = expression_match["emotion"]
 
     timeout_ms = min(
         30000,

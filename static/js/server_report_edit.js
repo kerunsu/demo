@@ -2,11 +2,12 @@
   const tid = window.__REPORT_EDIT_ID__;
   const DIM_KEYS = [
     ["attention", "注意力参与"],
-    ["matching", "配对"],
+    ["expressiveLanguage", "表达性语言"],
+    ["receptiveLanguage", "接受性语言"],
     ["ordering", "排序"],
   ];
   const COURSE_KEYS = [
-    ["pairing", "配对"],
+    ["naming", "命名"],
     ["ordering", "排序"],
   ];
 

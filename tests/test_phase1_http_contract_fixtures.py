@@ -95,7 +95,7 @@ def test_phase1_http_server_status_field_snapshot(monkeypatch, phase1_root_runti
         "deployment": "demo-machine",
         "capabilities": {
             "robotMotion": False,
-            "robotExpression": False,
+            "robotExpression": True,
             "robotRuntime": False,
             "childAnimation": True,
             "browserSpeech": True,
@@ -165,8 +165,9 @@ def test_phase1_http_demo_hardware_surfaces_are_disabled():
     emotions = client.get("/api/robot/emotions")
     assert motions.status_code == 410
     assert motions.get_json()["error"] == "demo_capability_disabled"
-    assert emotions.status_code == 410
-    assert emotions.get_json()["error"] == "demo_capability_disabled"
+    assert emotions.status_code == 200
+    assert emotions.get_json()["success"] is True
+    assert emotions.get_json()["emotions"]
 
     imported = client.post("/api/robot/motions/import")
     assert imported.status_code == 410
@@ -179,7 +180,7 @@ def test_phase1_http_demo_hardware_block_is_independent_of_service_state():
     motions = client.get("/api/robot/motions")
     emotions = client.get("/api/robot/emotions")
     assert motions.status_code == 410
-    assert emotions.status_code == 410
+    assert emotions.status_code == 200
     assert client.get("/api/robot/runtime/status").status_code == 410
 
 
@@ -267,7 +268,7 @@ def test_phase1_http_course_types_field_snapshot(monkeypatch):
             return self
 
         def all(self):
-            return [SimpleNamespace(id=1, name="pairing"), SimpleNamespace(id=2, name="ordering")]
+            return [SimpleNamespace(id=1, name="naming"), SimpleNamespace(id=2, name="ordering")]
 
     class CourseType:
         id = object()
@@ -279,7 +280,7 @@ def test_phase1_http_course_types_field_snapshot(monkeypatch):
     assert response.get_json() == {
         "success": True,
         "types": [
-                {"id": 1, "name": "pairing", "type": "pairing"},
+                {"id": 1, "name": "naming", "type": "naming"},
                 {"id": 2, "name": "ordering", "type": "ordering"},
         ],
     }

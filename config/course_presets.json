@@ -7,9 +7,10 @@
     {
       "courseSelections": [
         {
-          "courseType": "pairing",
+          "courseType": "naming",
           "itemIds": [
-            79
+            16,
+            17
           ]
         },
         {
@@ -19,17 +20,19 @@
           ]
         }
       ],
-      "description": "仅评估配对和排序的指定课点",
+      "description": "快速评估：命名和排序的指定课点",
       "id": "demo-assessment",
       "mode": "assessment",
-      "name": "Demo 评估方案"
+      "name": "Demo 快速评估"
     },
     {
       "courseSelections": [
         {
-          "courseType": "pairing",
+          "courseType": "naming",
           "itemIds": [
-            79
+            18,
+            19,
+            20
           ]
         },
         {
@@ -39,10 +42,10 @@
           ]
         }
       ],
-      "description": "仅训练配对和排序的指定课点",
+      "description": "基础干预：命名训练和排序的指定课点",
       "id": "demo-intervention",
       "mode": "intervention",
-      "name": "Demo 干预方案"
+      "name": "Demo 基础干预"
     }
   ],
   "schemaVersion": 3

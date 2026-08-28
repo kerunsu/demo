@@ -8,7 +8,8 @@ interface ReportPageProps {
 
 type DimensionKey =
   | 'attention'
-  | 'matching'
+  | 'expressiveLanguage'
+  | 'receptiveLanguage'
   | 'ordering';
 
 type CourseEvaluation = {
@@ -41,12 +42,13 @@ type RecommendationView = {
 
 const DIMENSIONS: Array<{ key: DimensionKey; label: string }> = [
   { key: 'attention', label: '注意力参与' },
-  { key: 'matching', label: '配对能力' },
+  { key: 'expressiveLanguage', label: '表达性语言' },
+  { key: 'receptiveLanguage', label: '接受性语言' },
   { key: 'ordering', label: '排序能力' },
 ];
 
 const COURSE_TYPES = [
-  { key: 'pairing', label: '配对' },
+  { key: 'naming', label: '命名' },
   { key: 'ordering', label: '排序' },
 ];
 
@@ -630,7 +632,7 @@ export function ReportPage({ trainingSessionId, studentName, onBack }: ReportPag
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <div>
                     <h2 className="border-l-[3px] border-[#3489ca] pl-2.5 text-base font-black text-[#17283c]">本次课程得分</h2>
-                    <p className="mt-1 text-[10px] text-slate-500">仅展示 Demo 启用的配对和排序；未评估或数据不足不会按 0 分计入综合表现。</p>
+                    <p className="mt-1 text-[10px] text-slate-500">仅展示 Demo 启用的命名和排序；未评估或数据不足不会按 0 分计入综合表现。</p>
                   </div>
                   <span className="text-[9px] text-slate-400">训练参考线 {targetScore.toFixed(0)}%</span>
                 </div>

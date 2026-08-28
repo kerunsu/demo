@@ -6,11 +6,11 @@
 
 本仓库是与完整版本目录、Git 工作树和部署包相互独立的 Demo 产品。同步完整版本更新前必须阅读 `docs/DEMO_SYNC.md`，不得整目录覆盖。
 
-- 唯一启用课型为 `pairing`、`ordering`；课程选择、配置、预设、采集分析和新报告都只能投影这两类。
+- 唯一启用课型为 `naming`、`ordering`；课程选择、配置、预设、采集分析和新报告都只能投影这两类。
 - `config/demo_course_scope.json` 是课程范围事实源，`config/demo_deployment.json` 是部署能力事实源；二者非法或缺失时必须安全收紧，不能扩大权限。
-- Demo 没有机械结构，不注册机械 Socket 事件，不启动 Robot Runtime，不提供动作接口/页面/资产，也不消费完整版本的表情协议或表情素材。
+- Demo 没有机械结构，不注册机械 Socket 事件，不启动 Robot Runtime，不提供动作接口/页面/资产。屏幕表情功能必须与完整版本保持一致，但表情绑定和执行计划不得夹带任何机械动作。
 - `static/resources/Animations/` 是儿童屏幕鼓励动画，不属于机器人表情，必须保留。浏览器语音、儿童页面、采集、分析、教师评分和报告流程保持正常。
-- `app/robot/` 名称只为旧课程输出契约兼容；生产实例必须固定 `disabled`，输出计划只能含语音和儿童屏幕动画。
+- `app/robot/` 名称为旧课程输出契约兼容；机械控制模式必须固定 `disabled`，输出计划只能含语音、儿童屏幕动画和屏幕表情。
 - 更新完整版本时，先同步通用修复，再逐项重施上述边界，最后执行 `docs/DEMO_SYNC.md` 的全套验收。
 
 ## 1. 开始工作前
@@ -31,7 +31,7 @@
 | `app/storage/`、`database/` | SQLite、会话文件、时间线、报告和资源目录 | repository、文件布局、元数据、迁移 |
 | `app/computation/`、`app/behavior/`、`app/report/` | readiness、分析、评分、行为和课程交互解析 | 业务决策、评分公式、InteractionProfile/legacy 兼容 |
 | `app/dialogue/`、`app/audio/`、`tools/voice-service/` | ASR/LLM/TTS、语音播放和语音服务 | provider、超时、降级、语音资产 |
-| `app/robot/`、`robot_runtime/`、`doll/` | Demo 兼容层与被禁用的完整产品源码 | 不得启用 Runtime、机械动作、完整版表情；仅保留课程输出兼容与儿童动画引用 |
+| `app/robot/`、`robot_runtime/`、`doll/` | Demo 屏幕表情/课程输出兼容层与被禁用的机械源码 | 保留完整的屏幕表情链路；不得启用 Runtime、DollSer/OSC 或机械动作 |
 | `config/`、`doll/data/` | 可审阅的课程、交互、语音和 Demo 能力配置 | YAML/JSON/CSV；配置变更必须说明兼容性 |
 | `tests/` | 当前行为和接口的自动化证据 | 与改动同提交测试，不删除或放宽既有断言 |
 

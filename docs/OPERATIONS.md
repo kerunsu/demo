@@ -1,15 +1,15 @@
 # Demo 运维、发布与回滚
 
-本文只描述无机械结构 Demo 机的现行运维流程。完整版本的机器人、机械动作、Robot Runtime 和表情系统不属于本仓库；同步规则见 [Demo 同步规范](DEMO_SYNC.md)。
+本文只描述无机械结构 Demo 机的现行运维流程。屏幕表情属于本仓库；机械动作和 Robot Runtime 不属于 Demo 能力，同步规则见 [Demo 同步规范](DEMO_SYNC.md)。
 
 ## 运行边界
 
-- 课程固定为配对、排序。
+- 课程固定为命名、排序。
 - 儿童端固定使用浏览器摄像头、麦克风、语音识别和 TTS。
 - 允许儿童屏鼓励动画 `static/resources/Animations/`。
 - 不启动或探测 19091，不连接 DollSer/OSC，不下载机器人包。
-- 不发布 `doll/Pose/`、`motions.json`、`emotions_meta.json` 或 `static/resources/Emotions/`。
-- 报告只展示三门 Demo 课程及注意力、配对、排序三个评分维度；儿童情绪观测属于分析数据，不是机器人表情输出。
+- 发布 `emotions_meta.json` 和 `static/resources/Emotions/`，不发布 `doll/Pose/` 或 `motions.json`。
+- 报告只展示命名、排序两门 Demo 课程及注意力、表达性语言、接收性语言、排序四个评分维度；儿童情绪观测与屏幕表情输出是两套独立数据。
 
 这些边界由 `config/demo_course_scope.json`、`config/demo_deployment.json` 和代码中的 fail-closed 校验共同保证。编辑 JSON 也不能启用被禁止的硬件能力。
 
@@ -30,8 +30,8 @@ Windows 机器安装 Git、Python 3.10+ 和 Node.js LTS 后，克隆独立 Demo 
 1. `http://127.0.0.1:8080/teacher/` 可登录。
 2. `/child` 可打开并允许摄像头和麦克风。
 3. `/server` 可查看浏览器端连接、录制和分析状态。
-4. 课程选择、预设和配置目录只出现配对、排序。
-5. `/robot`、`/robot/emotion`、`/robot/download` 明确返回 Demo 能力禁用。
+4. 课程选择、预设和配置目录只出现命名、排序。
+5. `/robot/emotion` 可打开并显示默认表情；`/robot`、`/robot/download` 明确返回 Demo 能力禁用。
 6. 完成两类课程后可以评分、生成报告并提交审核。
 
 只读环境检查：
@@ -77,9 +77,9 @@ npm.cmd run build
 
 - 全新临时数据库重复播种后仍只有两类课程。
 - `config/course_presets.json` 的评估/干预预设只引用两类课程。
-- 配置同步 ZIP 不含数据库、录制、日志、机械动作、Robot Runtime 或完整版表情。
-- 机械/表情 Socket 未注册，禁用 HTTP 路径不会返回伪成功。
-- 配对、排序训练中的浏览器采集与注意力分析可用。
+- 配置同步 ZIP 不含数据库、录制、日志、机械动作或 Robot Runtime；包含屏幕表情。
+- 机械 Socket 未注册，禁用 HTTP 路径不会返回伪成功；表情四个回执事件已注册。
+- 命名、排序训练中的浏览器采集与注意力分析可用。
 - 教师端生产构建产物能够由 Flask 同源提供。
 
 ## 安全升级
@@ -115,7 +115,7 @@ npm.cmd run build
 - `finalize_training`、报告审核状态：结束与报告流程。
 - 浏览器控制台的权限错误：摄像头、麦克风或浏览器语音问题。
 
-不要把儿童情绪分析日志当成机器人表情事件；Demo 不存在机器人表情播放回执。接口和事件的现行约束见 [契约](CONTRACT.md)。
+不要把儿童情绪分析日志当成屏幕表情事件。表情回执只有 `robot_emotion_ready/started/ended/auto_random`；机械动作不存在播放回执。接口和事件的现行约束见 [契约](CONTRACT.md)。
 
 ## 多进程与数据安全
 

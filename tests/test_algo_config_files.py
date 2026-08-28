@@ -82,9 +82,10 @@ def test_validate_scoring_weights_must_sum_100():
 def test_validate_scoring_ok_when_sum_100():
     cfg = {
         "weights": {
-            "attention": 34,
-            "matching": 33,
-            "ordering": 33,
+            "attention": 25,
+            "expressiveLanguage": 25,
+            "receptiveLanguage": 25,
+            "ordering": 25,
         },
         "narrative_provider": "rule",
     }
@@ -99,9 +100,10 @@ def test_save_scoring_writes_bak(monkeypatch):
     base = {
         "schema_version": "test-v",
         "weights": {
-            "attention": 34,
-            "matching": 33,
-            "ordering": 33,
+            "attention": 25,
+            "expressiveLanguage": 25,
+            "receptiveLanguage": 25,
+            "ordering": 25,
         },
         "narrative_provider": "rule",
         "interactive_course": {},
@@ -113,8 +115,9 @@ def test_save_scoring_writes_bak(monkeypatch):
     new_cfg = dict(base)
     new_cfg["weights"] = {
         "attention": 40,
-        "matching": 30,
-        "ordering": 30,
+        "expressiveLanguage": 20,
+        "receptiveLanguage": 20,
+        "ordering": 20,
     }
     saved = save_scoring_config(new_cfg)
     assert saved["weights"]["attention"] == 40
@@ -152,9 +155,10 @@ def _patch_config_files(monkeypatch):
             {
                 "schema_version": "education-training-index-v2-teacher-rating",
                 "weights": {
-                    "attention": 34,
-                    "matching": 33,
-                    "ordering": 33,
+                    "attention": 25,
+                    "expressiveLanguage": 25,
+                    "receptiveLanguage": 25,
+                    "ordering": 25,
                 },
                 "narrative_provider": "rule",
                 "interactive_course": {
@@ -167,7 +171,7 @@ def _patch_config_files(monkeypatch):
                 },
                 "sample_sufficiency": {
                     "minimum_effective_samples": {
-                        "pairing": 5,
+                        "naming": 2,
                         "ordering": 5,
                     },
                 },
@@ -251,14 +255,15 @@ def test_api_report_weights_reject_and_accept(monkeypatch):
             "config": {
                 "weights": {
                     "attention": 40,
-                    "matching": 30,
-                    "ordering": 30,
+                    "expressiveLanguage": 20,
+                    "receptiveLanguage": 20,
+                    "ordering": 20,
                 },
                 "narrative_provider": "mock",
                 "course_goal_score": 65,
                 "sample_sufficiency": {
                     "minimum_effective_samples": {
-                        "pairing": 6,
+                        "naming": 3,
                     },
                 },
             }
@@ -270,7 +275,7 @@ def test_api_report_weights_reject_and_accept(monkeypatch):
     assert body["config"]["narrative_provider"] == "mock"
     assert body["config"]["course_goal_score"] == 65
     assert body["config"]["sample_sufficiency"]["minimum_effective_samples"] == {
-        "pairing": 6,
+        "naming": 3,
         "ordering": 5,
     }
 

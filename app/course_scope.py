@@ -9,7 +9,7 @@ from typing import Any, Iterable, Mapping, Sequence
 COURSE_SCOPE_PATH = (
     Path(__file__).resolve().parents[1] / "config" / "demo_course_scope.json"
 )
-SAFE_DEFAULT_COURSE_TYPES = ("pairing", "ordering")
+SAFE_DEFAULT_COURSE_TYPES = ("naming", "ordering")
 COURSE_TYPE_ALIASES = {
     "matching": "pairing",
     "sequencing": "ordering",
@@ -19,13 +19,15 @@ COURSE_TYPE_ALIASES = {
 }
 COURSE_TYPE_LABELS = {
     "mimic": "模仿",
+    "naming": "命名",
     "pairing": "配对",
     "ordering": "排序",
 }
 COURSE_DIMENSIONS = {
-    "mimic": "attention",
-    "pairing": "matching",
-    "ordering": "ordering",
+    "mimic": ("attention",),
+    "naming": ("expressiveLanguage", "receptiveLanguage"),
+    "pairing": ("matching", "receptiveLanguage"),
+    "ordering": ("ordering", "receptiveLanguage"),
 }
 
 
@@ -45,7 +47,7 @@ def _normalize_course_types(values: Iterable[Any]) -> tuple[str, ...]:
 
 
 def enabled_course_types(path: Path | None = None) -> tuple[str, ...]:
-    """Return the reviewed demo scope, failing closed to pairing/ordering."""
+    """Return the reviewed demo scope, failing closed to naming/ordering."""
     scope_path = Path(path) if path is not None else COURSE_SCOPE_PATH
     try:
         raw = json.loads(scope_path.read_text(encoding="utf-8"))
@@ -70,9 +72,10 @@ def enabled_course_type_set(path: Path | None = None) -> frozenset[str]:
 
 def enabled_course_dimensions(path: Path | None = None) -> tuple[str, ...]:
     course_dimensions = tuple(
-        COURSE_DIMENSIONS[course_type]
+        dimension
         for course_type in enabled_course_types(path)
         if course_type in COURSE_DIMENSIONS
+        for dimension in COURSE_DIMENSIONS[course_type]
     )
     # 注意力是跨课程采集维度，不是可选课程；两课程 Demo 仍保留该报告证据。
     return tuple(dict.fromkeys(("attention", *course_dimensions)))

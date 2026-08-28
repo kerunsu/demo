@@ -98,7 +98,7 @@ def course_preset_client(tmp_path, monkeypatch):
             Course(id=1, course_type_id=1, title="模仿"),
             Course(id=9, course_type_id=2, title="配对"),
             Course(id=10, course_type_id=3, title="排序"),
-            Course(id=13, course_type_id=4, title="历史命名"),
+            Course(id=13, course_type_id=4, title="命名"),
         ])
         db.session.flush()
         db.session.add_all([
@@ -106,7 +106,7 @@ def course_preset_client(tmp_path, monkeypatch):
             CourseItem(id=2, course_id=1, name="动作二", type="image"),
             CourseItem(id=79, course_id=9, name="配对题", type="interactive"),
             CourseItem(id=80, course_id=10, name="排序题", type="interactive"),
-            CourseItem(id=90, course_id=13, name="历史命名题", type="image"),
+            CourseItem(id=90, course_id=13, name="命名题", type="image"),
         ])
         db.session.commit()
         yield app.test_client()
@@ -117,22 +117,22 @@ def course_preset_client(tmp_path, monkeypatch):
 def test_course_preset_api_accepts_demo_items_and_rejects_historical_type(course_preset_client):
     empty = course_preset_client.get("/api/config/course-presets").get_json()
     assert empty["defaultPresetIds"] == {"assessment": None, "intervention": None}
-    assert empty["enabledCourseTypes"] == ["pairing", "ordering"]
-    assert [course["id"] for course in empty["courseCatalog"]] == [9, 10]
+    assert empty["enabledCourseTypes"] == ["naming", "ordering"]
+    assert [course["id"] for course in empty["courseCatalog"]] == [10, 13]
 
     response = course_preset_client.post("/api/config/course-presets", json={
         "mode": "assessment",
         "name": "课堂默认",
         "courseSelections": [
-            {"courseType": "pairing", "itemIds": [79]},
+            {"courseType": "naming", "itemIds": [90]},
             {"courseType": "ordering", "itemIds": [80]},
         ],
         "isDefault": True,
     })
     assert response.status_code == 201
     created = response.get_json()
-    assert created["preset"]["courseTypes"] == ["pairing", "ordering"]
-    assert created["preset"]["courseIds"] == [9, 10]
+    assert created["preset"]["courseTypes"] == ["naming", "ordering"]
+    assert created["preset"]["courseIds"] == [13, 10]
     assert created["preset"]["available"] is True
 
     disabled = course_preset_client.post("/api/config/course-presets", json={

@@ -51,6 +51,7 @@ DEFAULT_DIALOGUE_REPLY_EXPRESSIONS = {
     'enabled': False,
     'rules': [],
 }
+DIALOGUE_REPLY_TIERS = ('short', 'medium', 'long')
 STYLE_RANGES = {
     'speedMultiplier': (0.25, 4.0),
     'scale': (0.5, 2.0),
@@ -181,8 +182,8 @@ def _normalize_dialogue_reply_expressions(
     raw_rules = source.get('rules', [])
     if not isinstance(raw_rules, list):
         raise ValueError('rules must be an array')
-    if len(raw_rules) > 12:
-        raise ValueError('最多允许 12 条大模型回复表情规则')
+    if raw_rules and len(raw_rules) != len(DIALOGUE_REPLY_TIERS):
+        raise ValueError('大模型回复表情必须配置短、中、长三个档位')
 
     available = set(list_emotion_files()) if validate_files else None
     rules: List[Dict[str, Any]] = []
@@ -203,10 +204,18 @@ def _normalize_dialogue_reply_expressions(
             raise ValueError(f'rules[{index}].emotion must be an MP4 expression')
         if available is not None and emotion not in available:
             raise FileNotFoundError(f'表情不存在: {emotion}')
-        rules.append({'maxChars': max_chars, 'emotion': emotion})
+        expected_tier = DIALOGUE_REPLY_TIERS[index]
+        supplied_tier = str(raw.get('tier') or expected_tier).strip().lower()
+        if supplied_tier != expected_tier:
+            raise ValueError(f'rules[{index}].tier must be {expected_tier}')
+        rules.append({
+            'tier': expected_tier,
+            'maxChars': max_chars,
+            'emotion': emotion,
+        })
         previous_max = max_chars
-    if enabled and not rules:
-        raise ValueError('启用大模型回复表情时至少需要一条规则')
+    if enabled and len(rules) != len(DIALOGUE_REPLY_TIERS):
+        raise ValueError('启用大模型回复表情时必须完整配置短、中、长三个档位')
     return {'enabled': enabled, 'rules': rules}
 
 
@@ -241,6 +250,7 @@ def select_dialogue_reply_emotion(text: str) -> Optional[Dict[str, Any]]:
     )
     return {
         'emotion': selected['emotion'],
+        'tier': selected['tier'],
         'charCount': char_count,
         'maxChars': int(selected['maxChars']),
     }
@@ -387,8 +397,14 @@ def _walk_emotion_refs(node: Any, path: str, out: List[Tuple[str, str]]) -> None
         emotion = node.get('emotion')
         if isinstance(emotion, str) and emotion:
             out.append((path, emotion))
+        emotion_pool = node.get('emotions')
+        if isinstance(emotion_pool, list):
+            for index, item in enumerate(emotion_pool):
+                if isinstance(item, str) and item:
+                    pool_path = f'{path}.emotions[{index}]' if path else f'emotions[{index}]'
+                    out.append((pool_path, item))
         for key, value in node.items():
-            if key == 'emotion':
+            if key in {'emotion', 'emotions'}:
                 continue
             child_path = f'{path}.{key}' if path else str(key)
             _walk_emotion_refs(value, child_path, out)

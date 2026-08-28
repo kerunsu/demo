@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "deployment": "demo-machine",
   "enabledCourseTypes": [
-    "pairing",
+    "naming",
     "ordering"
   ]
 }

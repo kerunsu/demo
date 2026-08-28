@@ -73,7 +73,7 @@ def test_mapping_round_trip_keeps_animation_without_robot_outputs(tmp_path):
 
     binding = resolver.find_mapping(None, 3, None, "praise")
     assert binding["motions"] == []
-    assert binding["emotion"] is None
+    assert binding["emotion"] == "v4_idle.mp4"
     assert binding["animation"] == "custom.mp4"
     persisted = json.loads(map_path.read_text(encoding="utf-8"))
     assert persisted["courses"]["3"]["praise"]["animation"] == "custom.mp4"
@@ -120,10 +120,12 @@ def test_animation_rename_ui_and_api_contract():
     assert "referencesUpdated" in script or "newName" in script
 
 
-def test_demo_animation_ui_has_no_robot_mapping_script():
+def test_demo_animation_ui_keeps_expression_mapping_without_motion_mapping():
     root = Path(__file__).resolve().parents[1]
     template = (root / "templates" / "server" / "config.html").read_text(encoding="utf-8")
     assert "config_content_animations.js" in template
     assert "robot_mapping.js" not in template
     assert not (root / "static" / "robot" / "js" / "robot_mapping.js").exists()
+    assert "robot_emotion_mapping.js" in template
+    assert (root / "static" / "robot" / "js" / "robot_emotion_mapping.js").is_file()
     assert 'id="page-binding"' not in template

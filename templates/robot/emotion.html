@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>机器人表情显示</title>
+    <link rel="stylesheet" href="/static/robot/css/emotion.css">
+</head>
+<body>
+    <div class="emotion-container">
+        <div class="emotion-filter-layer" id="emotion-global-filter-layer">
+            <img id="emotion-idle" src="" alt="Robot Idle Emotion">
+            <video id="emotion-idle-video" muted playsinline preload="auto" hidden></video>
+            <img id="emotion-gif" src="" alt="Robot Emotion">
+            <video id="emotion-video" muted playsinline preload="auto" hidden></video>
+        </div>
+    </div>
+
+    <!-- Socket.IO 本机静态资源（避免局域网无法访问外网 CDN / 证书错误） -->
+    <script src="/static/js/vendor/socket.io.min.js"></script>
+    <!-- 表情显示逻辑 -->
+    <script src="/static/robot/js/emotion_display.js?v=20260826-dialogue-loop-v2"></script>
+</body>
+</html>

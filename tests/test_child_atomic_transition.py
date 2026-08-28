@@ -217,7 +217,7 @@ def test_teacher_praise_scoring_is_armed_before_emit_and_survives_degradation():
     assert "queuePraiseRating(" in ack
 
 
-def test_behavior_media_are_correlated_without_robot_expression_output():
+def test_behavior_media_are_correlated_with_screen_expression_output():
     browser_tts = _read("static/js/browser_tts.js")
     audio_player = _read("static/js/audio_player.js")
 
@@ -230,8 +230,11 @@ def test_behavior_media_are_correlated_without_robot_expression_output():
     assert "this._rememberPlayback(blockedIdentity)" in audio_player
     assert "behaviorId: identity && (identity.behaviorId || identity.sequenceId)" in audio_player
 
-    assert not (ROOT / "static/robot/js/emotion_display.js").exists()
-    assert not (ROOT / "templates/robot/emotion.html").exists()
+    expression = _read("static/robot/js/emotion_display.js")
+    assert (ROOT / "templates/robot/emotion.html").is_file()
+    assert "19091" not in expression
+    assert "robot_emotion_started" in expression
+    assert "robot_emotion_ended" in expression
 
 
 def test_browser_tts_delay_does_not_start_watchdog_before_speak():
@@ -274,7 +277,9 @@ def test_class_start_has_no_resource_prewarm_and_animation_uses_shared_start():
     assert 'socket.on("readiness_complete"' in child
     assert "behaviorStartDelayMs" in animation
     assert "startScheduled" in animation
-    assert not (ROOT / "static/robot/js/emotion_display.js").exists()
+    expression = _read("static/robot/js/emotion_display.js")
+    assert "19091" not in expression
+    assert "LOCAL_EMOTION_BASE" not in expression
 
 
 def test_interactive_shell_prefers_course_entry_file():

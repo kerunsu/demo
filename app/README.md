@@ -12,7 +12,7 @@ app/
 matchers
 ├── storage/            # 分析结果落盘
 ├── audio/              # 语音清单、emitter/controller、与 Socket 协同
-├── robot/              # 机械臂 Blueprint、OSC、动作录制/播放（可选）
+├── robot/              # Demo 课程输出与屏幕表情；机械部分禁用
 └── utils/              # logger、exceptions、resource_utils 等
 
 ## 关键扩展点
@@ -21,7 +21,7 @@ matchers
 与 `USE_REAL_ANALYZERS` 控制。
 - **分析流水线**：`app/core/pipelines/` 中 vision/audio 流水线消费队列并回调 `analysis_service`。
 - **Socket 入口**：`app/sockets/events.py` 的 `register_socket_events(socketio)` 在 `app.py` 中调用；语
-音、机械臂另有独立注册模块。
+音和屏幕表情回执另有独立注册模块，机械动作事件不会在 Demo 注册。
 
 ## 配置与日志
 
@@ -184,7 +184,7 @@ matchers
 ### `app/sockets/events.py`
 
 - **register_socket_events(socketio)**
-  - **用途**：注册教师端、儿童端、采集、分析和课程输出核心 Socket.IO 事件。Demo 不注册机械动作或完整版表情事件。
+  - **用途**：注册教师端、儿童端、采集、分析和课程输出核心 Socket.IO 事件。Demo 注册屏幕表情回执，不注册机械动作事件。
   - **事件处理器（内部 def）**
     - `connect/disconnect`: 连接管理；回 `connected`
     - `join_session/leave_session`: 加入/离开房间（sessionId 通用房间 + 角色房间）
@@ -215,7 +215,7 @@ matchers
   - `audio_status`: Child → Server 的播放状态回传；更新 controller，并 emit `audio_status_update` 给 teacher_room
   - `stop_audio`: Teacher → Server 停止请求；调用 `AudioController.stop_audio`
 
-Demo 版不包含 `app/sockets/robot_events.py`；机械动作、Robot Runtime 和完整版表情事件均不属于部署契约。
+Demo 版不包含 `app/sockets/robot_events.py`；`app/sockets/expression_events.py` 只注册 `robot_emotion_ready/started/ended/auto_random`。机械动作和 Robot Runtime 不属于部署契约。
 
 ---
 
@@ -497,43 +497,34 @@ Demo 版不包含 `app/sockets/robot_events.py`；机械动作、Robot Runtime �
 
 ---
 
-## 9. 机械臂子系统（robot，可选）
+## 9. Demo 课程输出与屏幕表情（robot 兼容名）
 
 ### `app/robot/config.py`
 
-- `ensure_data_files()`: 确保 motions/mapping 等数据文件存在（从命名推断）。
+- `ensure_data_files()`：确保表情元数据与课程映射可读。Demo 不通过它启用 motions。
 
-### `app/robot/motion_recorder.py`
+### 历史机械模块
 
-- **MotionRecorder**：录制机械臂动作帧序列并落盘（从命名推断）。
-
-### `app/robot/motion_player.py`
-
-- **MotionPlayer**：通过 OSC 等协议播放动作（依赖 `python-osc`）（从命名与依赖推断）。
-
-### `app/robot/mapping_resolver.py`
-
-- **MappingResolver**：根据学生/课程/项目等四级映射解析应该播放的 motion（从文件名与项目文档推断）。
+- `motion_recorder.py`、`motion_player.py`、`mapping_resolver.py` 中的机械兼容源码不是 Demo 启动或发布面；能力层强制 `robotMotion=false`、`robotRuntime=false`。
 
 ### `app/robot/robot_service.py`
 
-- `set_socketio(socketio)`: 设置 socketio（用于表情等事件）
-- **RobotService**：机械臂服务总入口（录制/播放/映射/触发课程事件）
+- `set_socketio(socketio)`：设置屏幕表情事件输出。
+- **RobotService**：课程输出、浏览器语音、儿童动画和屏幕表情的兼容入口；计划中的 motion 始终被清空。
 - `get_robot_service()`: 单例入口
 
 ### `app/robot/routes.py`
 
-- 一组 HTTP API（Blueprint）：
-  - `get_motions/get_motion/save_motion/delete_motion`
-  - `play_motion/stop_playback`
-  - mapping CRUD：`get_full_mapping/set_idle_pose/update_default_motions/...`
-  - `trigger_course_event`：外部触发课程事件
-  - `get_students/get_courses`：（供面板使用）
-  - emotion：`get_emotions/get_default_emotion/trigger_emotion`
+- 允许的 HTTP API（Blueprint）：
+  - `trigger_course_event`：外部触发无机械动作的课程事件。
+  - `get_students/get_courses`：供面板使用，课程只有命名/排序。
+  - emotion：列表、上传/删除、默认值、闲时池、样式/滤镜、对话规则和触发。
+  - animations：儿童屏动画列表、上传、重命名与删除。
+- motions/Runtime 兼容路径统一返回 HTTP 410 `demo_capability_disabled`。
 
 ### `app/robot/__init__.py`
 
-- 汇总导出 robot_service、motion_player/recorder、mapping_resolver、routes 等。
+- 汇总导出 Demo 使用的 robot_service 和 routes；历史机械源码不代表生产装配。
 
 ---
 

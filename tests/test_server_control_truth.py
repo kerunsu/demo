@@ -208,9 +208,10 @@ def test_control_status_http_contract(monkeypatch):
 
     control = client.get("/api/robot/control/status")
     assert control.status_code == 200
-    assert control.get_json()["control"]["mode"] == "disabled"
+    assert control.get_json()["control"]["mode"] == "screen-expression-only"
+    assert control.get_json()["control"]["motionMode"] == "disabled"
     assert control.get_json()["control"]["robotMotion"] is False
-    assert control.get_json()["control"]["robotExpression"] is False
+    assert control.get_json()["control"]["robotExpression"] is True
     assert client.get("/api/robot/sequence/status/known").get_json()["status"]["phase"] == "running"
     assert client.get("/api/robot/sequence/status/missing").status_code == 404
 
@@ -279,7 +280,7 @@ def test_audio_stop_is_scoped_to_exact_child_room():
     assert socket.calls[0][2]["room"] == "session_session-exact_child"
 
 
-def test_server_control_frontend_exposes_only_demo_audio_and_child_animation_controls():
+def test_server_control_frontend_exposes_expression_audio_and_animation_without_motion():
     template = (ROOT / "templates/server/config.html").read_text(encoding="utf-8")
     monitor = (ROOT / "static/js/server_monitor.js").read_text(encoding="utf-8")
 
@@ -287,7 +288,10 @@ def test_server_control_frontend_exposes_only_demo_audio_and_child_animation_con
     assert "config_content_animations.js" in template
     assert not (ROOT / "static/js/config_behavior_sequence.js").exists()
     assert not (ROOT / "static/robot/js/robot_mapping.js").exists()
-    assert not (ROOT / "static/robot/js/emotion_display.js").exists()
+    assert (ROOT / "static/robot/js/emotion_display.js").is_file()
+    assert (ROOT / "static/robot/js/robot_emotion_mapping.js").is_file()
+    assert 'data-page="expressions"' in template
+    assert 'data-page="expression-bindings"' in template
     assert "/api/v2/control/actions/stop-robot" not in monitor
     assert "/api/v2/control/actions/stop-audio" in monitor
     assert 'id="mon-control-feedback"' in (ROOT / "templates/server.html").read_text(encoding="utf-8")
