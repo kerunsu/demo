@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from app.config import Config
-from app.robot.config import COURSE_MAP_FILE
+from app.robot.config import COURSE_MAP_FILE, PRAISE_RANDOM_ANIMATION
 from app.utils.logger import setup_logger
 from app.robot.mp4_validation import inspect_mp4
 from app.robot.video_optimizer import save_optimized_mp4
@@ -45,13 +45,31 @@ def list_animation_files() -> List[str]:
     )
 
 
+def _animation_version(path: Path) -> str:
+    """Return a cheap content-revision token for browser cache invalidation."""
+    stat = path.stat()
+    return f"{stat.st_mtime_ns:x}-{stat.st_size:x}"
+
+
+def _animation_runtime_path(path: Path) -> str:
+    return f"resources/Animations/{path.name}?v={_animation_version(path)}"
+
+
 def _walk_animation_refs(node: Any, path: str, out: List[str], name: str) -> None:
     if isinstance(node, dict):
         animation = node.get("animation")
         if isinstance(animation, str) and os.path.basename(animation) == name:
             out.append(path or "root")
+        animations = node.get("animations")
+        if isinstance(animations, list):
+            for index, value in enumerate(animations):
+                if isinstance(value, str) and os.path.basename(value) == name:
+                    out.append(
+                        f"{path}.animations[{index}]" if path
+                        else f"animations[{index}]"
+                    )
         for key, value in node.items():
-            if key != "animation":
+            if key not in {"animation", "animations"}:
                 _walk_animation_refs(value, f"{path}.{key}" if path else str(key), out, name)
     elif isinstance(node, list):
         for index, value in enumerate(node):
@@ -83,7 +101,8 @@ def get_animations_payload() -> Dict[str, Any]:
             }
         items.append({
             "name": name,
-            "url": f"/static/resources/Animations/{name}",
+            "url": f"/static/{_animation_runtime_path(path)}",
+            "version": _animation_version(path),
             "refCount": len(refs),
             "referencedBy": refs,
             **media,
@@ -181,8 +200,17 @@ def _rename_animation_refs(node: Any, old: str, new: str) -> int:
                 prefix = current[:len(current) - len(os.path.basename(current))]
                 node["animation"] = prefix + new
                 changed += 1
+        if isinstance(node.get("animations"), list):
+            for index, value in enumerate(node["animations"]):
+                if not isinstance(value, str):
+                    continue
+                current_name = os.path.basename(value.replace("\\", "/"))
+                if current_name == old:
+                    prefix = value[:len(value) - len(current_name)]
+                    node["animations"][index] = prefix + new
+                    changed += 1
         for key, value in node.items():
-            if key != "animation":
+            if key not in {"animation", "animations"}:
                 changed += _rename_animation_refs(value, old, new)
     elif isinstance(node, list):
         for value in node:
@@ -242,14 +270,39 @@ def delete_animation_file(name: str, force: bool = False) -> None:
 def resolve_animation(
     selection: Any,
     *,
+    random_pool: Any = None,
     allow_random_fallback: bool = True,
 ) -> str | None:
-    """Resolve a configured filename, or randomly fall back to the default library."""
-    configured = os.path.basename(str(selection or "").strip())
+    """Resolve a fixed file, an explicit reviewed pool, or a legacy fallback."""
+    raw_selection = str(selection or "").strip()
+    explicit_random = raw_selection == PRAISE_RANDOM_ANIMATION
+    configured = "" if explicit_random else os.path.basename(raw_selection)
     available = _playable_animation_names()
+    if explicit_random:
+        requested: List[str] = []
+        if isinstance(random_pool, list):
+            for raw_name in random_pool:
+                name = os.path.basename(str(raw_name or "").strip())
+                if name and name not in requested:
+                    requested.append(name)
+        if not requested:
+            logger.warning("Random praise animation requires an explicit reviewed pool")
+            return None
+        eligible = [name for name in requested if name in available]
+        missing = [name for name in requested if name not in available]
+        if missing:
+            logger.warning(
+                "Configured praise animation pool contains missing/invalid files: %s",
+                missing,
+            )
+        if not eligible:
+            logger.warning("Configured praise animation pool has no playable files")
+            return None
+        selected = random.choice(eligible)
+        return _animation_runtime_path(animations_dir() / selected)
     if configured:
         if configured in available:
-            return f"resources/Animations/{configured}"
+            return _animation_runtime_path(animations_dir() / configured)
         logger.warning("Configured encouragement animation is missing or invalid: %s", configured)
         if not allow_random_fallback:
             return None
@@ -258,4 +311,5 @@ def resolve_animation(
     if not available:
         logger.warning("Encouragement animation library is empty: %s", animations_dir())
         return None
-    return f"resources/Animations/{random.choice(available)}"
+    selected = random.choice(available)
+    return _animation_runtime_path(animations_dir() / selected)

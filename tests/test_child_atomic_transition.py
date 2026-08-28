@@ -74,6 +74,7 @@ def test_prepare_behavior_animation_does_not_start_playback():
         child.index("async function loadChildRuntimeConfig")
     ]
     assert "if (!payload) return false;" in hold_policy
+    assert "payload.aux && payload.aux.praise === true" in hold_policy
     assert "return false;" in hold_policy
     assert "restoreCommittedCourseAfterBehavior(playback, reason);" in hold
     animation = child[child.index("function playBehaviorAnimation") :]
@@ -85,9 +86,10 @@ def test_prepare_behavior_animation_does_not_start_playback():
     ]
     assert 'clearHeldPraiseOverlay("return_without_animation")' in aux_handler
     assert "payload.returnToCurrentQuestion === true" in aux_handler
-    assert "interactiveAutoPraise" in child
+    assert "isBehaviorAnimationAux" in child
     assert "clearHeldPraiseOverlay(" in child
     assert 'clearHeldPraiseOverlay("content_committed")' in child
+    assert 'clearHeldPraiseOverlay("interactive_question_committed")' in child
     transition = child[
         child.index("async function transitionCourseResource") :
         child.index("// 统一处理：播放资源")
@@ -96,17 +98,17 @@ def test_prepare_behavior_animation_does_not_start_playback():
         'clearHeldPraiseOverlay("content_committed")'
     )
     template = _read("templates/child.html")
-    assert 'child.js?v=20260827-reward-return-v1' in template
+    assert 'child.js?v=20260828-behavior-terminal-fix-v1' in template
     handle_play = child[
         child.index("function handlePlayResource") :
         child.index('socket.on("play_resource"')
     ]
     praise_gate = handle_play[
-        handle_play.index("const isInteractiveAutoPraise") :
+        handle_play.index("const isBehaviorAnimationAux") :
         handle_play.index("const course = findCourseById")
     ]
     assert "playBehaviorAnimation(" in praise_gate
-    assert "isAuxOperation || isInteractiveAutoPraise" in praise_gate
+    assert "aux.praise || aux.attention || aux.reward" in praise_gate
 
 
 def test_interactive_questions_are_idempotent_and_answers_do_not_cut_speech():
@@ -430,7 +432,7 @@ def test_interactive_controls_use_authorized_parent_socket_bridge():
     assert "relayInteractiveControl(eventName" in child
     assert 'frame.dataset.pageContextActive !== "true"' in child
     assert "}, window.location.origin);" in child
-    assert 'child.js?v=20260827-reward-return-v1' in template
+    assert 'child.js?v=20260828-behavior-terminal-fix-v1' in template
 
     for page, prefix, apply_name in (
         (matching, "matching_", "applyMatchingControl"),
@@ -459,6 +461,23 @@ def test_interactive_controls_use_authorized_parent_socket_bridge():
 
     # The bridge must not weaken the one-owner child session rule.
     assert "_claim_child_session_owner" in events
+
+
+def test_teacher_busy_retry_is_bounded_for_manual_interactions():
+    control = _read("teacher_frontend/components/ControlPage.tsx")
+    deferred_type = control[
+        control.index("const deferredManualPlayRef") :
+        control.index("const failedPlayRetryRef")
+    ]
+    busy_ack = control[
+        control.index("if (data?.busy === true)") :
+        control.index("const knownRequest: KnownPlayRequest")
+    ]
+
+    assert "retryCount: number;" in deferred_type
+    assert "pending.retryCount < 2" in busy_ack
+    assert "retryCount: pending.retryCount + 1" in busy_ack
+    assert "已停止自动重试" in busy_ack
 
 
 def test_interactive_question_state_separates_mode_gate_and_teacher_next():

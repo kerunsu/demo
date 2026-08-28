@@ -12,7 +12,7 @@ import tempfile
 import threading
 from typing import Dict, List, Optional, Any, Tuple
 
-from app.robot.config import COURSE_MAP_FILE
+from app.robot.config import COURSE_MAP_FILE, PRAISE_RANDOM_ANIMATION
 from app.config import Config
 from app.utils.logger import setup_logger
 
@@ -52,6 +52,18 @@ def _default_emotion_name() -> str:
 
 def _normalize_emotion_pool(value: Any) -> List[str]:
     """Return a stable, duplicate-free list of expression filenames."""
+    if not isinstance(value, list):
+        return []
+    normalized: List[str] = []
+    for raw_name in value:
+        name = str(raw_name or '').strip()
+        if name and name not in normalized:
+            normalized.append(name)
+    return normalized
+
+
+def _normalize_animation_pool(value: Any) -> List[str]:
+    """Return a stable, duplicate-free praise animation filename pool."""
     if not isinstance(value, list):
         return []
     normalized: List[str] = []
@@ -269,6 +281,7 @@ class MappingResolver:
             "emotion": _default_emotion_name(),
             "emotions": [],
             "animation": "",
+            "animations": [],
             "sequence": _normalize_sequence({}),
         }
     
@@ -295,6 +308,9 @@ class MappingResolver:
                 return True
             animation = data.get('animation')
             if isinstance(animation, str) and animation.strip():
+                return True
+            animations = data.get('animations')
+            if isinstance(animations, list) and any(str(item or '').strip() for item in animations):
                 return True
             return False
         return False
@@ -328,12 +344,17 @@ class MappingResolver:
                 "emotion": _default_emotion_name(),
                 "emotions": [],
                 "animation": "",
+                "animations": [],
                 "sequence": _normalize_sequence({}),
             }
         elif isinstance(data, dict):
             # 新格式：确保字段完整（勿原地污染 course_map）
             emotion_pool = (
                 _normalize_emotion_pool(data.get('emotions'))
+                if aux_type == 'praise' else []
+            )
+            animation_pool = (
+                _normalize_animation_pool(data.get('animations'))
                 if aux_type == 'praise' else []
             )
             out = {
@@ -344,11 +365,12 @@ class MappingResolver:
                 ),
                 "emotions": emotion_pool,
                 "animation": str(data.get("animation") or "").strip(),
+                "animations": animation_pool,
                 "sequence": _normalize_sequence(data.get("sequence")),
             }
             return out
         else:
-            return {"motions": [], "emotion": _default_emotion_name(), "emotions": [], "animation": "", "sequence": _normalize_sequence({})}
+            return {"motions": [], "emotion": _default_emotion_name(), "emotions": [], "animation": "", "animations": [], "sequence": _normalize_sequence({})}
     
     def select_motion(self, motions: List[str]) -> Optional[str]:
         """
@@ -378,6 +400,7 @@ class MappingResolver:
         sequence: Optional[Dict[str, Any]],
         animation: Optional[str],
         emotions: Optional[List[str]],
+        animations: Optional[List[str]],
     ) -> Dict[str, Any]:
         """只落盘表情/儿童动画绑定，丢弃所有机械动作输入。"""
         if emotions is not None and not isinstance(emotions, list):
@@ -387,16 +410,28 @@ class MappingResolver:
             raise ValueError('random emotion pool is only supported for praise')
         if pool and len(pool) < 2:
             raise ValueError('praise random emotion pool must contain at least two emotions')
+        if animations is not None and not isinstance(animations, list):
+            raise ValueError('animations must be an array')
+        animation_pool = _normalize_animation_pool(animations)
+        animation_value = str(animation or '').strip()
+        if animation_pool and aux_type != 'praise':
+            raise ValueError('random animation pool is only supported for praise')
+        if animation_pool and animation_value != PRAISE_RANDOM_ANIMATION:
+            animation_pool = []
+        if animation_value == PRAISE_RANDOM_ANIMATION and len(animation_pool) < 2:
+            raise ValueError('praise random animation pool must contain at least two animations')
         fixed = str(emotion or '').strip()
         if pool and fixed not in pool:
             fixed = pool[0]
         action_data = {
             'emotion': fixed or _default_emotion_name(),
-            'animation': str(animation or '').strip(),
+            'animation': animation_value,
             'sequence': _normalize_sequence(sequence),
         }
         if pool:
             action_data['emotions'] = pool
+        if animation_pool:
+            action_data['animations'] = animation_pool
         return action_data
     
     # ========== 静态姿势 ==========
@@ -411,13 +446,13 @@ class MappingResolver:
     
     # ========== 通用动作 CRUD ==========
     
-    def update_default_motions(self, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None) -> None:
+    def update_default_motions(self, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None, animations: Optional[List[str]] = None) -> None:
         """更新通用表情；motions 参数仅为旧调用方兼容且始终被忽略。"""
         self._refresh_from_disk_if_changed()
         with self._map_lock:
             if 'defaults' not in self._course_map:
                 self._course_map['defaults'] = {}
-            action_data = self._build_action_data(aux_type, emotion, sequence, animation, emotions)
+            action_data = self._build_action_data(aux_type, emotion, sequence, animation, emotions, animations)
             self._course_map['defaults'][aux_type] = action_data
             self._save_course_map()
     
@@ -431,7 +466,7 @@ class MappingResolver:
     
     # ========== 课程级动作 CRUD ==========
     
-    def update_course_motions(self, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None) -> None:
+    def update_course_motions(self, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None, animations: Optional[List[str]] = None) -> None:
         """更新课程级表情绑定。"""
         cid = str(course_id)
         self._refresh_from_disk_if_changed()
@@ -440,7 +475,7 @@ class MappingResolver:
                 self._course_map['courses'] = {}
             if cid not in self._course_map['courses']:
                 self._course_map['courses'][cid] = {}
-            action_data = self._build_action_data(aux_type, emotion, sequence, animation, emotions)
+            action_data = self._build_action_data(aux_type, emotion, sequence, animation, emotions, animations)
             self._course_map['courses'][cid][aux_type] = action_data
             self._save_course_map()
     
@@ -465,6 +500,7 @@ class MappingResolver:
         sequence: Optional[Dict[str, Any]] = None,
         animation: Optional[str] = None,
         emotions: Optional[List[str]] = None,
+        animations: Optional[List[str]] = None,
     ) -> None:
         """更新课程课点覆盖；未配置字段继续由课程/全局层兜底。"""
         cid, iid = str(course_id), str(item_id)
@@ -475,7 +511,7 @@ class MappingResolver:
             items = course.setdefault('items', {})
             item = items.setdefault(iid, {})
             item[aux_type] = self._build_action_data(
-                aux_type, emotion, sequence, animation, emotions,
+                aux_type, emotion, sequence, animation, emotions, animations,
             )
             self._save_course_map()
 
@@ -505,6 +541,7 @@ class MappingResolver:
         sequence: Optional[Dict[str, Any]] = None,
         animation: Optional[str] = None,
         emotions: Optional[List[str]] = None,
+        animations: Optional[List[str]] = None,
     ) -> None:
         """更新学生-课程级表情绑定。"""
         sid = str(student_id)
@@ -518,7 +555,7 @@ class MappingResolver:
                 self._course_map['students'][sid] = {}
             if cid not in self._course_map['students'][sid]:
                 self._course_map['students'][sid][cid] = {}
-            action_data = self._build_action_data(aux_type, emotion, sequence, animation, emotions)
+            action_data = self._build_action_data(aux_type, emotion, sequence, animation, emotions, animations)
             self._course_map['students'][sid][cid][aux_type] = action_data
             self._save_course_map()
     
@@ -551,6 +588,7 @@ class MappingResolver:
         sequence: Optional[Dict[str, Any]] = None,
         animation: Optional[str] = None,
         emotions: Optional[List[str]] = None,
+        animations: Optional[List[str]] = None,
     ) -> None:
         """更新项目级表情绑定。"""
         sid = str(student_id)
@@ -569,7 +607,7 @@ class MappingResolver:
                 self._course_map['students'][sid][cid]['items'] = {}
             if iid not in self._course_map['students'][sid][cid]['items']:
                 self._course_map['students'][sid][cid]['items'][iid] = {}
-            action_data = self._build_action_data(aux_type, emotion, sequence, animation, emotions)
+            action_data = self._build_action_data(aux_type, emotion, sequence, animation, emotions, animations)
             self._course_map['students'][sid][cid]['items'][iid][aux_type] = action_data
             self._save_course_map()
     

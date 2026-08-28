@@ -455,6 +455,32 @@ def test_audio_only_behavior_timeout_releases_busy_lock():
     assert service.get_behavior_busy_state()["busy"] is False
 
 
+def test_pending_child_animation_deadline_survives_audio_commit():
+    service = _coordination_service()
+    assert service.reserve_behavior(
+        behavior_id="behavior-animation-deadline",
+        request_id="request-animation-deadline",
+        session_id="session-animation-deadline",
+    )["accepted"]
+    assert service.set_behavior_animation_expected(
+        "behavior-animation-deadline",
+        True,
+        session_id="session-animation-deadline",
+        timeout_ms=1500,
+    )
+    assert service.set_behavior_audio_expected(
+        "behavior-animation-deadline",
+        0,
+        session_id="session-animation-deadline",
+    )
+
+    state = service.get_behavior_busy_state()
+    assert state["busy"] is True
+    assert state["eventId"] == "behavior-animation-deadline"
+    assert state["remainingMs"] >= 1000
+    assert service.abort_behavior("behavior-animation-deadline") is True
+
+
 def test_child_animation_is_part_of_atomic_behavior_barrier():
     service = _coordination_service()
     completed = []

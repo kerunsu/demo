@@ -6,6 +6,7 @@
  */
 (function () {
   const AUX_TYPES = ['attention', 'reward', 'praise', 'question', 'hint', 'silent'];
+  const PRAISE_RANDOM_ANIMATION = '__random_praise_animation__';
   const AUX_LABELS = {
     attention: '注意提醒',
     reward: '奖励反馈',
@@ -77,10 +78,14 @@
     const pool = Array.isArray(value.emotions)
       ? value.emotions.map(String).filter((item, index, all) => item && all.indexOf(item) === index)
       : [];
+    const animationPool = Array.isArray(value.animations)
+      ? value.animations.map(String).filter((item, index, all) => item && all.indexOf(item) === index)
+      : [];
     return {
       emotion: String(value.emotion || defaultEmotion || emotions[0] || ''),
       emotions: pool,
       animation: String(value.animation || ''),
+      animations: animationPool,
       sequence: {
         expressionMediaId: String(sequence.expressionMediaId || ''),
         expressionDurationMs: Math.max(0, Number(sequence.expressionDurationMs) || 0),
@@ -106,6 +111,9 @@
     const resolved = inheritedBinding(scope, auxType);
     const binding = normalizeBinding(resolved.binding);
     const randomEnabled = auxType === 'praise' && binding.emotions.length > 0;
+    const randomAnimationEnabled = (
+      auxType === 'praise' && binding.animation === PRAISE_RANDOM_ANIMATION
+    );
     const card = document.createElement('section');
     card.className = 'cc-card expression-binding-card';
     card.dataset.auxType = auxType;
@@ -128,8 +136,14 @@
         <label>固定表情
           <select class="cc-inp" data-field="emotion">${optionMarkup(emotions, binding.emotion)}</select>
         </label>
-        <label>儿童屏动画
-          <select class="cc-inp" data-field="animation">${optionMarkup(animations, binding.animation, '不播放儿童屏动画')}</select>
+        <label>儿童屏动画模式
+          <select class="cc-inp" data-field="animationMode"${auxType === 'praise' ? '' : ' disabled'}>
+            <option value="fixed"${randomAnimationEnabled ? '' : ' selected'}>固定动画</option>
+            ${auxType === 'praise' ? `<option value="random"${randomAnimationEnabled ? ' selected' : ''}>随机动画池</option>` : ''}
+          </select>
+        </label>
+        <label>固定儿童屏动画
+          <select class="cc-inp" data-field="animation">${optionMarkup(animations, randomAnimationEnabled ? '' : binding.animation, '不播放儿童屏动画')}</select>
         </label>
         <label>时间轴表情覆盖
           <select class="cc-inp" data-field="expressionMediaId">${optionMarkup(emotions, binding.sequence.expressionMediaId, '使用固定/随机表情')}</select>
@@ -142,16 +156,26 @@
         </label>
       </div>
       ${auxType === 'praise' ? `
-        <div class="expression-praise-pool" data-pool ${randomEnabled ? '' : ' hidden'}>
+        <div class="expression-praise-pool" data-emotion-pool ${randomEnabled ? '' : ' hidden'}>
           <strong>表扬随机表情池（至少选 2 个）</strong>
           <div class="expression-praise-options">
             ${emotions.map((name) => `<label title="${escapeHtml(name)}"><input type="checkbox" value="${escapeHtml(name)}"${binding.emotions.includes(name) ? ' checked' : ''} /><span>${escapeHtml(name)}</span></label>`).join('')}
+          </div>
+        </div>
+        <div class="expression-praise-pool" data-animation-pool ${randomAnimationEnabled ? '' : ' hidden'}>
+          <strong>表扬随机儿童动画池（至少选 2 个）</strong>
+          <div class="expression-praise-options">
+            ${animations.map((name) => `<label title="${escapeHtml(name)}"><input type="checkbox" value="${escapeHtml(name)}"${binding.animations.includes(name) ? ' checked' : ''} /><span>${escapeHtml(name)}</span></label>`).join('')}
           </div>
         </div>` : ''}
       <p class="cc-tiny expression-binding-status" role="status"></p>
     `;
     card.querySelector('[data-field="mode"]')?.addEventListener('change', (event) => {
-      const pool = card.querySelector('[data-pool]');
+      const pool = card.querySelector('[data-emotion-pool]');
+      if (pool) pool.hidden = event.target.value !== 'random';
+    });
+    card.querySelector('[data-field="animationMode"]')?.addEventListener('change', (event) => {
+      const pool = card.querySelector('[data-animation-pool]');
       if (pool) pool.hidden = event.target.value !== 'random';
     });
     card.querySelector('[data-action="save"]')?.addEventListener('click', () => saveCard(card, scope));
@@ -163,14 +187,24 @@
   function readCard(card) {
     const auxType = card.dataset.auxType;
     const mode = card.querySelector('[data-field="mode"]')?.value || 'fixed';
-    const checked = [...card.querySelectorAll('[data-pool] input:checked')].map((item) => item.value);
+    const checked = [...card.querySelectorAll('[data-emotion-pool] input:checked')].map((item) => item.value);
     const fixed = card.querySelector('[data-field="emotion"]')?.value || defaultEmotion;
     const pool = auxType === 'praise' && mode === 'random' ? checked : [];
     if (pool.length && pool.length < 2) throw new Error('随机表扬表情池至少需要选择 2 个表情');
+    const animationMode = card.querySelector('[data-field="animationMode"]')?.value || 'fixed';
+    const animationPool = auxType === 'praise' && animationMode === 'random'
+      ? [...card.querySelectorAll('[data-animation-pool] input:checked')].map((item) => item.value)
+      : [];
+    if (animationMode === 'random' && animationPool.length < 2) {
+      throw new Error('随机表扬儿童动画池至少需要选择 2 个动画');
+    }
     return {
       emotion: pool[0] || fixed,
       emotions: pool,
-      animation: card.querySelector('[data-field="animation"]')?.value || '',
+      animation: animationMode === 'random'
+        ? PRAISE_RANDOM_ANIMATION
+        : (card.querySelector('[data-field="animation"]')?.value || ''),
+      animations: animationPool,
       sequence: {
         expressionMediaId: card.querySelector('[data-field="expressionMediaId"]')?.value || '',
         expressionDurationMs: numberValue(card.querySelector('[data-field="expressionDurationMs"]')),

@@ -35,6 +35,10 @@ COURSE_MAP_FILE = os.path.join(ROBOT_DATA_DIR, 'course_map.json')
 STUDENTS_FILE = os.path.join(ROBOT_DATA_DIR, 'students.json')
 COURSES_FILE = os.path.join(ROBOT_DATA_DIR, 'courses.json')
 
+# 显式的表扬动画随机模式。空字符串仍表示继承/不播放，只有该值才
+# 允许从经审核的 animations 池中随机选择；它不涉及任何机械动作。
+PRAISE_RANDOM_ANIMATION = '__random_praise_animation__'
+
 
 def ensure_data_files():
     """确保数据文件存在"""

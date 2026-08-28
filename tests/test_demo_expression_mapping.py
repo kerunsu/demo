@@ -123,6 +123,23 @@ def test_random_expression_pool_is_praise_only(tmp_path):
         )
 
 
+def test_random_child_animation_pool_is_praise_only_and_requires_two(tmp_path):
+    import pytest
+    from app.robot.config import PRAISE_RANDOM_ANIMATION
+
+    resolver, _mapping_path = _resolver(tmp_path)
+    with pytest.raises(ValueError, match="only supported for praise"):
+        resolver.update_default_motions(
+            "question", [], "v4_idle.mp4", animation="fixed.mp4",
+            animations=["a.mp4", "b.mp4"],
+        )
+    with pytest.raises(ValueError, match="at least two animations"):
+        resolver.update_default_motions(
+            "praise", [], "v4_idle.mp4", animation=PRAISE_RANDOM_ANIMATION,
+            animations=["a.mp4"],
+        )
+
+
 def test_praise_pool_assets_are_reference_protected(tmp_path, monkeypatch):
     from app.robot import emotion_assets
 
@@ -166,6 +183,8 @@ def test_public_mapping_projection_never_exposes_mechanical_data():
                 "motions": ["wave"],
                 "emotion": "praise-a.mp4",
                 "emotions": ["praise-a.mp4", "praise-b.mp4"],
+                "animation": "__random_praise_animation__",
+                "animations": ["鼓励甲.mp4", "鼓励乙.mp4"],
                 "sequence": {
                     "motionOffsetMs": 500,
                     "expressionDurationMs": 1200,
@@ -185,8 +204,41 @@ def test_public_mapping_projection_never_exposes_mechanical_data():
     assert projected["defaults"]["praise"]["emotions"] == [
         "praise-a.mp4", "praise-b.mp4",
     ]
+    assert projected["defaults"]["praise"]["animations"] == [
+        "鼓励甲.mp4", "鼓励乙.mp4",
+    ]
     assert '"motions":' not in encoded
     assert '"motionOffsetMs":' not in encoded
+
+
+def test_demo_mapping_api_forwards_random_animation_pool_without_motion(monkeypatch):
+    from flask import Flask
+    from app.robot import routes
+
+    captured = {}
+
+    class Service:
+        def update_default_motions(self, *args):
+            captured["args"] = args
+
+    monkeypatch.setattr(routes, "get_robot_service", lambda: Service())
+    app = Flask("demo-praise-animation-pool")
+    app.register_blueprint(routes.robot_bp)
+    response = app.test_client().put(
+        "/api/robot/mapping/defaults/praise",
+        json={
+            "emotion": "praise.mp4",
+            "emotions": [],
+            "sequence": {},
+            "animation": "__random_praise_animation__",
+            "animations": ["鼓励甲.mp4", "鼓励乙.mp4"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["animations"] == ["鼓励甲.mp4", "鼓励乙.mp4"]
+    assert captured["args"][1] == []
+    assert captured["args"][-1] == ["鼓励甲.mp4", "鼓励乙.mp4"]
 
 
 def test_expression_binding_ui_is_expression_only_and_supports_random_praise():
@@ -199,6 +251,8 @@ def test_expression_binding_ui_is_expression_only_and_supports_random_praise():
     assert 'id="page-expression-bindings"' in template
     assert "全局 → 课程 → 课点三级覆盖" in template
     assert "表扬随机表情池（至少选 2 个）" in script
+    assert "表扬随机儿童动画池（至少选 2 个）" in script
+    assert "__random_praise_animation__" in script
     assert "/api/robot/mapping/defaults/" in script
     assert "/api/robot/sequence/preview" in script
     assert "/api/robot/motions" not in script

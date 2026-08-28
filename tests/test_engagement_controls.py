@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -25,6 +26,18 @@ def test_global_engagement_states_share_two_course_contract():
     mapping = (ROOT / "doll" / "data" / "course_map.json").read_text(encoding="utf-8")
     assert '"attention"' in mapping
     assert '"reward"' in mapping
+
+
+def test_demo_praise_uses_reviewed_random_animation_pool_and_fixed_reward():
+    mapping = json.loads(
+        (ROOT / "doll" / "data" / "course_map.json").read_text(encoding="utf-8")
+    )
+    praise = mapping["defaults"]["praise"]
+    assert praise["animation"] == "__random_praise_animation__"
+    assert len(praise["animations"]) >= 2
+    assert mapping["defaults"]["reward"]["animation"] == "勾勾.mp4"
+    for name in praise["animations"]:
+        assert (ROOT / "static" / "resources" / "Animations" / name).is_file()
 
 
 def test_teacher_and_server_expose_attention_reward_configuration():
@@ -82,7 +95,7 @@ def test_browser_only_speech_and_child_cache_version_are_deployed_together():
     assert "child_dialogue_audio" not in dialogue
     assert 'child.css?v=20260826-child-surface-v2' in child_html
     assert 'child_dialogue.js?v=20260827-dialogue-runtime-v7' in child_html
-    assert 'child.js?v=20260827-reward-return-v1' in child_html
+    assert 'child.js?v=20260828-behavior-terminal-fix-v1' in child_html
 
 
 def test_tts_defers_browser_transcript_until_reading_ends():

@@ -218,7 +218,7 @@ and the static voice-strategy review. See
 ## Demo 屏幕媒体映射
 
 `doll/data/course_map.json` 是儿童屏幕动画与屏幕表情的兼容映射。发布数据允许
-`animation`、`emotion`/`expressionMediaId`、表扬事件专用且至少含两个文件名的 `emotions` 随机表情池和 `sequence.audio.offsetMs`；不得写入 `motion`、`motions` 或 `motionOffsetMs`。
+`animation`、`emotion`/`expressionMediaId`、表扬事件专用且至少含两个文件名的 `emotions` 随机表情池、`animations` 随机儿童动画池和 `sequence.audio.offsetMs`；`animations` 仅在 `animation="__random_praise_animation__"` 时有效。不得写入 `motion`、`motions` 或 `motionOffsetMs`。
 `static/resources/Animations/*.mp4` 是儿童反馈资源；`static/resources/Emotions/*.mp4` 和
 `doll/data/emotions_meta.json` 是屏幕表情资源与元数据。
 

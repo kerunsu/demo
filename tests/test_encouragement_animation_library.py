@@ -29,14 +29,18 @@ def test_animation_library_upload_reference_and_random_fallback(tmp_path, monkey
         "newName": "课堂选中.mp4",
         "referencesUpdated": 1,
     }
-    assert animation_assets.resolve_animation("课堂选中.mp4") == "resources/Animations/课堂选中.mp4"
+    assert animation_assets.resolve_animation("课堂选中.mp4").startswith(
+        "resources/Animations/课堂选中.mp4?v="
+    )
     assert animation_assets.find_animation_references("课堂选中.mp4") == ["courses.7.praise"]
     assert json.loads(map_path.read_text(encoding="utf-8"))["courses"]["7"]["praise"]["animation"] == "课堂选中.mp4"
 
     invalid = static_root / "resources" / "Animations" / "000-invalid.mp4"
     invalid.write_bytes(b"not-an-mp4")
     monkeypatch.setattr(animation_assets.random, "choice", lambda values: sorted(values)[0])
-    assert animation_assets.resolve_animation("") == "resources/Animations/fallback.mp4"
+    assert animation_assets.resolve_animation("").startswith(
+        "resources/Animations/fallback.mp4?v="
+    )
     assert animation_assets.resolve_animation("000-invalid.mp4", allow_random_fallback=False) is None
 
 
@@ -47,12 +51,24 @@ def test_animation_library_rejects_bad_files_and_protects_references(tmp_path, m
     static_root = tmp_path / "static"
     map_path = tmp_path / "course_map.json"
     map_path.write_text(
-        json.dumps({"defaults": {"praise": {"animation": "bound.mp4"}}}),
+        json.dumps({
+            "defaults": {
+                "praise": {
+                    "animation": "__random_praise_animation__",
+                    "animations": ["bound.mp4", "other.mp4"],
+                }
+            }
+        }),
         encoding="utf-8",
     )
     monkeypatch.setattr(animation_assets.Config, "STATIC_DIR", static_root)
     monkeypatch.setattr(animation_assets, "COURSE_MAP_FILE", str(map_path))
     animation_assets.save_uploaded_animation("bound.mp4", _minimal_mp4())
+    animation_assets.save_uploaded_animation("other.mp4", _minimal_mp4())
+
+    assert animation_assets.find_animation_references("bound.mp4") == [
+        "defaults.praise.animations[0]"
+    ]
 
     with pytest.raises(ValueError):
         animation_assets.save_uploaded_animation("bad.webm", _minimal_mp4())
@@ -60,6 +76,13 @@ def test_animation_library_rejects_bad_files_and_protects_references(tmp_path, m
         animation_assets.save_uploaded_animation("bad.mp4", b"not-an-mp4")
     with pytest.raises(PermissionError):
         animation_assets.delete_animation_file("bound.mp4")
+
+    renamed = animation_assets.rename_animation_file("bound.mp4", "renamed.mp4")
+    assert renamed["referencesUpdated"] == 1
+    persisted = json.loads(map_path.read_text(encoding="utf-8"))
+    assert persisted["defaults"]["praise"]["animations"] == [
+        "renamed.mp4", "other.mp4"
+    ]
 
 
 def test_mapping_round_trip_keeps_animation_without_robot_outputs(tmp_path):
@@ -77,6 +100,80 @@ def test_mapping_round_trip_keeps_animation_without_robot_outputs(tmp_path):
     assert binding["animation"] == "custom.mp4"
     persisted = json.loads(map_path.read_text(encoding="utf-8"))
     assert persisted["courses"]["3"]["praise"]["animation"] == "custom.mp4"
+
+
+def test_demo_mapping_keeps_explicit_random_praise_animation_pool(tmp_path):
+    from app.robot.config import PRAISE_RANDOM_ANIMATION
+    from app.robot.mapping_resolver import MappingResolver
+
+    map_path = tmp_path / "course_map.json"
+    map_path.write_text(
+        json.dumps({"defaults": {}, "courses": {}, "students": {}}),
+        encoding="utf-8",
+    )
+    resolver = MappingResolver(str(map_path))
+    resolver.update_default_motions(
+        "praise", [], "happy.mp4", {}, PRAISE_RANDOM_ANIMATION, [],
+        ["鼓励甲.mp4", "鼓励乙.mp4"],
+    )
+    resolver.reload()
+
+    binding = resolver.find_mapping(None, -1, None, "praise")
+    assert binding["motions"] == []
+    assert binding["animation"] == PRAISE_RANDOM_ANIMATION
+    assert binding["animations"] == ["鼓励甲.mp4", "鼓励乙.mp4"]
+
+
+def test_praise_runtime_samples_only_the_reviewed_animation_pool(tmp_path, monkeypatch):
+    from app.robot import animation_assets
+    from app.robot.robot_service import RobotService
+
+    static_root = tmp_path / "static"
+    monkeypatch.setattr(animation_assets.Config, "STATIC_DIR", static_root)
+    for name in ("随机甲.mp4", "随机乙.mp4", "历史素材.mp4"):
+        animation_assets.save_uploaded_animation(name, _minimal_mp4())
+    sampled = []
+
+    def choose(values):
+        sampled.append(tuple(values))
+        return "随机乙.mp4"
+
+    monkeypatch.setattr(animation_assets.random, "choice", choose)
+
+    class Resolver:
+        @staticmethod
+        def parse_aux_type(_aux):
+            return "praise"
+
+        @staticmethod
+        def find_mapping(_student_id, _course_id, _item_id, _aux_type):
+            return {
+                "animation": animation_assets.PRAISE_RANDOM_ANIMATION,
+                "animations": ["随机甲.mp4", "随机乙.mp4"],
+            }
+
+    service = RobotService.__new__(RobotService)
+    service._mapping_resolver = Resolver()
+    resolved = service.resolve_encouragement_animation({
+        "aux": {"praise": True}, "courseId": 7, "itemId": 16,
+    })
+
+    assert sampled == [("随机甲.mp4", "随机乙.mp4")]
+    assert resolved.startswith("resources/Animations/随机乙.mp4?v=")
+
+
+def test_random_praise_animation_fails_closed_without_reviewed_pool(tmp_path, monkeypatch):
+    from app.robot import animation_assets
+
+    static_root = tmp_path / "static"
+    monkeypatch.setattr(animation_assets.Config, "STATIC_DIR", static_root)
+    animation_assets.save_uploaded_animation("历史素材.mp4", _minimal_mp4())
+
+    assert animation_assets.resolve_animation(
+        animation_assets.PRAISE_RANDOM_ANIMATION,
+        random_pool=[],
+        allow_random_fallback=False,
+    ) is None
 
 
 def test_child_uses_behavior_animation_contract_only():
@@ -118,6 +215,12 @@ def test_animation_rename_ui_and_api_contract():
     assert "document.body?.dataset?.module !== 'content'" in script
     assert "/animations/${encodeURIComponent(selected)}/rename" in script
     assert "referencesUpdated" in script or "newName" in script
+    binding = (root / "static" / "robot" / "js" / "robot_emotion_mapping.js").read_text(
+        encoding="utf-8"
+    )
+    assert "const PRAISE_RANDOM_ANIMATION = '__random_praise_animation__';" in binding
+    assert "data-animation-pool" in binding
+    assert "随机表扬儿童动画池至少需要选择 2 个动画" in binding
 
 
 def test_demo_animation_ui_keeps_expression_mapping_without_motion_mapping():

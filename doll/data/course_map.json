@@ -123,7 +123,14 @@
       }
     },
     "praise": {
-      "animation": "勾勾.mp4",
+      "animation": "__random_praise_animation__",
+      "animations": [
+        "大拇指.mp4",
+        "放烟花.mp4",
+        "勾勾.mp4",
+        "气球.mp4",
+        "星星打勾.mp4"
+      ],
       "emotion": "v3_speak_excitedly_short.mp4",
       "sequence": {
         "audio": {

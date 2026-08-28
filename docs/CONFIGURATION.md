@@ -75,13 +75,13 @@ Demo 运行时只消费命名、排序以及全局注意力/奖励话术。话�
 
 允许目录为 `static/resources/Animations/`，格式为 MP4。它用于儿童端全屏鼓励反馈，不属于机器人表情。
 
-动画管理 API 由于兼容原因仍位于 `/api/robot/animations*`，但只读写儿童动画目录。课程映射可以同时包含 `animation`、固定 `emotion`/`expressionMediaId`、表扬事件专用的 `emotions` 随机表情池与音频偏移；任何 `motion`、`motions`、`motionOffsetMs` 输入在 Demo 生产路径都会被丢弃或拒绝。
+动画管理 API 由于兼容原因仍位于 `/api/robot/animations*`，但只读写儿童动画目录。课程映射可以同时包含 `animation`、固定 `emotion`/`expressionMediaId`、表扬事件专用的 `emotions` 随机表情池、由 `__random_praise_animation__` 显式启用的 `animations` 随机儿童动画池与音频偏移；随机池成员参与引用保护和原子重命名。注意提醒/夸奖不从整个目录隐式抽取。任何 `motion`、`motions`、`motionOffsetMs` 输入在 Demo 生产路径都会被丢弃或拒绝。
 
 ## 屏幕表情
 
 `static/resources/Emotions/` 和 `doll/data/emotions_meta.json` 与完整版本同步，配置页可管理默认表情、闲时池、全局滤镜、每个素材的样式和对话长度规则。`/robot/emotion` 从 8080 Server 加载这些静态资产，不连接 19091。上传和删除必须通过 `/api/robot/emotions*` 的有界校验与引用保护。
 
-配置中心“表情绑定”页保留完整版本的三级覆盖和表扬随机池，可为命名、排序课程及其课点配置表情、儿童屏动画、表情时长和语音偏移。该页面不加载动作映射脚本；写入接口会拒绝 `motion`、`motions`、`motionOffsetMs`，回读和试播响应也只投影表情字段。
+配置中心“表情绑定”页保留完整版本的三级覆盖、表扬随机表情池和表扬随机儿童动画池，可为命名、排序课程及其课点配置表情、儿童屏动画、表情时长和语音偏移。该页面不加载动作映射脚本；写入接口会拒绝 `motion`、`motions`、`motionOffsetMs`，回读和试播响应也只投影表情与儿童动画字段。
 
 以下内容不得进入 Demo 发布：
 

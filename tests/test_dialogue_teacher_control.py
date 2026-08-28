@@ -231,7 +231,10 @@ def test_teacher_agent_toggle_and_visibility_are_not_lease_gated_and_have_watchd
     assert "teacher_dialogue_runtime_state" in teacher
     assert "}, 4000);" in teacher
     assert "child_not_connected" in teacher
-    assert "disabled={dialogueControlBusy || !socketConnected || !currentSessionId}" in teacher
+    assert "dialogueTargetSessionRef" in teacher
+    assert "currentSessionIdRef.current || (" in teacher
+    assert "dialogueAwake ? dialogueTargetSessionRef.current : null" in teacher
+    assert "disabled={dialogueControlBusy || !socketConnected || (!currentSessionId && !dialogueAwake)}" in teacher
 
 
 def test_child_wake_restarts_listening_and_reports_runtime_state():

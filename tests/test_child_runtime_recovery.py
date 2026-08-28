@@ -7,7 +7,7 @@ def test_child_template_registers_presence_before_course_module():
     template = Path("templates/child.html").read_text(encoding="utf-8")
 
     bootstrap = 'window.startClientPresenceHeartbeat?.("child", 10000);'
-    module = 'src="/static/js/child.js?v=20260827-reward-return-v1"'
+    module = 'src="/static/js/child.js?v=20260828-behavior-terminal-fix-v1"'
     assert bootstrap in template
     assert module in template
     assert template.index(bootstrap) < template.index(module)
@@ -23,6 +23,21 @@ def test_child_uses_server_presence_without_robot_runtime_heartbeat():
     assert "/ui/child-presence" not in child
     assert "ROBOT_AGENT_BASE" not in child
     assert "ROBOT_AGENT_BASE" not in template
+
+
+def test_strict_preflight_stops_superseded_recording_before_waiting():
+    child = Path("static/js/child.js").read_text(encoding="utf-8")
+    handler = child[
+        child.index('socket.on("training_prepare"') :
+        child.index('socket.on("training_prepare_cancel"')
+    ]
+
+    stop_old = handler.index(
+        "if (isRecording && currentSessionId && currentSessionId !== payload.sessionId)"
+    )
+    preflight_wait = handler.index("if (payload.preflightOnly)")
+    assert stop_old < preflight_wait
+    assert "await stopRecording({ notifyServer: false });" in handler[stop_old:preflight_wait]
 
 def test_demo_child_launcher_uses_kiosk_without_robot_runtime():
     browser_script = Path("scripts/Open-ChildLanMic.ps1").read_text(encoding="utf-8")

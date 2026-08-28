@@ -36,7 +36,7 @@ npm.cmd run build
 - 机械 Socket 未注册；只注册四个屏幕表情回执事件。
 - `doll/Pose/`、`motions.json` 不进入发布；`emotions_meta.json`、`static/resources/Emotions/` 必须存在。
 - DollSer、动作工作台和 Robot Runtime 发布脚本不存在。
-- `static/resources/Animations/` 仍可列举、上传、引用保护、重命名和播放。
+- `static/resources/Animations/` 仍可列举、上传、引用保护、重命名和播放；表扬随机动画只从 `animations[]` 审核池抽取，同名替换会更新浏览器缓存版本。
 - 儿童媒体固定 browser，设备检查使用 `browser_permission_required`，不依赖 19091。
 - 配置同步包排除数据库、录制、个人数据和机械硬件，包含屏幕表情。
 

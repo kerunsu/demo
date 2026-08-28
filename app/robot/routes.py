@@ -48,11 +48,15 @@ def _binding_payload():
     emotions = data.get("emotions", [])
     if not isinstance(emotions, list):
         raise ValueError("emotions must be an array")
+    animations = data.get("animations", [])
+    if not isinstance(animations, list):
+        raise ValueError("animations must be an array")
     audio = sequence.get("audio") if isinstance(sequence.get("audio"), dict) else {}
     return {
         "emotion": str(data.get("emotion") or "").strip(),
         "emotions": emotions,
         "animation": str(data.get("animation") or "").strip(),
+        "animations": animations,
         "sequence": {
             "expressionMediaId": str(sequence.get("expressionMediaId") or "").strip(),
             "expressionDurationMs": _nonnegative_int(sequence.get("expressionDurationMs")),
@@ -92,6 +96,9 @@ def _public_binding(value):
     emotions = raw.get("emotions")
     if isinstance(emotions, list):
         result["emotions"] = [str(item).strip() for item in emotions if str(item).strip()]
+    animations = raw.get("animations")
+    if isinstance(animations, list):
+        result["animations"] = [str(item).strip() for item in animations if str(item).strip()]
     return result
 
 
@@ -275,7 +282,7 @@ def default_expression_mapping(aux_type: str):
         binding = _binding_payload()
         service.update_default_motions(
             aux_type, [], binding["emotion"], binding["sequence"],
-            binding["animation"], binding["emotions"],
+            binding["animation"], binding["emotions"], binding["animations"],
         )
         return jsonify({"success": True, "auxType": aux_type, **binding})
     except ValueError as exc:
@@ -300,7 +307,7 @@ def course_expression_mapping(course_id: int, aux_type: str):
         binding = _binding_payload()
         service.update_course_motions(
             course_id, aux_type, [], binding["emotion"], binding["sequence"],
-            binding["animation"], binding["emotions"],
+            binding["animation"], binding["emotions"], binding["animations"],
         )
         return jsonify({
             "success": True,
@@ -333,6 +340,7 @@ def course_item_expression_mapping(course_id: int, item_id: int, aux_type: str):
         service.update_course_item_motions(
             course_id, item_id, aux_type, [], binding["emotion"],
             binding["sequence"], binding["animation"], binding["emotions"],
+            binding["animations"],
         )
         return jsonify({
             "success": True,

@@ -393,6 +393,7 @@ class RobotService:
                         self._active_sequence_deadline = max(
                             visual_deadline,
                             float(waiter.get('audioDeadline') or 0),
+                            self._pending_animation_deadline(waiter),
                         )
                     if not plan.get('audioOnly'):
                         self._run_sequence(plan)
@@ -534,6 +535,17 @@ class RobotService:
             return max(0, int(value))
         except (TypeError, ValueError):
             return default
+
+    @staticmethod
+    def _pending_animation_deadline(waiter: Dict[str, Any]) -> float:
+        """Return the deadline only while the child animation terminal is pending."""
+        done = waiter.get('animationDone')
+        if (
+            not waiter.get('animationExpected')
+            or (done is not None and done.is_set())
+        ):
+            return 0.0
+        return float(waiter.get('animationDeadline') or 0)
 
     def _ensure_behavior_coordination_state(self) -> None:
         """Keep tests/legacy object construction compatible with new state."""
@@ -1322,6 +1334,7 @@ class RobotService:
             self._active_sequence_deadline = max(
                 float(waiter.get('visualDeadline') or 0),
                 audio_deadline,
+                self._pending_animation_deadline(waiter),
             )
         self._update_command_status(
             behavior_id,
@@ -1391,6 +1404,7 @@ class RobotService:
                 waiter['audioDone'].set()
                 self._active_sequence_deadline = max(
                     float(waiter.get('visualDeadline') or 0),
+                    self._pending_animation_deadline(waiter),
                     time.monotonic(),
                 )
             completed_count = int(waiter.get('completedAudioCount') or 0)
@@ -1623,6 +1637,7 @@ class RobotService:
                 self._active_sequence_deadline = max(
                     float(waiter.get('visualDeadline') or 0),
                     float(waiter.get('audioDeadline') or 0),
+                    self._pending_animation_deadline(waiter),
                 )
         self._update_command_status(
             str(behavior_id),
@@ -2411,6 +2426,7 @@ class RobotService:
             self._active_sequence_deadline = max(
                 visual_deadline,
                 float(waiter.get('audioDeadline') or 0),
+                self._pending_animation_deadline(waiter),
             )
             self._idle_generation += 1
             if self._idle_timer:
@@ -2424,9 +2440,32 @@ class RobotService:
         with self._idle_state_lock:
             self._ensure_behavior_coordination_state()
             self._clear_stale_reservation_locked()
+            deadline = float(self._active_sequence_deadline or 0)
+            waiter = self._behavior_audio_waiters.get(
+                str(self._busy_event_id or '')
+            )
+            if waiter:
+                # 各模态在不同线程发布截止时间；后到的语音或表情更新不能
+                # 覆盖尚未回传终态的儿童屏动画截止时间。
+                if (
+                    waiter.get('animationExpected')
+                    and not waiter['animationDone'].is_set()
+                ):
+                    deadline = max(
+                        deadline,
+                        float(waiter.get('animationDeadline') or 0),
+                    )
+                if (
+                    int(waiter.get('expectedAudioCount') or 0) >
+                    int(waiter.get('completedAudioCount') or 0)
+                ):
+                    deadline = max(
+                        deadline,
+                        float(waiter.get('audioDeadline') or 0),
+                    )
             remaining_ms = max(
                 0,
-                int((self._active_sequence_deadline - time.monotonic()) * 1000),
+                int((deadline - time.monotonic()) * 1000),
             )
             return {
                 'busy': bool(self._behavior_busy),
@@ -2832,17 +2871,17 @@ class RobotService:
         """设置静态姿势"""
         self._mapping_resolver.set_idle_pose(motion_name)
     
-    def update_default_motions(self, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None) -> None:
+    def update_default_motions(self, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None, animations: Optional[List[str]] = None) -> None:
         """更新通用动作"""
-        self._mapping_resolver.update_default_motions(aux_type, motions, emotion, sequence, animation, emotions)
+        self._mapping_resolver.update_default_motions(aux_type, motions, emotion, sequence, animation, emotions, animations)
     
     def delete_default_motions(self, aux_type: str) -> None:
         """删除通用动作"""
         self._mapping_resolver.delete_default_motions(aux_type)
     
-    def update_course_motions(self, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None) -> None:
+    def update_course_motions(self, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None, animations: Optional[List[str]] = None) -> None:
         """更新课程级动作"""
-        self._mapping_resolver.update_course_motions(course_id, aux_type, motions, emotion, sequence, animation, emotions)
+        self._mapping_resolver.update_course_motions(course_id, aux_type, motions, emotion, sequence, animation, emotions, animations)
     
     def delete_course_motions(self, course_id: int, aux_type: str) -> None:
         """删除课程级动作"""
@@ -2852,36 +2891,40 @@ class RobotService:
         self, course_id: int, item_id: int, aux_type: str, motions: List[str],
         emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None,
         animation: Optional[str] = None, emotions: Optional[List[str]] = None,
+        animations: Optional[List[str]] = None,
     ) -> None:
         self._mapping_resolver.update_course_item_motions(
-            course_id, item_id, aux_type, motions, emotion, sequence, animation, emotions,
+            course_id, item_id, aux_type, motions, emotion, sequence, animation, emotions, animations,
         )
 
     def delete_course_item_motions(self, course_id: int, item_id: int, aux_type: str) -> None:
         self._mapping_resolver.delete_course_item_motions(course_id, item_id, aux_type)
     
     def update_student_course_motions(
-        self, student_id: int, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None
+        self, student_id: int, course_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None, animations: Optional[List[str]] = None
     ) -> None:
         """更新学生-课程级动作"""
-        self._mapping_resolver.update_student_course_motions(student_id, course_id, aux_type, motions, emotion, sequence, animation, emotions)
+        self._mapping_resolver.update_student_course_motions(student_id, course_id, aux_type, motions, emotion, sequence, animation, emotions, animations)
     
     def delete_student_course_motions(self, student_id: int, course_id: int, aux_type: str) -> None:
         """删除学生-课程级动作"""
         self._mapping_resolver.delete_student_course_motions(student_id, course_id, aux_type)
     
     def update_item_motions(
-        self, student_id: int, course_id: int, item_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None
+        self, student_id: int, course_id: int, item_id: int, aux_type: str, motions: List[str], emotion: Optional[str] = None, sequence: Optional[Dict[str, Any]] = None, animation: Optional[str] = None, emotions: Optional[List[str]] = None, animations: Optional[List[str]] = None
     ) -> None:
         """更新项目级动作"""
         self._mapping_resolver.update_item_motions(
             student_id, course_id, item_id, aux_type,
-            motions=motions, emotion=emotion, sequence=sequence, animation=animation, emotions=emotions,
+            motions=motions, emotion=emotion, sequence=sequence, animation=animation, emotions=emotions, animations=animations,
         )
 
     def resolve_encouragement_animation(self, data: Dict[str, Any]) -> Optional[str]:
         """Resolve a lower-screen behavior animation from the same 3-level map."""
-        from app.robot.animation_assets import resolve_animation
+        from app.robot.animation_assets import (
+            PRAISE_RANDOM_ANIMATION,
+            resolve_animation,
+        )
 
         aux_type = self._mapping_resolver.parse_aux_type(data.get('aux'))
         if aux_type not in ('praise', 'reward', 'attention'):
@@ -2896,11 +2939,28 @@ class RobotService:
             aux_type,
         )
         selection = mapping.get('animation')
-        # Praise/reward preserve the familiar random encouragement fallback.
-        # Attention stays visually quiet unless explicitly configured.
+        if aux_type == 'praise':
+            # 空的课程/课点覆盖继承全局表扬动画；只有显式随机哨兵才会
+            # 从经审核的池里采样，绝不把素材目录当作隐式配置。
+            resolved = resolve_animation(
+                selection,
+                random_pool=mapping.get('animations'),
+                allow_random_fallback=False,
+            )
+            if resolved or str(selection or '').strip() == PRAISE_RANDOM_ANIMATION:
+                return resolved
+            default_mapping = self._mapping_resolver.find_mapping(
+                None, -1, None, 'praise'
+            )
+            return resolve_animation(
+                default_mapping.get('animation'),
+                random_pool=default_mapping.get('animations'),
+                allow_random_fallback=False,
+            )
+        # 注意提醒和夸奖必须显式绑定，不能抽到部署机上遗留的素材。
         return resolve_animation(
             selection,
-            allow_random_fallback=aux_type in ('praise', 'reward'),
+            allow_random_fallback=False,
         )
 
     def start_dialogue_reply_behavior(

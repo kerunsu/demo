@@ -92,9 +92,9 @@ Server 监控页通过 `server_dialogue_watch` / `server_dialogue_unwatch` 订�
 - `PUT /api/robot/animations/<name>/rename`
 - `DELETE /api/robot/animations/<name>`
 
-这些路径只管理儿童屏动画。引用中的动画拒绝普通删除；重命名同时更新 `course_map.json` 引用。随机回退只选择通过有界 MP4 检查的素材。
+这些路径只管理儿童屏动画。引用中的动画（包括随机池成员）拒绝普通删除；重命名同时更新 `course_map.json` 的固定引用和随机池引用。素材 URL 带内容版本，避免同名替换后儿童端继续播放旧缓存。
 
-`course_map.json` 的 Demo 发布结构允许 `animation`、固定 `emotion`/`expressionMediaId`、表扬事件专用的 `emotions` 随机表情池和音频偏移；`emotions` 至少含两个去重后的表情文件名。发布结构不允许 `motion`、`motions` 或 `motionOffsetMs`。
+`course_map.json` 的 Demo 发布结构允许 `animation`、固定 `emotion`/`expressionMediaId`、表扬事件专用的 `emotions` 随机表情池和 `animations` 随机儿童动画池，以及音频偏移。随机儿童动画只由 `animation="__random_praise_animation__"` 显式启用；两个随机池都至少含两个去重后的已审核文件名。空值表示继承/不播放，注意提醒和夸奖不会从整个素材目录隐式随机。发布结构不允许 `motion`、`motions` 或 `motionOffsetMs`。
 
 ## 禁用硬件契约
 

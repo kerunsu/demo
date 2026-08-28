@@ -471,6 +471,21 @@ window.addEventListener("message", (event) => {
       console.log("🎮 [child.js] 忽略非当前互动页的题目就绪消息");
       return;
     }
+    const incomingQuestionId = String(
+      data.payload?.questionId || data.payload?.pageContext?.questionId || ""
+    ).trim();
+    const heldQuestionId = String(
+      heldPraiseOverlay?.payload?.questionId
+      || heldPraiseOverlay?.payload?.pageContext?.questionId
+      || ""
+    ).trim();
+    if (
+      heldPraiseOverlay
+      && incomingQuestionId
+      && (!heldQuestionId || incomingQuestionId !== heldQuestionId)
+    ) {
+      clearHeldPraiseOverlay("interactive_question_committed");
+    }
     relayInteractiveQuestionReady(interactiveEl, data);
     return;
   }
@@ -591,12 +606,15 @@ function notifyInteractiveFrame(type, payload) {
 
 function shouldHoldPraiseOverlay(payload) {
   if (!payload) return false;
+  // 所有表扬入口在下一条正式内容提交前都保留下屏末帧；即使旧服务端
+  // 没带 holdLastFrame，也可从已校验的事件身份恢复这一契约。
+  if (payload.aux && payload.aux.praise === true) return true;
   if (payload.holdLastFrame === true || payload.hold_last_frame === true) return true;
   if (payload.holdLastFrame === false || payload.hold_last_frame === false) return false;
   if (payload.interactiveAutoPraise === true || payload.interactive_auto_praise === true) {
     return false;
   }
-  return true;
+  return false;
 }
 
 async function loadChildRuntimeConfig() {
@@ -1058,10 +1076,7 @@ const RESOURCE_FALLBACK_ACK_TTL_MS = 2000;
 const RESOURCE_ACK_MAX = 256;
 const FRAMED_SPEECH_IMAGE_COURSE_TYPES = new Set([
   "naming",
-  "speech",
-  "onomatopoeia",
   "命名",
-  "拟声",
 ]);
 let resourceTransitionGeneration = 0;
 let pendingResourceTransition = null;
@@ -1166,7 +1181,7 @@ function layoutCourseImageFrame(image) {
   image.style.setProperty("--course-image-content-height", `${renderedHeight}px`);
   image.style.setProperty("--course-image-frame-width", `${frameWidth}px`);
   image.style.setProperty("--course-image-frame-radius", `${radius}px`);
-  return false;
+  return true;
 }
 
 function applyCourseImagePresentation(image, presentation) {
@@ -1946,19 +1961,28 @@ function handlePlayResource(payload) {
   
   console.log("📋 [child.js] 解析 payload - courseId:", courseId, "itemId:", itemId, "sessionId:", sessionId, "trainingSessionId:", currentTrainingSessionId, "aux:", aux);
   
-  // 判断是否是纯 aux 操作（表扬、提示、问题音频等）
-  // 注意：在更新 currentSessionId 之前判断，以便正确识别新会话 vs aux操作
-  // 如果收到新的sessionId（与当前不同），说明是初次播放，即使带question也要加载内容
+  // 严格自检会先更新 announcedSessionId，正式录制稍后才更新 currentSessionId；
+  // 用两者共同判断，避免把同一训练的鼓励误判为首次内容加载。
   const hasAuxFlag = aux && (
     aux.question || aux.praise || aux.hint
     || aux.attention || aux.reward
     || aux.socialGreetingIntro || aux.socialGreetingPlay
     || aux.socialFarewellBye || aux.socialFarewellReply
   );
-  const isNewSession = sessionId && sessionId !== currentSessionId;
-  const isAuxOperation = hasAuxFlag && !isNewSession && !!currentSessionId;
+  const activeRuntimeSessionId = firstDefined(announcedSessionId, currentSessionId);
+  const isNewSession = Boolean(
+    sessionId && (
+      !activeRuntimeSessionId
+      || String(sessionId) !== String(activeRuntimeSessionId)
+    )
+  );
+  const isAuxOperation = Boolean(
+    hasAuxFlag
+    && activeRuntimeSessionId
+    && (!sessionId || String(sessionId) === String(activeRuntimeSessionId))
+  );
   
-  console.log("🔍 [child.js] aux判断: hasAuxFlag=", hasAuxFlag, "isNewSession=", isNewSession, "currentSessionId=", currentSessionId, "isAuxOperation=", isAuxOperation);
+  console.log("🔍 [child.js] aux判断: hasAuxFlag=", hasAuxFlag, "isNewSession=", isNewSession, "activeRuntimeSessionId=", activeRuntimeSessionId, "currentSessionId=", currentSessionId, "isAuxOperation=", isAuxOperation);
   
   // 如果收到sessionId，开始/附着录制并加入会话房间。
   // 方案 B：整场同一 mediaSessionId，切题不 stop/start。
@@ -1992,17 +2016,14 @@ function handlePlayResource(payload) {
 
   }
 
-  // 题内自动表扬：即使还没当成 aux（缺 currentSessionId / 被当成新会话），
-  // 也必须先播 MP4。否则 courseId 对不上会整包失败，后端 animationExpected
-  // 把行为锁占到超时，下一题提问只能一直“暂缓”。
-  const isInteractiveAutoPraise =
-    payload.interactiveAutoPraise === true ||
-    payload.interactive_auto_praise === true;
+  // 显式动画是比本地录制状态更权威的播放信号；表扬、吸引和夸奖都
+  // 必须播放并回传终态，避免后端动画屏障一直等到超时。
+  const isBehaviorAnimationAux = Boolean(
+    aux && (aux.praise || aux.attention || aux.reward)
+  );
   if (
     payload.behaviorAnimation &&
-    aux &&
-    aux.praise &&
-    (isAuxOperation || isInteractiveAutoPraise)
+    isBehaviorAnimationAux
   ) {
     playBehaviorAnimation(payload.behaviorAnimation, payload);
     return;
@@ -2228,20 +2249,20 @@ socket.on("training_prepare", async (payload) => {
     currentHumanDirName = payload.humanDirName;
   }
   try {
-    if (payload.preflightOnly) {
-      const statusEl = document.getElementById("status");
-      if (statusEl) statusEl.innerText = "设备自检中…";
-      console.log("[child.js] strict preflight: 等待 readiness_complete 后正式采集");
-      return;
-    }
-    // 重新 prepare 会 supersede 旧 media session：必须切到新 sessionId，
-    // 不能走「连续录制切题不 stop」分支（否则继续往已关闭会话上行）。
+    // 新 prepare 会替换旧 media session。即使仍处于 strict preflight，
+    // 也必须先停旧录制，否则 readiness_complete 会错误沿用旧 sessionId。
     if (isRecording && currentSessionId && currentSessionId !== payload.sessionId) {
       console.log(
         "🔄 [child.js] prepare 新会话，停止旧录制:",
         currentSessionId, "->", payload.sessionId
       );
       await stopRecording({ notifyServer: false });
+    }
+    if (payload.preflightOnly) {
+      const statusEl = document.getElementById("status");
+      if (statusEl) statusEl.innerText = "设备自检中…";
+      console.log("[child.js] strict preflight: 等待 readiness_complete 后正式采集");
+      return;
     }
     await startRecording(payload.sessionId, {
       recordingMode,

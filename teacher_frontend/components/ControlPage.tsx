@@ -471,6 +471,7 @@ export function ControlPage({
     intent: PlayIntent;
     courseIndex: number;
     itemIndex: number;
+    retryCount: number;
     advanceAfterPlayback?: AdvanceSource;
   } | null>(null);
   const failedPlayRetryRef = useRef<{
@@ -551,6 +552,7 @@ export function ControlPage({
   const currentQuestionIdRef = useRef<string | null>(null);
   const dialogueControlRequestRef = useRef<string | null>(null);
   const dialogueControlTimerRef = useRef<number | null>(null);
+  const dialogueTargetSessionRef = useRef<string | null>(null);
   const interactiveQuestionIdRef = useRef<string | null>(null);
   const interactiveNextPendingRef = useRef<{
     courseType: 'pairing' | 'ordering';
@@ -714,6 +716,7 @@ export function ControlPage({
       } else {
         deferredManualPlayRef.current = null;
         playCurrentItemRef.current(deferredManual.aux, {
+          retryCount: deferredManual.retryCount,
           expectedCourseIndex: deferredManual.courseIndex,
           expectedItemIndex: deferredManual.itemIndex,
           advanceAfterPlayback: deferredManual.advanceAfterPlayback,
@@ -1581,6 +1584,7 @@ export function ControlPage({
           return;
         }
         if (data.action === 'wake') {
+          dialogueTargetSessionRef.current = normalizeId(data?.sessionId) || currentSessionIdRef.current;
           setDialogueAwake(data.awake === true);
           setDialogueControlNotice('智能体已静默唤醒，正在确认儿童端聆听状态…');
         } else if (data.action === 'sleep') {
@@ -1591,11 +1595,14 @@ export function ControlPage({
       socket.on('teacher_dialogue_control_state', (data: any) => {
         const sessionId = normalizeId(data?.sessionId);
         if (!data?.success || (sessionId && sessionId !== currentSessionIdRef.current)) return;
+        if (sessionId) dialogueTargetSessionRef.current = sessionId;
         setDialogueAwake(data.awake === true);
       });
       socket.on('teacher_dialogue_runtime_state', (data: any) => {
         const sessionId = normalizeId(data?.sessionId);
-        if (!data?.success || (sessionId && sessionId !== currentSessionIdRef.current)) return;
+        const expectedSessionId = currentSessionIdRef.current || dialogueTargetSessionRef.current;
+        if (!data?.success || (sessionId && expectedSessionId && sessionId !== expectedSessionId)) return;
+        if (sessionId) dialogueTargetSessionRef.current = sessionId;
         const awake = data.awake === true;
         setDialogueAwake(awake);
         if (!awake) {
@@ -1801,7 +1808,7 @@ export function ControlPage({
           const message =
             data?.message ||
             data?.error ||
-            (data?.busy ? '上一条语音或儿童屏动画仍在播放，请稍候' : '播放请求未被服务端接受');
+            (data?.busy ? '上一条语音、儿童屏动画或屏幕表情仍在播放，请稍候' : '播放请求未被服务端接受');
 
           if (data?.busy === true) {
             holdPlaybackGate(requestId, behaviorId, remainingMs || 750, message);
@@ -1824,16 +1831,28 @@ export function ControlPage({
                 itemIndex: pending.itemIndex,
                 retryCount: pending.retryCount + 1,
               };
-            } else if (!pending.isContent) {
+            } else if (!pending.isContent && pending.retryCount < 2) {
               deferredManualPlayRef.current = {
                 aux: { ...pending.aux },
                 intent: pending.intent,
                 courseIndex: pending.courseIndex,
                 itemIndex: pending.itemIndex,
+                retryCount: pending.retryCount + 1,
                 advanceAfterPlayback: pending.advanceAfterPlayback,
               };
               setHasFailedPlayback(false);
               setPlaybackNotice('当前课程输出尚未完成，本次操作已排队');
+            } else if (!pending.isContent) {
+              failedPlayRetryRef.current = {
+                requestId,
+                aux: pending.aux,
+                courseIndex: pending.courseIndex,
+                itemIndex: pending.itemIndex,
+                retryCount: pending.retryCount,
+                advanceAfterPlayback: pending.advanceAfterPlayback,
+              };
+              setHasFailedPlayback(true);
+              setPlaybackNotice('上一条输出仍未结束，已停止自动重试；请稍后手动重试');
             } else {
               failedPlayRetryRef.current = {
                 requestId,
@@ -2130,11 +2149,12 @@ export function ControlPage({
         const componentLabels: Record<string, string> = {
           audio: '语音',
           childAnimation: '儿童端动画',
+          expression: '屏幕表情',
         };
         const componentStatuses: Array<[string, { status?: unknown }]> =
           data?.components && typeof data.components === 'object'
           ? Object.entries(data.components)
-            .filter(([name]) => name === 'audio' || name === 'childAnimation')
+            .filter(([name]) => name === 'audio' || name === 'childAnimation' || name === 'expression')
             .map(([name, component]) => [
               name,
               component && typeof component === 'object'
@@ -2143,6 +2163,7 @@ export function ControlPage({
             ])
           : [
               ['childAnimation', { status: data?.animationStatus }],
+              ['expression', { status: data?.expressionStatus }],
             ];
         const abnormalComponents = componentStatuses
           .filter(([, component]) =>
@@ -2157,7 +2178,7 @@ export function ControlPage({
           queuePraiseRating(
             praiseContext,
             failed || degraded
-              ? `表扬已完成，但部分语音或儿童屏画面未完整播放${reason ? `（${reason}）` : ''}，现可评分`
+              ? `表扬已完成，但部分语音、儿童屏画面或屏幕表情未完整播放${reason ? `（${reason}）` : ''}，现可评分`
               : undefined,
           );
         }
@@ -2166,7 +2187,7 @@ export function ControlPage({
           queueCompletionRating(
             completionContext,
             failed || degraded
-              ? `课程回应已结束，但部分语音或儿童屏画面未完整播放${reason ? `（${reason}）` : ''}，现进入评分`
+              ? `课程回应已结束，但部分语音、儿童屏画面或屏幕表情未完整播放${reason ? `（${reason}）` : ''}，现进入评分`
               : undefined,
           );
         }
@@ -3106,6 +3127,7 @@ export function ControlPage({
             intent,
             courseIndex,
             itemIndex,
+            retryCount: Math.max(0, options.retryCount || 0),
             advanceAfterPlayback: options.advanceAfterPlayback,
           };
         }
@@ -3133,7 +3155,7 @@ export function ControlPage({
       setPlaybackNotice(
         playbackPhaseRef.current === 'pending'
           ? '正在确认上一条操作，请稍候'
-          : '上一条语音或儿童屏动画仍在播放，新课点将在结束后加载',
+          : '上一条语音、儿童屏动画或屏幕表情仍在播放，新课点将在结束后加载',
       );
       return;
     }
@@ -3378,7 +3400,9 @@ export function ControlPage({
 
   const toggleDialogueAgent = useCallback(() => {
     const activeSocket = socketRef.current;
-    const sessionId = currentSessionIdRef.current;
+    const sessionId = currentSessionIdRef.current || (
+      dialogueAwake ? dialogueTargetSessionRef.current : null
+    );
     if (!activeSocket?.connected || !sessionId) {
       setDialogueControlNotice('当前没有有效课程，或儿童端尚未连接');
       return;
@@ -4232,7 +4256,7 @@ export function ControlPage({
             <button
               type="button"
               onClick={toggleDialogueAgent}
-              disabled={dialogueControlBusy || !socketConnected || !currentSessionId}
+              disabled={dialogueControlBusy || !socketConnected || (!currentSessionId && !dialogueAwake)}
               className={`h-8 rounded-md px-2 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50 ${
                 dialogueAwake ? 'bg-rose-600 hover:bg-rose-700' : 'bg-sky-600 hover:bg-sky-700'
               }`}
